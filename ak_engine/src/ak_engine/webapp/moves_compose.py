@@ -1205,16 +1205,21 @@ EMPTY_SEARCH_EXTRA: list[int] = [0, -1]
 # not an arbitrary round number.
 TACTIC_SLOT_COUNT = 7
 
-# A Special Encounter Plan [5.10] is this leader's own *standing*
-# posture, not tied to any one real phase's own tactic list the way
-# TACTIC_SLOT_COUNT above (a real-sample-sourced max) is -- nothing in
-# the available source bounds how long it could be, so the user's own
-# request (2026-11-16) for an "add/remove as many as you like" UI here
+# Nothing in the available source bounds how long a real Encounter Plan
+# tactic list -- Search's/Challenge's/Pursue's own ordinary per-phase
+# one, or a Special Encounter Plan [5.10]'s own *standing* one -- could
+# ever get; TACTIC_SLOT_COUNT above is only a real-sample-sourced
+# *typical* max, not a hard rulebook ceiling. The user's own "add/remove
+# as many as you like" request, first for the Special Encounter Plan
+# (2026-11-16), then for the ordinary per-phase one too (2026-11-18),
 # needs a real, generous ceiling the backend will actually read beyond
-# the first TACTIC_SLOT_COUNT rows this table starts visible with.
-# This is a UI allowance, not a sourced number -- round and generous,
-# nothing more.
-SEP_TACTIC_SLOT_COUNT = 25
+# the first TACTIC_SLOT_COUNT rows every one of these tables starts
+# visible with. This is a UI allowance, not a sourced number -- round
+# and generous, nothing more -- shared by every tactic table in this
+# module rather than one per Action, since they already share the one
+# parser (`_parse_search_tactics()`'s own `slot_count` parameter) and
+# the one `compose-tactic-slot` row shape.
+EXPANDABLE_TACTIC_SLOT_COUNT = 25
 
 # A generous, round slot count for a Recruit phase's own repeated
 # army-type dropdowns -- the rulebook's own worked example (a King's
@@ -1793,11 +1798,21 @@ def recruit_type_options(state: GameState, leader_id: int) -> list[tuple[str, st
     repeated type-slot dropdowns -- ``value`` is the type's own real
     ``army`` enum ordinal (``models/army_type.py ARMY_TYPE_BY_ORDINAL``,
     exactly what a real Recruit phase's own ``extra`` tail lists), so no
-    separate encoding step is needed. Race-incompatible types
-    (``is_army_type_compatible_with_race()``) and the 8 real ordinals
-    with no ``ARMY_TABLE`` cost entry (``turn/recruit.py``'s own
-    docstring) are never offered -- neither can ever actually be
-    recruited, regardless of what this dropdown would show.
+    separate encoding step is needed. The 8 real ordinals with no
+    ``ARMY_TABLE`` cost entry (``turn/recruit.py``'s own docstring) are
+    never offered -- they can never actually be recruited, regardless
+    of what this dropdown would show. A race-incompatible type
+    (``is_army_type_compatible_with_race()``) is only offered when a
+    hireable mercenary band of that exact type is already physically
+    present (``GameState.mercenaries_at()``, below) -- RULES.AK [3.4]'s
+    own "mercenaries can be Recruited in any province by any
+    character" carve-out, the same ``hiring_existing_mercenary=True``
+    bypass ``turn/recruit.py resolve_recruit()`` already grants at
+    turn-processing time (Phase 1054) -- otherwise it's never offered
+    either, since a populace levy of that type genuinely can't happen
+    here (the user's own K1 worked example, 2026-11-18: a mercenary
+    Whales band sitting in a Human home province, previously absent
+    from this dropdown entirely).
 
     The label previews, informationally only (the engine, not this
     dropdown, is the final arbiter at turn-processing time -- the same
@@ -1837,7 +1852,45 @@ def recruit_type_options(state: GameState, leader_id: int) -> list[tuple[str, st
     options: list[tuple[str, str]] = []
     for ordinal in sorted(ARMY_TYPE_BY_ORDINAL):
         army_type = ARMY_TYPE_BY_ORDINAL[ordinal]
-        if army_type not in ARMY_TABLE or not is_army_type_compatible_with_race(army_type, province.race):
+        if army_type not in ARMY_TABLE:
+            continue
+        mercenary_count = sum(
+            1
+            for army in state.mercenaries_at(leader.location)
+            if army.army_type is army_type and army.quality >= Quality.AVERAGE and not army.unhireable_this_turn
+        )
+        if not is_army_type_compatible_with_race(army_type, province.race):
+            if not mercenary_count:
+                continue
+            # Bug fix (2026-11-18, user-reported): a mercenary band
+            # whose own type isn't race-compatible with this province
+            # at all (e.g. a Whales band physically present in a Human
+            # province -- the user's own K1 worked example) used to
+            # never appear in this dropdown, even though RULES.AK
+            # [3.4] ("mercenaries can be Recruited in any province by
+            # any character") and turn/recruit_execution.py execute_
+            # recruit()'s own hiring_existing_mercenary=True bypass
+            # (this function's own Phase 1054 bug-fix note above) both
+            # already let the GM actually recruit it at turn-
+            # processing time -- this preview just never offered the
+            # option leading there. Never "native" in any province-
+            # slot sense (there is no slot for a type the province's
+            # own race can't otherwise field at all), so priced at the
+            # same doubled, non-native rate execute_recruit() itself
+            # would charge for it.
+            cost = resolve_recruit(
+                army_type,
+                province.race,
+                is_home_province=is_home_province,
+                is_native_to_province=False,
+                hiring_existing_mercenary=True,
+            ).gold_per_unit
+            unit_word = "unit" if mercenary_count == 1 else "units"
+            label = (
+                f"{ARMY_TYPE_NAME[army_type]} (mercenary only, {cost} gold"
+                f" -- {mercenary_count} mercenary {unit_word} present)"
+            )
+            options.append((str(ordinal), label))
             continue
         # Bug fix (2026-11-15, user-reported): this preview's own
         # ``is_native`` used to skip the exact 2 exemptions ``turn/
@@ -1881,11 +1934,6 @@ def recruit_type_options(state: GameState, leader_id: int) -> list[tuple[str, st
         limit = recruit_limit(army_type, is_home_province=is_home_province, province_race=province.race)
         if already:
             label += f" -- {already}/{limit}+ recruited this turn"
-        mercenary_count = sum(
-            1
-            for army in state.mercenaries_at(leader.location)
-            if army.army_type is army_type and army.quality >= Quality.AVERAGE and not army.unhireable_this_turn
-        )
         if mercenary_count:
             unit_word = "unit" if mercenary_count == 1 else "units"
             label += f" -- {mercenary_count} mercenary {unit_word} present"
@@ -2760,6 +2808,49 @@ def _resolve_target_raw(form: dict[str, str], *, primary_field: str, number_fiel
     return form.get(number_field, "")
 
 
+# The reverse of ARMY_TYPE_BY_ORDINAL, built once here rather than
+# per-call -- _resolve_recruit_type_raw() below needs "which ordinal
+# does this ArmyType encode as" the same way ARMY_TYPE_BY_ORDINAL
+# itself answers the opposite direction.
+_ORDINAL_BY_ARMY_TYPE: dict[ArmyType, int] = {army_type: ordinal for ordinal, army_type in ARMY_TYPE_BY_ORDINAL.items()}
+
+
+def _resolve_recruit_type_raw(form: dict[str, str], *, primary_field: str, code_field: str) -> str:
+    """Recruit's own type-slot field (2026-11-18, user-requested): reads
+    the dropdown's own ``primary_field`` first, same as every other
+    "dropdown first, hand-typed second" fallback in this module; if
+    that's empty, falls back to the sibling ``code_field`` free-text
+    field, a hand-typed army type "sigla" -- ``ArmyType``'s own real
+    2-letter ``value`` (``models/army_type.py``, e.g. ``"WH"`` for
+    Whales), not a numeric ordinal -- for a type this dropdown doesn't
+    currently offer (the user's own K1 worked example: a race-
+    incompatible mercenary type with no hireable band *yet* visible to
+    this preview, or simply a GM who already knows the code). Resolves
+    it into the exact same ordinal string the dropdown itself would
+    have posted, so ``_parse_recruit_types()``'s own existing ordinal
+    parsing/validation does all the real work either way. Returns
+    ``""`` (unresolved, same as an empty dropdown) if neither field is
+    filled in, or the typed text isn't a real ``ArmyType`` code --
+    matching ``_resolve_province_target_raw()``'s own "not a plain
+    number" convention of leaving a bad typed value to the caller's
+    existing empty-field error rather than inventing a different one
+    just for this field.
+    """
+
+    primary = form.get(primary_field, "")
+    if primary:
+        return primary
+    code = form.get(code_field, "").strip().upper()
+    if not code:
+        return ""
+    try:
+        army_type = ArmyType(code)
+    except ValueError:
+        return ""
+    ordinal = _ORDINAL_BY_ARMY_TYPE.get(army_type)
+    return "" if ordinal is None else str(ordinal)
+
+
 def _parse_move_target(raw: str, *, board_width: int, phase_label: str, state: GameState) -> int:
     """**2026-11-07 bug fix**: now validates the posted destination
     against ``state.provinces`` -- this used to be one of only two
@@ -2981,6 +3072,15 @@ def _parse_recruit_types(
     ``turn/recruit.py resolve_recruit()``'s own ``IncompatibleRaceError``
     -- cleanly, not a crash, but later and less clearly than every
     other target field's own compose-time rejection.
+
+    **2026-11-18 (user-requested)**: each slot's own dropdown now falls
+    back to a sibling ``recruit_type_code_<leader_id>_<n>_<slot>``
+    free-text field (``_resolve_recruit_type_raw()``) when empty -- a
+    hand-typed army type "sigla" (``ArmyType``'s own real 2-letter
+    ``value``, e.g. ``"WH"``) for a type this preview's own dropdown
+    doesn't currently list, the same "composer informs, engine
+    enforces" relationship every other richer dropdown's own free-text
+    override already has with its real validation.
     """
 
     leader = state.leaders.get(leader_id)
@@ -2989,7 +3089,11 @@ def _parse_recruit_types(
     ordinals: list[int] = []
     stopped_at: int | None = None
     for slot in range(RECRUIT_TYPE_SLOT_COUNT):
-        raw = form.get(f"recruit_type_{leader_id}_{n}_{slot}", "")
+        raw = _resolve_recruit_type_raw(
+            form,
+            primary_field=f"recruit_type_{leader_id}_{n}_{slot}",
+            code_field=f"recruit_type_code_{leader_id}_{n}_{slot}",
+        )
         if not raw:
             if stopped_at is None:
                 stopped_at = slot
@@ -3001,17 +3105,30 @@ def _parse_recruit_types(
             )
         ordinal = _parse_int(raw, field_label=f"{phase_label} Recruit type {slot + 1}")
         army_type = ARMY_TYPE_BY_ORDINAL.get(ordinal)
-        if (
-            army_type is None
-            or province is None
-            or army_type not in ARMY_TABLE
-            or not is_army_type_compatible_with_race(army_type, province.race)
-        ):
+        race_compatible = (
+            army_type is not None and province is not None and is_army_type_compatible_with_race(army_type, province.race)
+        )
+        # Bug fix (2026-11-18, user-reported): recruit_type_options()
+        # now also offers a race-incompatible type when a hireable
+        # mercenary band of that exact type is physically present
+        # (RULES.AK [3.4]'s own "mercenaries can be Recruited in any
+        # province by any character" carve-out) -- this check used to
+        # reject that same type unconditionally, so submitting exactly
+        # what the now-fixed dropdown offers still failed.
+        mercenary_present = (
+            army_type is not None
+            and leader is not None
+            and any(
+                army.army_type is army_type and army.quality >= Quality.AVERAGE and not army.unhireable_this_turn
+                for army in state.mercenaries_at(leader.location)
+            )
+        )
+        if army_type is None or province is None or army_type not in ARMY_TABLE or not (race_compatible or mercenary_present):
             # Defense in depth: every dropdown-offered ordinal is one
             # recruit_type_options() already filtered to a real,
-            # costed, race-compatible type at this leader's own
-            # current location, but a direct, tampered POST could
-            # still name any other real ArmyType ordinal.
+            # costed, race-compatible-or-mercenary-present type at this
+            # leader's own current location, but a direct, tampered
+            # POST could still name any other real ArmyType ordinal.
             raise InvalidComposedMovesError(f"{phase_label}: recruit type slot {slot + 1} isn't a known army type.")
         ordinals.append(ordinal)
     if not ordinals:
@@ -4314,10 +4431,13 @@ def _parse_search_tactics(
     enforces here too, as defense in depth against a tampered POST
     naming an ordinal that caller's own dropdown never offers).
     ``slot_count`` defaults to ``TACTIC_SLOT_COUNT`` (every real phase's
-    own Encounter Plan); the Special Encounter Plan's own call (2026-
-    11-16, user-requested "add/remove as many as you like") passes
-    ``SEP_TACTIC_SLOT_COUNT`` instead -- a much larger, unsourced UI
-    ceiling, not a real-sample-confirmed one.
+    own Encounter Plan's typical real-sample-sourced length); every
+    caller below -- Search's, Challenge's, and Pursue's own ordinary
+    per-phase tactic list, plus the Special Encounter Plan's own
+    standing one -- now passes ``EXPANDABLE_TACTIC_SLOT_COUNT`` instead
+    (2026-11-16 for the Special Encounter Plan, 2026-11-18 for the
+    other three), the same much larger, unsourced "add/remove as many
+    as you like" UI ceiling shared across all of them.
     ``state`` is only needed for Use Item's own ownership/category/charge
     lookup -- every
     other tactic's own validation is state-independent.
@@ -4526,7 +4646,7 @@ def _parse_search_tactics(
 def _parse_special_encounter_plan(form: dict[str, str], leader_id: int, *, state: GameState) -> tuple[int | str, ...]:
     """Reads this leader's own standing Special Encounter Plan [5.10]
     (``sep_tactic_<leader_id>_0_<slot>``'s own repeated tactic slots,
-    ``slot`` in ``0..SEP_TACTIC_SLOT_COUNT-1`` -- 2026-11-16, user-
+    ``slot`` in ``0..EXPANDABLE_TACTIC_SLOT_COUNT-1`` -- 2026-11-16, user-
     requested: a much larger ceiling than every real phase's own
     ``TACTIC_SLOT_COUNT``, since this table's own "add/remove as many
     as you like" UI needs the backend to actually read whatever the GM
@@ -4584,7 +4704,7 @@ def _parse_special_encounter_plan(form: dict[str, str], leader_id: int, *, state
         state=state,
         field_prefix="sep_tactic",
         passive=True,
-        slot_count=SEP_TACTIC_SLOT_COUNT,
+        slot_count=EXPANDABLE_TACTIC_SLOT_COUNT,
     )
     if tactics == [-1]:
         return DEFAULT_SP
@@ -4740,7 +4860,14 @@ def parse_phase_inputs(
             extra = [
                 0,
                 *_parse_search_tactics(
-                    form, leader_id, n, phase_label=f"P{n}", state=state, allow_give=True, allow_fulfill_scout=True
+                    form,
+                    leader_id,
+                    n,
+                    phase_label=f"P{n}",
+                    state=state,
+                    allow_give=True,
+                    allow_fulfill_scout=True,
+                    slot_count=EXPANDABLE_TACTIC_SLOT_COUNT,
                 ),
             ]
         elif action is ActionCode.RECRUIT:
@@ -4792,13 +4919,27 @@ def parse_phase_inputs(
             extra = [
                 0,
                 *_parse_search_tactics(
-                    form, leader_id, n, phase_label=f"P{n}", state=state, field_prefix="challenge_tactic", allow_give=True
+                    form,
+                    leader_id,
+                    n,
+                    phase_label=f"P{n}",
+                    state=state,
+                    field_prefix="challenge_tactic",
+                    allow_give=True,
+                    slot_count=EXPANDABLE_TACTIC_SLOT_COUNT,
                 ),
             ]
         elif action is ActionCode.PURSUE:
             obj = _parse_pursue_target(form, leader_id, n, phase_label=f"P{n}", state=state)
             pursue_tactics = _parse_search_tactics(
-                form, leader_id, n, phase_label=f"P{n}", state=state, field_prefix="pursue_tactic", allow_give=True
+                form,
+                leader_id,
+                n,
+                phase_label=f"P{n}",
+                state=state,
+                field_prefix="pursue_tactic",
+                allow_give=True,
+                slot_count=EXPANDABLE_TACTIC_SLOT_COUNT,
             )
             # [3.16]: "Se l'inseguitore non comanda alcuna unità militare
             # allora bisogna indicare un Piano d'Incontro" -- enforced

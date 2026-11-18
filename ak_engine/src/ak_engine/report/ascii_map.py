@@ -687,6 +687,32 @@ wraparound at column 18 -- passing only because its own `GameState`
 (board_width defaulting to 30, never overridden) and the pre-fix code
 shared the identical wrong 18-wide assumption, not because either was
 actually correct for the board it claimed to describe.
+
+**Phase 2027 -- the Expl% field itself, closed.** Phase 628 (above)
+closed *which* provinces a Kingdom's own map shows, but every cell's
+own Expl% text still read the plain, kingdom-neutral `ProvinceState.
+explored_percent` scalar -- the one `models/game_state.py`'s own
+Phase 69 docstring addendum explicitly calls out as *not* what "how
+much has this Kingdom explored it" means (that's `explored_percent_
+by_kingdom`). `turn/move_execution.py reveal_adjacent_provinces()`
+(Phase 623) only ever writes the per-kingdom dict for a newly-known
+neighbor, at the `KNOWN_PROVINCE_MIN_PERCENT` (1%) floor -- it
+deliberately never bumps the shared scalar, which stays at whatever
+a real Explore order last left it (commonly still 0 for a province
+nobody has physically explored yet). Reading the shared scalar alone
+therefore prints "0% Expl." for exactly the cells the real corpus
+(`tests/fixtures/reports/G3/`, `/G6/`) never shows that way -- a
+province known at all is *always* "1% Expl." or higher in every one
+of the 100+ real samples checked, never "0% Expl." (the user's own
+report correction, cross-checked against real turns from the
+Pascal-era program). All 7 `expl_text` call sites across the 4
+renderers that still show Expl% (stride9/stride8 never did, Phase
+571/572) now read `max(explored_percent, explored_percent_by_
+kingdom.get(viewing_kingdom_id, 0))` instead -- purely additive for
+every existing real-sample test (none of them set the per-kingdom
+dict, so the `max()` is a no-op there), while finally giving a
+Kingdom's own correctly-100%-seeded home province (`webapp/kingdom_
+create.py`) and any 1%-floor-known neighbor their own real reading.
 """
 
 from __future__ import annotations
@@ -1262,6 +1288,8 @@ def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id
     name = raw_name.replace(" ", symbol)
     line1 = _pad_center(f"{name}({id_text})", CELL_WIDTH, symbol)
 
+    expl_percent = max(province.explored_percent, province.explored_percent_by_kingdom.get(viewing_kingdom_id, 0))
+
     middle_fields = _middle_fields(state, province, viewing_kingdom_id=viewing_kingdom_id)
     middle_lines = [
         _pad_framed(text, left_template=left, zone_width=zone, right_template=right, symbol=symbol, tie_left=tie_left)
@@ -1273,7 +1301,7 @@ def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id
         # every field-complete cell already confirmed (Phase 562). Space
         # is replaced by the terrain symbol, like every other full-fill
         # row.
-        expl_text = f"{province.explored_percent}%{symbol}Expl."
+        expl_text = f"{expl_percent}%{symbol}Expl."
         last_line = _pad_center(expl_text, CELL_WIDTH, symbol)
     else:
         # A field was skipped -- Expl% gets its own row (the next
@@ -1282,7 +1310,7 @@ def render_cell(state: GameState, province: ProvinceState, *, viewing_kingdom_id
         # an ordinary framed inner row now (not merged into the
         # border), it keeps its own real space, like every other inner
         # row's internal word gaps.
-        expl_text = f"{province.explored_percent}% Expl."
+        expl_text = f"{expl_percent}% Expl."
         left, zone, right, tie_left = _ROW_TEMPLATES[len(middle_lines)]
         middle_lines.append(
             _pad_framed(expl_text, left_template=left, zone_width=zone, right_template=right, symbol=symbol, tie_left=tie_left)
@@ -1319,6 +1347,8 @@ def render_cell_dense(state: GameState, province: ProvinceState, *, viewing_king
     name = raw_name.replace(" ", symbol)
     line1 = _pad_center(f"{name}({id_text})", DENSE_CELL_WIDTH, symbol)
 
+    expl_percent = max(province.explored_percent, province.explored_percent_by_kingdom.get(viewing_kingdom_id, 0))
+
     middle_fields = _middle_fields(state, province, viewing_kingdom_id=viewing_kingdom_id)
     middle_lines = [
         _pad_overlay(text, tick_columns=ticks, symbol=symbol)
@@ -1326,10 +1356,10 @@ def render_cell_dense(state: GameState, province: ProvinceState, *, viewing_king
     ]
 
     if len(middle_lines) == len(_DENSE_ROW_TEMPLATES):
-        expl_text = f"{province.explored_percent}%{symbol}Expl."
+        expl_text = f"{expl_percent}%{symbol}Expl."
         last_line = _pad_center(expl_text, DENSE_CELL_WIDTH, symbol)
     else:
-        expl_text = f"{province.explored_percent}% Expl."
+        expl_text = f"{expl_percent}% Expl."
         ticks = _DENSE_ROW_TEMPLATES[len(middle_lines)]
         middle_lines.append(_pad_overlay(expl_text, tick_columns=ticks, symbol=symbol))
         last_line = symbol * DENSE_CELL_WIDTH
@@ -1595,6 +1625,8 @@ def render_cell_stride12(state: GameState, province: ProvinceState, *, viewing_k
     name = raw_name.replace(" ", symbol)
     line1 = _pad_center(f"{name}({id_text})", STRIDE12_CELL_WIDTH, symbol)
 
+    expl_percent = max(province.explored_percent, province.explored_percent_by_kingdom.get(viewing_kingdom_id, 0))
+
     middle_fields = _middle_fields(state, province, viewing_kingdom_id=viewing_kingdom_id)
     middle_lines = [
         _pad_overlay(text, tick_columns=ticks, symbol=symbol, width=STRIDE12_CELL_WIDTH)
@@ -1602,10 +1634,10 @@ def render_cell_stride12(state: GameState, province: ProvinceState, *, viewing_k
     ]
 
     if len(middle_lines) == len(_STRIDE12_ROW_TEMPLATES):
-        expl_text = f"{province.explored_percent}%{symbol}Expl."
+        expl_text = f"{expl_percent}%{symbol}Expl."
         last_line = _pad_center(expl_text, STRIDE12_CELL_WIDTH, symbol)
     else:
-        expl_text = f"{province.explored_percent}% Expl."
+        expl_text = f"{expl_percent}% Expl."
         ticks = _STRIDE12_ROW_TEMPLATES[len(middle_lines)]
         middle_lines.append(_pad_overlay(expl_text, tick_columns=ticks, symbol=symbol, width=STRIDE12_CELL_WIDTH))
         last_line = symbol * STRIDE12_CELL_WIDTH
@@ -1722,7 +1754,8 @@ def render_cell_stride10(state: GameState, province: ProvinceState, *, viewing_k
         lines.append(_pad_center(middle_fields[-1], STRIDE10_CELL_WIDTH, symbol))
     else:
         # Only 3 fields -- row 6 is free for Expl% to merge in as usual.
-        expl_text = f"{province.explored_percent}%{symbol}Expl."
+        expl_percent = max(province.explored_percent, province.explored_percent_by_kingdom.get(viewing_kingdom_id, 0))
+        expl_text = f"{expl_percent}%{symbol}Expl."
         lines.append(_pad_center(expl_text, STRIDE10_CELL_WIDTH, symbol))
 
     return lines

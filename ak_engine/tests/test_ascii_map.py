@@ -369,6 +369,22 @@ def test_render_cell_matches_shastas_own_real_cell_with_no_recruit_row():
     ]
 
 
+def test_render_cell_floors_expl_at_1_percent_for_an_adjacency_known_province():
+    # The user's own report correction: every real sample corpus cell
+    # (`tests/fixtures/reports/G3/`) shows "1% Expl." for a province known
+    # only via `turn/move_execution.py reveal_adjacent_provinces()`'s own
+    # 1%-floor reveal of a neighbor -- never "0% Expl.", which the plain
+    # `explored_percent` scalar alone produces (that reveal only ever
+    # writes `explored_percent_by_kingdom`, confirmed in that function's
+    # own docstring). `render_cell()` now floors the displayed percentage
+    # at the viewing Kingdom's own `explored_percent_by_kingdom` entry.
+    state = _state()
+    province = _province(3, 4, "Shasta", Terrain.MTNS, Race.EAGLES, owner=None, tax=1, t1=None, t2=None, expl=0)
+    province.explored_percent_by_kingdom[2] = 1
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+    assert cell[4] == "^   1% Expl.^  ^"
+
+
 def test_render_cell_shows_the_real_tax_number_when_recruit_row_is_skipped():
     # Same as above, but owned by the viewing Kingdom -- the shifted
     # status row shows "Tax: N" instead of the qualitative word, using
