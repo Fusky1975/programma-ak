@@ -6775,8 +6775,9 @@ def render_monster_reinforcement_helped(monster_name: str, army_name: str, rng: 
 # never wired into a live `values` dict before now; `` ` `` (terrain,
 # already live at line 8843's `describe_rumor()`); `@` (province name);
 # `^A` (article, `render()`'s own Phase 584 mechanism); `^P` (province
-# number, the same `str(encode_hex_number(...))` convention `render_
-# march()`/`describe_rumor()` already established, Phase 104/247 --
+# number -- `real_province_number()`'s own `"(#<N>)"` display format,
+# the same convention `render_march()` uses since its own 2026-11-18
+# bug fix and `_describe_neighbor_sentence()` already established --
 # *not* `models/map.py province_code()`, a different scheme reserved for
 # the still-unimplemented ASCII-map work); `^R` (race name, already live
 # at line 5983); `[3` (a King/ruler reference, the same convention
@@ -7689,7 +7690,7 @@ def describe_defend_reinforcement(
 
 
 def describe_move(
-    result: MoveExecutionResult, state: GameState, *, character_name: str, board_width: int, rng: random.Random
+    result: MoveExecutionResult, state: GameState, *, character_name: str, rng: random.Random
 ) -> str | None:
     """Assembles the completed-Move sentence (Phase 421), wiring the
     already-built ``render_march()`` (Phase 104) into a real caller for
@@ -7702,9 +7703,31 @@ def describe_move(
     is unset -- e.g. an illegal/blocked Move, which has its own
     separate narrative templates, Phase 127) -- no sourced sentence
     exists for "you tried to move and failed" beyond those.
-    ``province_number`` is ``PROSE.TXT``'s own ``^P`` marker, the same
-    ``str(encode_hex_number(...))`` convention ``describe_rumor()``'s
-    own Phase 247 precedent already established.
+
+    **Bug fix (2026-11-18, user-reported "MOVE doesn't work")**:
+    ``province_number`` used to be ``str(encode_hex_number(...))`` --
+    the internal LMOVE-order wire encoding (e.g. ``92``), copied by
+    analogy from ``describe_rumor()``'s own Phase 247 precedent. That
+    analogy doesn't hold: ``describe_rumor()``'s own raw hex code is
+    independently sourced (FRUMOR.X's own literal ``$#`` hex notation,
+    confirmed against the real archive), but ``render_march()``'s own
+    docstring already documents ``^P`` as "Province number" in the
+    real ``real_province_number()`` display format (e.g. ``"0304"``),
+    and the real sample corpus confirms it's always parenthesized with
+    a leading ``#`` right after the province name (e.g. "the Virgo Sea
+    (#1005)", ``SE3__T1.K1``) -- the exact ``f"(#{number})"`` shape
+    ``_describe_neighbor_sentence()`` already establishes for this same
+    marker elsewhere. Reading the raw wire code here instead produced
+    a stray, meaningless internal number sitting mid-sentence (e.g.
+    "Aldric moved into Macondo 92 with Aldric's army") -- confirmed via
+    a live repro of the user's own report (a King commanding an army,
+    composing a Move via the free-text province-number fallback): the
+    Move itself relocated the King and his army correctly, but this
+    narration line was silently wrong, which is what actually looked
+    like "doesn't work" in the user's own already-confusing report.
+    ``board_width`` is no longer a parameter here -- it was only ever
+    needed for the old, wrong ``encode_hex_number()`` call;
+    ``real_province_number()`` is a pure coordinate format.
 
     **Phase 769**: an armyless personal Move (``result.moved_without_
     armies``, MARCH.md section 12's own ``CountArmies(leader) <= 0``
@@ -7720,7 +7743,7 @@ def describe_move(
     is_sea = province is not None and province.effective_terrain() is Terrain.SEA
     if result.moved_without_armies:
         return render_travel(character_name, province_name, rng, is_sea=is_sea)
-    province_number = str(encode_hex_number(result.new_location, board_width))
+    province_number = f"(#{real_province_number(result.new_location)})"
     return render_march(character_name, province_name, province_number, rng, is_sea=is_sea)
 
 
@@ -8010,8 +8033,10 @@ def render_march(
 ) -> str:
     """Renders MARCH.X's sentence for a Move -- ``province_number`` is
     ``PROSE.TXT``'s own ``^P`` marker ("Province number", e.g.
-    ``"0304"``), distinct from ``province_name`` (``@``). ``is_sea``
-    (Phase 74) resolves the "/S" marker every variant here carries.
+    ``"(#0304)"`` -- confirmed against the real sample corpus, e.g.
+    "the Virgo Sea (#1005)", ``SE3__T1.K1``), distinct from
+    ``province_name`` (``@``). ``is_sea`` (Phase 74) resolves the "/S"
+    marker every variant here carries.
     """
 
     variant = pick_variant(_MARCH_TEMPLATES, rng)
@@ -9909,9 +9934,7 @@ def describe_turn_results(
                     lines.append(render_assassination_failed(caster_name, rng))
             continue
         elif entry.action is ActionCode.LMOVE and isinstance(entry.result, MoveExecutionResult):
-            if board_width is None:
-                continue
-            line = describe_move(entry.result, state, character_name=caster_name, board_width=board_width, rng=rng)
+            line = describe_move(entry.result, state, character_name=caster_name, rng=rng)
             if line is not None:
                 lines.append(line)
             lines.extend(describe_cargo_boarded(entry.result, state, character_name=caster_name, rng=rng))

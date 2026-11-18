@@ -356,6 +356,25 @@ def test_army_bridging_splits_mercenary_king_led_and_hero_led_correctly():
         assert record.commanded_by_leader_id not in state.leaders
 
 
+def test_army_bridging_sets_a_real_starting_movement_allowance():
+    # Bug fix (2026-11-18, user-reported "MOVE doesn't work"): every
+    # bridged army used to get ArmyState.movement_points's own bare
+    # dataclass default (0, never set at either real ArmyState(...)
+    # call site) -- leaving it unable to Move at all until the next
+    # full run_turn() call's own end-of-turn replenishment. A real
+    # pre-existing army being imported should start with its own
+    # normal, full movement allowance instead.
+    from ak_engine.models.army_type import ARMY_TABLE
+
+    state, _ = _bridge_fixture()
+
+    assert state.armies, "fixture must bridge at least one real army"
+    for army in state.armies.values():
+        stats = ARMY_TABLE.get(army.army_type)
+        expected = stats.speed if stats is not None else 0
+        assert army.movement_points == expected
+
+
 def test_bridge_new_game_state_excludes_dead_block_b_rows():
     # Phase 789: a Block B row whose own `state` is `MonsterEngagementState.
     # DEAD` is a real historical dead army, not a live/garrison unit --
