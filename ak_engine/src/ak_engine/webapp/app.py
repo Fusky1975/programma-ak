@@ -146,6 +146,7 @@ from ak_engine.webapp.kingdom_delete import KingdomHasEmperorError, delete_kingd
 from ak_engine.webapp.reports import turn_zero_report
 from ak_engine.webapp.turn_processing import (
     InvalidMoveFileError,
+    load_turn_processing_log,
     load_turn_report,
     load_turn_xk_file,
     process_and_save_current_turn,
@@ -3196,6 +3197,28 @@ def create_app(games_root: Path | None = None) -> Flask:
         remove_uploaded_move_file(game_dir(root, slug), state.turn_number, kingdom_id, state.kingdoms.keys())
         return redirect(url_for("turns_hub", slug=slug))
 
+    @app.get("/games/<slug>/turns/<int:kingdom_id>/view")
+    def turns_view_upload(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if kingdom_id not in state.kingdoms:
+            return redirect(url_for("turns_hub", slug=slug, error="Kingdom not found."))
+        uploads = uploaded_move_files(game_dir(root, slug), state.turn_number, state.kingdoms.keys())
+        path = uploads.get(kingdom_id)
+        if path is None:
+            return redirect(url_for("turns_hub", slug=slug, error="No saved move file for this Kingdom yet."))
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        return render_template(
+            "turns_view_upload.html",
+            meta=meta,
+            kingdom=state.kingdoms[kingdom_id],
+            filename=path.name,
+            lines=lines,
+        )
+
     @app.get("/games/<slug>/turns/<int:kingdom_id>/compose")
     def turns_compose(slug: str, kingdom_id: int):
         root: Path = app.config["GAMES_ROOT"]
@@ -3571,6 +3594,22 @@ def create_app(games_root: Path | None = None) -> Flask:
             headers={
                 "Content-Disposition": f'attachment; filename="XK{game_label}T{turn_number + 1}.K{kingdom_id}"'
             },
+        )
+
+    @app.get("/games/<slug>/turns/<int:turn_number>/processing-log")
+    def turn_processing_log_view(slug: str, turn_number: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        lines = load_turn_processing_log(game_dir(root, slug), turn_number)
+        if lines is None:
+            return redirect(
+                url_for("turn_report_list", slug=slug, turn_number=turn_number, error="No processing log found for this turn.")
+            )
+        return render_template(
+            "turn_processing_log_view.html", meta=meta, turn_number=turn_number, lines=lines
         )
 
     return app

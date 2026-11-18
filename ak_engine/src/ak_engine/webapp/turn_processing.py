@@ -17,16 +17,19 @@ from typing import Collection
 
 from werkzeug.utils import secure_filename
 
+from ak_engine.models.enums import ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.orchestrator import TurnOutcome, process_turn
 from ak_engine.parser.errors import K1ParseError
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.parser.xk_world_writer import write_xk_world
+from ak_engine.turn.plan_dispatch import PhaseDispatchResult
 from ak_engine.webapp.games import save_game
 from ak_engine.webapp.xk_reports import XKExportError, build_xk_worlds_for_all_kingdoms
 
 MOVES_DIRNAME = "moves"
 REPORTS_DIRNAME = "reports"
+PROCESSING_LOG_FILENAME = "processing_log.txt"
 
 
 class InvalidMoveFileError(Exception):
@@ -168,6 +171,82 @@ def load_turn_report(one_game_dir: Path, turn_number: int, kingdom_id: int) -> l
     return path.read_text(encoding="utf-8").splitlines()
 
 
+def _processing_log_leader_label(state: GameState, leader_id: int) -> tuple[str, str]:
+    """``(kingdom_label, leader_label)`` for one ``PhaseDispatchResult.
+    leader_id`` -- looked up against ``state`` *after* this same turn's
+    own ``run_turn()`` call already ran, so a leader who died in an
+    earlier phase this same turn (e.g. lost a Challenge) is looked up in
+    ``state.dead_leaders`` instead (``GameState.remove_leader()``'s own
+    graveyard), the same fallback this project's other post-turn
+    composers already use rather than showing a bare, unexplained id.
+    """
+
+    leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+    if leader is None:
+        return "?", f"Leader #{leader_id}"
+    kingdom = state.kingdoms.get(leader.kingdom_id)
+    kingdom_label = kingdom.name if kingdom is not None else f"Kingdom #{leader.kingdom_id}"
+    return kingdom_label, f"{leader.name} (#{leader_id})"
+
+
+def format_turn_processing_log(results: list[PhaseDispatchResult], state: GameState) -> list[str]:
+    """2026-11-18 (user-requested): one line per real ``run_turn()``
+    dispatch attempt (every ``PhaseDispatchResult``, in the exact order
+    ``run_turn()`` itself produced them -- phase by phase across every
+    leader, not grouped), naming the Kingdom, leader, phase, and real
+    ``ActionCode`` ordered -- "OK" when it resolved cleanly, or the real
+    exception message otherwise.
+
+    This is the one place a GM can now see *every* order's own real
+    success/failure, including the ones a processed turn's own letter
+    report never narrates at all -- an order whose own dispatch raised
+    (caught only by ``plan_dispatch.py run_leader_plan()``'s own
+    intentionally-broad per-phase handler, recorded as ``error`` and
+    otherwise discarded) used to vanish completely, with nothing
+    anywhere to show it was even attempted (the exact gap the user's
+    own "MOVE doesn't work, and nothing is reported" complaint traced
+    back to). Bare ``ActionCode.name`` here, not this interface's own
+    curated, order-sheet-style ``ACTION_NAME`` (``webapp/app.py``) --
+    this is an internal diagnostic log for the GM, not player-facing
+    report prose, and importing ``ACTION_NAME`` here would pull this
+    module into a circular dependency on ``app.py``, which already
+    imports *this* module's own save/load functions.
+    """
+
+    lines = [
+        "This is a diagnostic log, for the GM only -- it is not part of any Kingdom's own letter report.",
+        "One line per order this turn actually tried to dispatch, in the order it was dispatched.",
+        "",
+    ]
+    if not results:
+        lines.append("No orders were dispatched this turn (no Kingdom had a real move file, or no leader had any).")
+        return lines
+    for entry in results:
+        kingdom_label, leader_label = _processing_log_leader_label(state, entry.leader_id)
+        action_label = entry.action.name if isinstance(entry.action, ActionCode) else "(none)"
+        status = "OK" if entry.error is None else f"ERROR: {entry.error}"
+        lines.append(f"{kingdom_label} / {leader_label} / {entry.phase_label} / {action_label}: {status}")
+    return lines
+
+
+def save_turn_processing_log(one_game_dir: Path, turn_number: int, results: list[PhaseDispatchResult], state: GameState) -> None:
+    directory = turn_reports_dir(one_game_dir, turn_number)
+    directory.mkdir(parents=True, exist_ok=True)
+    lines = format_turn_processing_log(results, state)
+    (directory / PROCESSING_LOG_FILENAME).write_text("\n".join(lines), encoding="utf-8")
+
+
+def load_turn_processing_log(one_game_dir: Path, turn_number: int) -> list[str] | None:
+    """``None`` if this turn was never processed (or was processed before
+    this feature existed -- an older saved turn simply has no log file
+    on disk)."""
+
+    path = turn_reports_dir(one_game_dir, turn_number) / PROCESSING_LOG_FILENAME
+    if not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8").splitlines()
+
+
 def save_turn_xk_files(one_game_dir: Path, turn_number: int, state: GameState) -> None:
     """Phase 1026 -- the real binary counterpart to ``save_turn_reports()``
     above, saved the same way and for the same reason: a processed turn's
@@ -252,6 +331,12 @@ def process_and_save_current_turn(root: Path, slug: str, state: GameState, one_g
     missed-deadline Defend/Wait auto-fill, so the GM can process a turn
     with only some Kingdoms having submitted, matching real GM discretion
     over deadlines.
+
+    **2026-11-18 (user-requested)**: also saves ``format_turn_processing_
+    log()``'s own real per-order success/failure diagnostic, the same
+    way and for the same reason as the letter reports/XK files above --
+    ``state`` is only ever this exact post-turn snapshot right here, so
+    a later "view" request can't recompute it from scratch.
     """
 
     processed_turn_number = state.turn_number
@@ -261,5 +346,6 @@ def process_and_save_current_turn(root: Path, slug: str, state: GameState, one_g
     outcome = process_turn(state, order_file_paths)
     save_turn_reports(one_game_dir, processed_turn_number, outcome.letter_reports)
     save_turn_xk_files(one_game_dir, processed_turn_number, state)
+    save_turn_processing_log(one_game_dir, processed_turn_number, outcome.results, state)
     save_game(root, slug, state)
     return outcome

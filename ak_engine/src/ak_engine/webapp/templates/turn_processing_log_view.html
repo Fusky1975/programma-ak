@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Turn {{ turn_number }} Processing Log -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('turn_report_list', slug=meta.slug, turn_number=turn_number) }}">&larr; Turn {{ turn_number }} Reports</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-report);">
+  <h2>{{ meta.name }} &mdash; Turn {{ turn_number }} Processing Log</h2>
+  <p class="hex-map-legend-note">Internal diagnostic only -- not part of any Kingdom's own letter report. One line per order this turn actually tried to dispatch, in the order it was dispatched, so you can see exactly what succeeded and what failed (and why), including anything a letter report never narrates.</p>
+  <pre class="report-text">{% for line in lines %}{% if "ERROR:" in line %}<span class="status-warning">{{ line }}</span>{% else %}{{ line }}{% endif %}
+{% endfor %}</pre>
+</div>
+
+{% endblock %}

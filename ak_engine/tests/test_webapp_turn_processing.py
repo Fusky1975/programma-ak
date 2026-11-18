@@ -8,17 +8,22 @@ from pathlib import Path
 import pytest
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.enums import ActionCode
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.parser.xk_world import parse_xk_world
+from ak_engine.turn.plan_dispatch import PhaseDispatchResult
 from ak_engine.webapp.turn_processing import (
     InvalidMoveFileError,
+    format_turn_processing_log,
+    load_turn_processing_log,
     load_turn_report,
     load_turn_xk_file,
     process_and_save_current_turn,
     processed_turn_numbers,
     remove_uploaded_move_file,
+    save_turn_processing_log,
     save_uploaded_move_file,
     uploaded_move_files,
 )
@@ -248,3 +253,88 @@ def test_load_turn_report_missing_returns_none(tmp_path):
 
 def test_processed_turn_numbers_on_a_fresh_dir_is_empty(tmp_path):
     assert processed_turn_numbers(tmp_path) == []
+
+
+def test_format_turn_processing_log_with_no_results_says_so():
+    state = _generated_state()
+    lines = format_turn_processing_log([], state)
+    assert any("No orders were dispatched" in line for line in lines)
+
+
+def test_format_turn_processing_log_reports_ok_and_error_lines():
+    state = _generated_state()
+    leader_id = next(iter(state.leaders))
+    results = [
+        PhaseDispatchResult(
+            leader_id=leader_id, segment_index=0, phase_label="P0", action=ActionCode.LMOVE, result=None, error=None
+        ),
+        PhaseDispatchResult(
+            leader_id=leader_id,
+            segment_index=1,
+            phase_label="P1",
+            action=ActionCode.CHALLENGE,
+            result=None,
+            error=ValueError("no target"),
+        ),
+    ]
+
+    lines = format_turn_processing_log(results, state)
+
+    ok_line = next(line for line in lines if "LMOVE" in line)
+    assert ok_line.endswith(": OK")
+    error_line = next(line for line in lines if "CHALLENGE" in line)
+    assert "ERROR: no target" in error_line
+
+
+def test_format_turn_processing_log_falls_back_to_dead_leaders():
+    state = _generated_state()
+    leader_id = next(iter(state.leaders))
+    leader = state.leaders[leader_id]
+    state.remove_leader(leader_id)
+    assert leader_id in state.dead_leaders
+
+    results = [
+        PhaseDispatchResult(leader_id=leader_id, segment_index=0, phase_label="P0", action=ActionCode.LMOVE, result=None, error=None)
+    ]
+
+    lines = format_turn_processing_log(results, state)
+
+    assert any(leader.name in line for line in lines)
+
+
+def test_save_and_load_turn_processing_log_round_trips(tmp_path):
+    state = _generated_state()
+    leader_id = next(iter(state.leaders))
+    results = [
+        PhaseDispatchResult(leader_id=leader_id, segment_index=0, phase_label="P0", action=ActionCode.LMOVE, result=None, error=None)
+    ]
+
+    save_turn_processing_log(tmp_path, 1, results, state)
+    lines = load_turn_processing_log(tmp_path, 1)
+
+    assert lines is not None
+    assert any("LMOVE" in line for line in lines)
+
+
+def test_load_turn_processing_log_missing_returns_none(tmp_path):
+    assert load_turn_processing_log(tmp_path, 1) is None
+
+
+def test_process_and_save_current_turn_also_saves_a_processing_log(tmp_path):
+    from ak_engine.webapp.games import create_game, game_dir, open_game
+
+    meta = create_game(tmp_path, "Processing Log Campaign")
+    _, state = open_game(tmp_path, meta.slug)
+    generated = _generated_state()
+    state.kingdoms = generated.kingdoms
+    state.leaders = generated.leaders
+    state.provinces = generated.provinces
+    state.armies = generated.armies
+    state.features = generated.features
+    state.board_width = generated.board_width
+    state.board_height = generated.board_height
+
+    process_and_save_current_turn(tmp_path, meta.slug, state, game_dir(tmp_path, meta.slug))
+
+    lines = load_turn_processing_log(game_dir(tmp_path, meta.slug), 1)
+    assert lines is not None

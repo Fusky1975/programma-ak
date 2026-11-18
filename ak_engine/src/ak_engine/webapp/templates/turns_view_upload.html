@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ kingdom.name }} -- Saved Moves -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('turns_hub', slug=meta.slug) }}">&larr; Turns</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-report);">
+  <h2>{{ meta.name }} &mdash; {{ kingdom.name }} &mdash; Saved Moves ({{ filename }})</h2>
+  <pre class="report-text">{% for line in lines %}{{ line }}
+{% endfor %}</pre>
+</div>
+
+{% endblock %}
