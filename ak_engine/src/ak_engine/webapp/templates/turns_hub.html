@@ -40,6 +40,7 @@
           {% if kingdom_id in uploads %}
             <td class="status-ok">{{ uploads[kingdom_id].name }}</td>
             <td>
+              <a class="button" href="{{ url_for('turns_view_upload', slug=meta.slug, kingdom_id=kingdom_id) }}">View</a>
               <form class="inline" method="post" action="{{ url_for('turns_remove_upload', slug=meta.slug, kingdom_id=kingdom_id) }}">
                 <button type="submit" class="danger">Remove</button>
               </form>

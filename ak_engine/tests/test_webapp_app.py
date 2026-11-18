@@ -6312,6 +6312,58 @@ def test_turns_hub_shows_the_emperor_banner_once_one_is_crowned(tmp_path):
     assert b"Aldric" in response.data
 
 
+def test_turns_hub_shows_a_view_link_for_an_uploaded_kingdom(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert response.status_code == 200
+    assert f"/games/{meta.slug}/turns/1/view".encode() in response.data
+
+
+def test_turns_view_upload_shows_the_saved_move_file_content(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+
+    response = client.get(f"/games/{meta.slug}/turns/1/view")
+
+    assert response.status_code == 200
+    assert b"AK3__T1.K1" in response.data
+    assert b"Uga-Buga Makumb" in response.data
+
+
+def test_turns_view_upload_with_no_saved_file_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/view", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"No saved move file" in response.data
+
+
+def test_turns_view_upload_unknown_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/999/view", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_turns_view_upload_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/turns/1/view", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def _compose_form(leader_ids, *, action=ActionCode.DEFEND, obj=0, extra=""):
     # 5 phases (P0..P4), the base editor's own fixed PHASE_COUNT, every
     # one Defend by default -- see webapp/moves_compose.py's own
@@ -9230,6 +9282,56 @@ def test_turn_report_view_missing_game_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
 
     response = client.get("/games/does-not-exist/turns/1/report/1", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turn_report_list_links_to_the_processing_log(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    response = client.get(f"/games/{meta.slug}/turns/1/report")
+
+    assert response.status_code == 200
+    assert f"/games/{meta.slug}/turns/1/processing-log".encode() in response.data
+
+
+def test_turn_processing_log_view_after_processing_shows_dispatched_orders(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    response = client.get(f"/games/{meta.slug}/turns/1/processing-log")
+
+    assert response.status_code == 200
+    assert b"diagnostic log" in response.data
+
+
+def test_turn_processing_log_view_for_unprocessed_turn_shows_an_error_not_a_crash(tmp_path):
+    # Reaching this route for a turn that was never processed has no log
+    # to show -- it redirects into turn_report_list(), which (since the
+    # turn also isn't in processed_turn_numbers()) redirects again into
+    # its own "hasn't been processed yet" message rather than this
+    # route's own "No processing log found", same cascade turn_report_
+    # view()'s "Report not found" redirect would hit for an unprocessed
+    # turn.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/processing-log", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"hasn&#39;t been processed yet" in response.data or b"hasn't been processed yet" in response.data
+
+
+def test_turn_processing_log_view_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/turns/1/processing-log", follow_redirects=True)
 
     assert response.status_code == 200
     assert b"Game not found" in response.data

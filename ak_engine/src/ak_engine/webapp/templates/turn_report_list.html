@@ -6,6 +6,7 @@
 
 <div class="panel" style="border-left: 6px solid var(--phase-report);">
   <h2>{{ meta.name }} &mdash; Turn {{ turn_number }} Reports</h2>
+  <p><a class="button" href="{{ url_for('turn_processing_log_view', slug=meta.slug, turn_number=turn_number) }}">View Processing Log (what worked / what failed, GM only)</a></p>
   <ul class="game-list">
     {% for kingdom_id, kingdom in state.kingdoms.items() %}
       <li>
