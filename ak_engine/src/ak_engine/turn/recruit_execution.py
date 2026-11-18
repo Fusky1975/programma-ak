@@ -29,9 +29,22 @@ rulebook doesn't say which happens when a request exceeds what's
 affordable/allowed.
 
 **New army defaults**: quality ``Average`` (rulebook: "an army is levied
-from among the populace") and 0 movement points (conservative: the
-rulebook doesn't say whether a freshly recruited army can act the same
-phase, so it starts unable to move rather than guessing it can).
+from among the populace") and a full movement allowance (2026-11-18,
+user-confirmed: "Un'unità appena reclutata non ha 0 movimento. Ha
+l'intero movimento come da tabella delle armate... è anche logico: è
+un'unità fresca" -- a fresh unit is NOT movement-crippled the turn it's
+raised, the same ``ARMY_TABLE[army_type].speed`` every other freshly-
+created ``ArmyState`` in this project already gets (world-gen's own
+Home-province armies, ``parser/gw_world_bridge.py``'s GW import). The
+prior ``movement_points=0`` default was traced directly to a real,
+reproduced failure: a King commanding a mixed force -- some units
+carried over, one just Recruited this same turn and handed to him --
+had his *entire* Move order rejected outright
+(``turn/move_execution.py``'s own "an army with no movement points
+left this gameturn can't move" guard, which refuses to move a
+commanded group at all if *any* member of it can't), surfaced for the
+first time by the GM web interface's own per-turn processing log
+(``webapp/turn_processing.py``).
 
 **Hiring an existing mercenary (Phase 16)**: rulebook [3.4], "if there is
 an Average or higher quality mercenary army of that type in the
@@ -249,7 +262,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.army_type import OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
+from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.office import Office
@@ -637,7 +650,7 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                     quality=fresh_levy_quality,
                     location=location,
                     commanded_by=commanded_by,
-                    movement_points=0,
+                    movement_points=ARMY_TABLE[army_type].speed,
                     recruited_this_turn=True,
                 )
             )
