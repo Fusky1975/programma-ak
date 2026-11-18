@@ -2703,17 +2703,24 @@ def _move_result(
 
 
 def test_describe_move_renders_march_land():
+    # Bug fix (2026-11-18, user-reported "MOVE doesn't work"): the ^P
+    # marker used to be the internal LMOVE wire encoding (183 here,
+    # encode_hex_number(HexCoord(3, 9), board_width=20)) -- a stray,
+    # meaningless number with no sourced meaning in this exact spot.
+    # The real sample corpus (e.g. "the Virgo Sea (#1005)", SE3__T1.K1)
+    # confirms it's the real "(#<real_province_number>)" display, "0309"
+    # here (real_province_number(HexCoord(3, 9))).
     state = _leave_state(terrain=Terrain.PLAINS)
     rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
-    line = describe_move(_move_result(), state, character_name="Arthur", board_width=20, rng=rng)
-    assert line == "Arthur marched on Numenor 183 with Arthur's command."
+    line = describe_move(_move_result(), state, character_name="Arthur", rng=rng)
+    assert line == "Arthur marched on Numenor (#0309) with Arthur's command."
 
 
 def test_describe_move_resolves_sea_marker_from_terrain():
     state = _leave_state(terrain=Terrain.SEA)
     rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
-    line = describe_move(_move_result(), state, character_name="Arthur", board_width=20, rng=rng)
-    assert line == "Arthur sailed into Numenor 183 with Arthur's command."
+    line = describe_move(_move_result(), state, character_name="Arthur", rng=rng)
+    assert line == "Arthur sailed into Numenor (#0309) with Arthur's command."
 
 
 def test_describe_move_renders_travel_when_moved_without_armies():
@@ -2721,32 +2728,26 @@ def test_describe_move_renders_travel_when_moved_without_armies():
     # own army-flavored text.
     state = _leave_state(terrain=Terrain.PLAINS)
     rng = ScriptedRandom([], choice_indices=[0])
-    line = describe_move(
-        _move_result(moved_without_armies=True), state, character_name="Arthur", board_width=20, rng=rng
-    )
+    line = describe_move(_move_result(moved_without_armies=True), state, character_name="Arthur", rng=rng)
     assert line == "Arthur travelled to Numenor."
 
 
 def test_describe_move_travel_resolves_sea_marker_from_terrain():
     state = _leave_state(terrain=Terrain.SEA)
     rng = ScriptedRandom([], choice_indices=[1])
-    line = describe_move(
-        _move_result(moved_without_armies=True), state, character_name="Arthur", board_width=20, rng=rng
-    )
+    line = describe_move(_move_result(moved_without_armies=True), state, character_name="Arthur", rng=rng)
     assert line == "Arthur sailed into Numenor."
 
 
 def test_describe_move_returns_none_when_not_moved():
     state = _leave_state()
-    line = describe_move(_move_result(moved=False), state, character_name="Arthur", board_width=20, rng=ScriptedRandom([]))
+    line = describe_move(_move_result(moved=False), state, character_name="Arthur", rng=ScriptedRandom([]))
     assert line is None
 
 
 def test_describe_move_returns_none_without_new_location():
     state = _leave_state()
-    line = describe_move(
-        _move_result(new_location=None), state, character_name="Arthur", board_width=20, rng=ScriptedRandom([])
-    )
+    line = describe_move(_move_result(new_location=None), state, character_name="Arthur", rng=ScriptedRandom([]))
     assert line is None
 
 

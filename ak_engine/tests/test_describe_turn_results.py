@@ -500,6 +500,12 @@ def test_describe_turn_results_renders_defend_reinforcement():
 
 
 def test_describe_turn_results_renders_move():
+    # Bug fix (2026-11-18, user-reported "MOVE doesn't work"): the ^P
+    # marker used to be the internal LMOVE wire encoding (183 here,
+    # encode_hex_number(HexCoord(3, 9), board_width=20)) -- a stray,
+    # meaningless number. The real sample corpus (e.g. "the Virgo Sea
+    # (#1005)", SE3__T1.K1) confirms it's the real "(#<real_province_
+    # number>)" display, "0309" here.
     state = _state_with_leaders(_leader(1, "Aldric"))
     state.add_province(
         ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor")
@@ -513,11 +519,23 @@ def test_describe_turn_results_renders_move():
 
     lines = describe_turn_results(results, state, ScriptedRandom([0.1, 0.1], choice_indices=[0]), board_width=20)
 
-    assert lines == ["Aldric marched on Numenor 183 with Aldric's command."]
+    assert lines == ["Aldric marched on Numenor (#0309) with Aldric's command."]
 
 
-def test_describe_turn_results_skips_move_without_board_width():
+def test_describe_turn_results_renders_move_without_board_width():
+    # Bug fix (2026-11-18): describe_move() no longer needs board_width
+    # at all -- it switched from the internal encode_hex_number() wire
+    # encoding to the board-width-independent real_province_number()
+    # (see test_describe_turn_results_renders_move() above). Move
+    # narration used to be silently skipped whenever a caller omitted
+    # board_width (the "Opt-in via board_width" convention this
+    # module's own docstring documents, originally built only for
+    # describe_rumor()'s own, unrelated need) -- it no longer needs
+    # that gate at all.
     state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_province(
+        ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor")
+    )
     result = MoveExecutionResult(
         moved=True, battle_report=None, exploration=None, movement_points_spent=1, new_location=HexCoord(0, 0)
     )
@@ -525,9 +543,9 @@ def test_describe_turn_results_skips_move_without_board_width():
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.LMOVE, result=result, error=None)
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([]))
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
 
-    assert lines == []
+    assert lines == ["Aldric marched on Numenor (#0000) with Aldric's command."]
 
 
 def test_describe_turn_results_skips_trade_without_a_request():

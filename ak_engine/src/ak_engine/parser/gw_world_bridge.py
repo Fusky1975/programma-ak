@@ -200,6 +200,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+from ak_engine.models.army_type import ARMY_TABLE
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.hero_roster import STANDARD_HERO_ID_BY_NAME, STANDARD_HERO_SEX_BY_NAME
 from ak_engine.models.map import HexCoord, Terrain
@@ -326,6 +327,32 @@ class NewGameStateReport:
     # row, and whether removal converts to `251` or frees the slot for
     # reuse).
     dead_army_records_excluded: int = 0
+
+
+def _initial_movement_points(army_type: ArmyType) -> int:
+    """Bug fix (2026-11-18, user-reported "MOVE doesn't work"): every
+    army this bridge builds used to get ``ArmyState.movement_points``'s
+    own bare dataclass default (0, never set at either real call site
+    below) -- leaving an imported army unable to Move at all until the
+    first full ``turn/turn_processor.py run_turn()`` call's own end-of-
+    turn ``_replenish_turn_scoped_state()`` eventually replenished it.
+    A *pre-existing* army being bridged in from a real world file
+    should start with its own normal, full movement allowance, the
+    same real ``ARMY_TABLE[army_type].speed`` ``webapp/app.py
+    armies_create()``'s own admin "new army" route already uses, not
+    an accidental, unintentional 0 -- matching ``models/game_state.py``'s
+    own docstring, which already documents this as ``worldgen.
+    generate_new_game()``'s own real convention for a freshly-created
+    army. Falls back to 0 (unchanged from before this fix) for the 8
+    real ``ArmyType`` ordinals with no ``ARMY_TABLE`` entry at all
+    (Vampires, Marauders, Shamans, Crossbow, Javelins, Artillery,
+    Spiders, D_Turtle -- ``turn/recruit.py``'s own docstring) -- the
+    same "no source, no guess, no crash" convention ``_replenish_turn_
+    scoped_state()`` itself already uses for this identical gap.
+    """
+
+    stats = ARMY_TABLE.get(army_type)
+    return stats.speed if stats is not None else 0
 
 
 def bridge_new_game_state(
@@ -556,6 +583,7 @@ def bridge_new_game_state(
                 # is_mercenary`'s own docstring for why it isn't simply
                 # `owner_kingdom_id is None`.
                 is_mercenary=record.is_mercenary,
+                movement_points=_initial_movement_points(record.army_type),
             )
         )
         armies_created += 1
@@ -649,6 +677,7 @@ def apply_confirmed_hero_ids(
                     # see the main bridging loop's own branching above
                     # -- passed through anyway for consistency.
                     is_mercenary=record.is_mercenary,
+                    movement_points=_initial_movement_points(record.army_type),
                 )
             )
             report.armies_recovered += 1
