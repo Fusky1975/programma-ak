@@ -6297,13 +6297,17 @@ def test_turns_hub_shows_no_emperor_banner_before_any_election(tmp_path):
 
 
 def test_turns_hub_shows_the_emperor_banner_once_one_is_crowned(tmp_path):
-    # The game's own real sample move file (AK3__T1.K1) is enough on its
-    # own to crown an Emperor by the end of Turn 1 -- confirmed via a real
-    # end-to-end run, not assumed.
+    # 2026-11-18 bug fix, user-confirmed: no more automatic coronation
+    # from tax-base dominance alone (the real mechanism is a two-turn
+    # request-then-vote cycle this project's own move-file parser can't
+    # compose yet -- see turn/emperor_election.py's own Phase 466 note).
+    # This test only cares that the banner itself renders once state.
+    # emperor_kingdom_id is set, however that happens -- set directly.
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
-    _upload_move_file(client, meta.slug, "AK3__T1.K1")
-    client.post(f"/games/{meta.slug}/turns/process")
+    _, state = open_game(tmp_path, meta.slug)
+    state.emperor_kingdom_id = 1
+    save_game(tmp_path, meta.slug, state)
 
     response = client.get(f"/games/{meta.slug}/turns")
 

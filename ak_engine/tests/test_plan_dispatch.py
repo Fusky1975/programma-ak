@@ -674,9 +674,13 @@ def test_dispatch_search_leader_victory_marks_feature_looted():
         assert LEADER_ID in state.leaders
     else:
         # Phase 259: this leader is a King (see _state_with_army's own
-        # comment) -- a King's death installs a Royal Heir under the
-        # same leader_id rather than leaving the Kingdom leaderless.
+        # comment) -- a King's death owes a Royal Heir under the same
+        # leader_id rather than leaving the Kingdom leaderless, but not
+        # installed until install_pending_royal_heirs() runs (2026-11-18
+        # bug fix, user-confirmed).
         assert LEADER_ID in state.dead_leaders
+        assert LEADER_ID not in state.leaders
+        state.install_pending_royal_heirs()
         assert state.leaders[LEADER_ID].is_royal_heir is True
 
 

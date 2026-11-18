@@ -568,17 +568,34 @@ def test_record_world_event_is_independent_per_call():
 # -- Phase 259: King succession (remove_leader's Royal Heir installation) --
 
 
-def test_remove_leader_installs_a_royal_heir_when_a_king_dies():
+def test_remove_leader_leaves_a_dying_king_gone_for_the_rest_of_this_turn():
+    # 2026-11-18 bug fix, user-confirmed: a King vanishes from `leaders`
+    # the instant he dies, exactly like an ordinary Hero -- the Royal
+    # Heir doesn't take the throne until install_pending_royal_heirs()
+    # runs, at the real turn boundary, not synchronously here.
+    state = make_state()
+    king = LeaderState(1, 1, "Aldric", FIELD, is_king=True)
+    state.add_leader(king)
+
+    state.remove_leader(1)
+
+    assert 1 in state.dead_leaders
+    assert 1 not in state.leaders
+    assert state.pending_king_successions == {1}
+
+
+def test_install_pending_royal_heirs_installs_a_royal_heir_when_a_king_died():
     state = make_state()
     king = LeaderState(
         1, 1, "Aldric", FIELD, skills=SkillTable(raw_values=list(range(31))),
         is_king=True, temper=Temper.BRAVE, alignment=Alignment.GOOD, race=Race.HUMAN,
     )
     state.add_leader(king)
-
     state.remove_leader(1)
 
-    assert 1 in state.dead_leaders
+    state.install_pending_royal_heirs()
+
+    assert state.pending_king_successions == set()
     dead_king = state.dead_leaders[1]
     assert dead_king.name == "Aldric"
     assert dead_king.skills.raw_values == list(range(31))  # the exact original, untouched
@@ -616,6 +633,7 @@ def test_remove_leader_royal_heir_total_usable_skill_is_the_real_baseline_of_3()
     state.add_leader(king)
 
     state.remove_leader(1)
+    state.install_pending_royal_heirs()
 
     assert _total_usable_skill(state.leaders[1]) == 3
 

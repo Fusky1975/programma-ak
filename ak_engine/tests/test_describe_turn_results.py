@@ -325,9 +325,14 @@ def test_describe_turn_results_renders_practice_tutored_via_the_real_selected_te
         )
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 5), ability_names={Ability.MELEE: "Melee"})
+    lines = describe_turn_results(
+        results, state, ScriptedRandom([0.1] * 5, choice_indices=[0]), ability_names={Ability.MELEE: "Melee"}
+    )
 
-    assert lines == ["Aldric was tutored in Melee by Borin."]
+    assert lines == [
+        "Aldric was tutored in Melee by Borin.",
+        "Aldric practiced Aldric's Melee and Aldric's skill in Melee went up.",
+    ]
 
 
 def test_describe_turn_results_renders_practice_tutored_for_a_teacher_who_died_later_the_same_turn():
@@ -343,15 +348,21 @@ def test_describe_turn_results_renders_practice_tutored_for_a_teacher_who_died_l
         )
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 5), ability_names={Ability.MELEE: "Melee"})
+    lines = describe_turn_results(
+        results, state, ScriptedRandom([0.1] * 5, choice_indices=[0]), ability_names={Ability.MELEE: "Melee"}
+    )
 
-    assert lines == ["Aldric was tutored in Melee by Borin."]
+    assert lines == [
+        "Aldric was tutored in Melee by Borin.",
+        "Aldric practiced Aldric's Melee and Aldric's skill in Melee went up.",
+    ]
 
 
-def test_describe_turn_results_renders_nothing_for_a_group_rise_with_no_teacher():
-    # Non-regression: teacher_leader_id=None (a tied-skill group rise, or
-    # a solo Practice) still renders nothing, matching describe_practice()'s
-    # own established "no sourced narrative" stance.
+def test_describe_turn_results_renders_skill_rose_for_a_group_rise_with_no_teacher():
+    # 2026-11-18 bug fix, user-confirmed: teacher_leader_id=None (a
+    # tied-skill group rise, or a solo Practice) still gets the real
+    # "skill rose" sentence -- it just skips the separate tutoring
+    # sentence, which genuinely has no teacher to name.
     state = _state_with_leaders(_leader(1, "Aldric"))
     result = PracticeExecutionResult(ability=Ability.MELEE, skill_rose=True, new_skill=2, teacher_leader_id=None)
     results = [
@@ -360,9 +371,11 @@ def test_describe_turn_results_renders_nothing_for_a_group_rise_with_no_teacher(
         )
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([]), ability_names={Ability.MELEE: "Melee"})
+    lines = describe_turn_results(
+        results, state, ScriptedRandom([], choice_indices=[0]), ability_names={Ability.MELEE: "Melee"}
+    )
 
-    assert lines == []
+    assert lines == ["Aldric practiced Aldric's Melee and Aldric's skill in Melee went up."]
 
 
 def test_describe_turn_results_skips_practice_without_ability_names_map():

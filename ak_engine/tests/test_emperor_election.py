@@ -689,46 +689,51 @@ def test_process_election_turn_tally_caller_percentage_is_zero_when_none_was_pen
 def test_process_election_turn_scheduling_stores_caller_percent_for_the_tally_turn():
     # Phase 1191: the scheduling branch computes caller_percent while
     # kprevgold still holds the request toggle, and stores it for the
-    # later tally turn to copy forward verbatim.
+    # later tally turn to copy forward verbatim. Kingdom 1 alone (60%
+    # of the world's tax base) clears the real 55% request threshold.
     state = make_state()
-    give_tax(state, 1, HexCoord(0, 0), 30)
-    give_tax(state, 2, HexCoord(1, 1), 30)
-    give_tax(state, 3, HexCoord(2, 2), 40)
-    headers = {1: _header(VOTE_TURN_SENTINEL), 2: _header(VOTE_TURN_SENTINEL), 3: _header()}
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 20)
+    give_tax(state, 3, HexCoord(2, 2), 20)
+    headers = {1: _header(VOTE_TURN_SENTINEL), 2: _header(), 3: _header()}
 
     outcome = process_election_turn(state, headers, current_turn=5)
 
     assert isinstance(outcome, ElectionCallOutcome)
     assert outcome.election_scheduled_next_turn is True
     assert state.election_pending_caller_percent == outcome.caller_percent
-    assert state.election_pending_caller_percent == 60  # Kingdoms 1+2, 30+30 of 100 total
+    assert state.election_pending_caller_percent == 60
 
 
 # -- Phase 466: process_election_turn() -----------------------------------
 
 
-def test_process_election_turn_immediate_coronation_updates_state():
+def test_process_election_turn_never_crowns_without_a_real_request():
+    # 2026-11-18 bug fix, user-confirmed: no "immediate coronation" --
+    # even a Kingdom holding a dominant tax-base share does nothing at
+    # all unless it (or its alliance) actually requests a vote.
     state = make_state()
     give_tax(state, 1, HexCoord(0, 0), 60)
     give_tax(state, 2, HexCoord(1, 1), 20)
     give_tax(state, 3, HexCoord(2, 2), 20)
-    headers = {1: _header(), 2: _header(), 3: _header()}
+    headers = {1: _header(), 2: _header(), 3: _header()}  # nobody requested a vote
 
     outcome = process_election_turn(state, headers, current_turn=5)
 
     assert isinstance(outcome, ElectionCallOutcome)
-    assert outcome.immediate_coronation_kingdom_id == 1
-    assert state.emperor_kingdom_id == 1
-    assert state.last_emperor_vote_turn == 5
+    assert outcome.immediate_coronation_kingdom_id is None
+    assert outcome.election_scheduled_next_turn is False
+    assert state.emperor_kingdom_id is None
     assert state.election_pending_turn is None
 
 
-def test_process_election_turn_callers_schedule_next_turns_vote():
+def test_process_election_turn_a_qualifying_request_schedules_next_turns_vote():
+    # Kingdom 1 alone clears the real 55% threshold and requests a vote.
     state = make_state()
-    give_tax(state, 1, HexCoord(0, 0), 30)
-    give_tax(state, 2, HexCoord(1, 1), 30)
-    give_tax(state, 3, HexCoord(2, 2), 40)
-    headers = {1: _header(VOTE_TURN_SENTINEL), 2: _header(VOTE_TURN_SENTINEL), 3: _header()}
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 20)
+    give_tax(state, 3, HexCoord(2, 2), 20)
+    headers = {1: _header(VOTE_TURN_SENTINEL), 2: _header(), 3: _header()}
 
     outcome = process_election_turn(state, headers, current_turn=5)
 
@@ -736,17 +741,37 @@ def test_process_election_turn_callers_schedule_next_turns_vote():
     assert outcome.election_scheduled_next_turn is True
     assert state.election_pending_turn == 6
     assert state.emperor_kingdom_id is None
-    # No alignment bloc triggered this one -- callers' own weight alone.
     assert outcome.alignment_trigger is None
     assert state.election_pending_alignment_trigger is None
 
 
-def test_process_election_turn_persists_the_alignment_trigger_when_scheduling():
-    # Phase 778: mirrors test_evaluate_election_call_alignment_bloc_
-    # alone_triggers_next_turns_election()'s own fixture -- every
-    # individual Kingdom stays below threshold, but the two GOOD
-    # Kingdoms combined clear it, scheduling next turn's election
-    # through the alignment path alone.
+def test_process_election_turn_two_unallied_under_threshold_requesters_do_not_combine():
+    # 2026-11-18 bug fix, user-confirmed: the rulebook's own "un singolo
+    # Re, o un'alleanza di Re" means each requester's own real alliance
+    # coalition must individually clear 55% -- two unallied Kings who
+    # both happen to request a vote the same turn must NOT have their
+    # unrelated tax bases summed together, unlike this project's own
+    # now-unwired SS13.4 reading (evaluate_election_call()).
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 30)
+    give_tax(state, 3, HexCoord(2, 2), 40)
+    headers = {1: _header(VOTE_TURN_SENTINEL), 2: _header(VOTE_TURN_SENTINEL), 3: _header()}
+
+    outcome = process_election_turn(state, headers, current_turn=5)
+
+    assert isinstance(outcome, ElectionCallOutcome)
+    assert outcome.election_scheduled_next_turn is False
+    assert state.election_pending_turn is None
+
+
+def test_process_election_turn_never_auto_triggers_on_an_alignment_bloc_alone():
+    # 2026-11-18 bug fix, user-confirmed: no Alignment-bloc auto-trigger
+    # either -- mirrors test_evaluate_election_call_alignment_bloc_
+    # alone_triggers_next_turns_election()'s own fixture (every
+    # individual Kingdom below threshold, the two GOOD Kingdoms combined
+    # clear it), but nobody actually requested a vote, so nothing
+    # happens via the real per-turn path any more.
     state = GameState()
     state.add_kingdom(KingdomState(1, "A", Race.HUMAN, Alignment.GOOD, HOME))
     state.add_kingdom(KingdomState(2, "B", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
@@ -760,9 +785,10 @@ def test_process_election_turn_persists_the_alignment_trigger_when_scheduling():
     outcome = process_election_turn(state, headers, current_turn=30)
 
     assert isinstance(outcome, ElectionCallOutcome)
-    assert outcome.alignment_trigger == Alignment.GOOD
-    assert state.election_pending_turn == 31
-    assert state.election_pending_alignment_trigger == Alignment.GOOD
+    assert outcome.alignment_trigger is None
+    assert outcome.election_scheduled_next_turn is False
+    assert state.election_pending_turn is None
+    assert state.election_pending_alignment_trigger is None
 
 
 def test_process_election_turn_tallies_a_pending_votes_own_ballots():

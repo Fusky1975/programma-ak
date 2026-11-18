@@ -647,7 +647,20 @@ def _caller_percent(state: GameState, requesting_kingdom_ids: set[int]) -> int:
 def evaluate_election_call(
     state: GameState, requesting_kingdom_ids: set[int], current_turn: int
 ) -> ElectionCallOutcome:
-    """The real, disassembly-sourced per-turn Emperor-election evaluation
+    """**2026-11-18, user-disputed -- no longer called from the live
+    per-turn path.** This function's own "disassembly-sourced" report
+    SS13.4/13.6 citation does not match the real rulebook or the
+    user's own play experience, confirmed explicitly: "non conosco
+    questa regola. Non esiste nel regolamento e nella mia esperienza
+    non l'ho mai incontrata." `process_election_turn()` now calls
+    `can_request_election()` directly instead (see that call site's
+    own 2026-11-18 note) -- the rulebook-literal mechanism this
+    function's own docstring below describes as what it "supersedes."
+    Kept here, unchanged, only for the record (it still has its own
+    tests, exercising it as a self-contained, deterministic function)
+    -- do not re-wire this back into `process_election_turn()`.
+
+    The real, disassembly-sourced per-turn Emperor-election evaluation
     (report SS13.4/13.6, Phase 465) -- runs every turn automatically,
     regardless of whether any King explicitly asked, unlike `can_request_
     election()`'s own rulebook-literal reading (Phase 228, "un singolo
@@ -794,12 +807,32 @@ def process_election_turn(
         state.election_pending_caller_percent = 0
         return result
 
-    outcome = evaluate_election_call(state, requesting_kingdom_ids, current_turn)
-    if outcome.immediate_coronation_kingdom_id is not None:
-        state.emperor_kingdom_id = outcome.immediate_coronation_kingdom_id
-        state.last_emperor_vote_turn = current_turn
-    elif outcome.election_scheduled_next_turn:
+    # 2026-11-18 bug fix, user-confirmed: `evaluate_election_call()`'s
+    # own "immediate coronation" short-circuit and Alignment-bloc auto-
+    # trigger (report SS13.4/13.6) do not match the real rulebook or
+    # the user's own play experience ("non conosco questa regola. Non
+    # esiste nel regolamento e nella mia esperienza non l'ho mai
+    # incontrata.") -- confirmed explicitly, overriding that function's
+    # own "disassembly-sourced" citation. The rulebook-literal
+    # mechanism (`can_request_election()` -- a King/alliance requests a
+    # vote once their own combined tax base alone exceeds 55% of the
+    # world's, held the *next* turn, never two turns in a row) is the
+    # real one and is what's wired here now; `evaluate_election_call()`
+    # itself is kept, unchanged, for the record, but is no longer
+    # called from this live per-turn path.
+    callers_qualify = any(
+        can_request_election(state, kingdom_id, current_turn) for kingdom_id in requesting_kingdom_ids
+    )
+    caller_percent = _caller_percent(state, requesting_kingdom_ids)
+    outcome = ElectionCallOutcome(
+        world_total=_world_vote_weight(state),
+        immediate_coronation_kingdom_id=None,
+        callers_qualify=callers_qualify,
+        alignment_trigger=None,
+        caller_percent=caller_percent,
+    )
+    if outcome.election_scheduled_next_turn:
         state.election_pending_turn = current_turn + 1
-        state.election_pending_caller_percent = outcome.caller_percent
-        state.election_pending_alignment_trigger = outcome.alignment_trigger
+        state.election_pending_caller_percent = caller_percent
+        state.election_pending_alignment_trigger = None
     return outcome
