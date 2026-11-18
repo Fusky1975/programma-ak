@@ -3365,11 +3365,14 @@ def _execute_skeletal_army(
     naturally instead of being special-cased away first. See
     ``report/turn_report.py render_skeletal_army_outcome()``'s own
     docstring for the narration side. "All its movement points" is
-    approximated as ``movement_points=0``, the same fresh-unit default
-    every newly-recruited ``ArmyState`` gets (``turn/
-    recruit_execution.py``) -- carrying over the exact remaining
-    movement the original army had at the moment of its own death has no
-    precedent anywhere else in this project's state model. Every raised
+    approximated as ``movement_points=0`` -- carrying over the exact
+    remaining movement the original army had at the moment of its own
+    death has no precedent anywhere else in this project's state model
+    (and, unlike a fresh Recruit's own full-table allowance as of
+    2026-11-18, user-confirmed, there's no real-rule basis here for
+    guessing a full allowance instead: the dead army could plausibly
+    have already spent all of it in the very battle that killed it).
+    Every raised
     army gets ``is_skeletal=True`` (Phase 236) -- the real `Zomboid`
     army-state marker (`turn/army_naming.py`'s own docstring), driving
     the " Skel " tag in the real Army List table's own name column. The

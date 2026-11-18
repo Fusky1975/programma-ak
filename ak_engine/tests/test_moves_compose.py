@@ -215,16 +215,17 @@ def test_parse_phase_inputs_rejects_succ_trail_even_via_a_direct_tampered_value(
 
 def test_move_phase_rejects_when_a_commanded_army_has_no_movement_points():
     # Bug fix (2026-11-18, user-reported "MOVE doesn't work"): the King
-    # (or any leader) commanding a mixed force -- some units carried
-    # over from before, one freshly Recruited this same turn (turn/
-    # recruit_execution.py's own real movement_points=0 for a fresh
-    # levy) -- used to save this Move order fine, only to have it
-    # vanish completely during turn processing with nothing anywhere
-    # to explain why (turn/move_execution.py execute_move()'s own
-    # plain ValueError, caught and discarded by plan_dispatch.py's
-    # intentionally-broad per-phase handler). Confirmed via a live
-    # repro of the user's own report; now rejected here instead, at
-    # compose time, with a clear reason.
+    # (or any leader) commanding a mixed force with one army that
+    # genuinely has no movement points left this gameturn (already
+    # moved, or some other effect spent it -- NOT a freshly-Recruited
+    # unit, which gets a full movement allowance, user-confirmed) used
+    # to save this Move order fine, only to have it vanish completely
+    # during turn processing with nothing anywhere to explain why
+    # (turn/move_execution.py execute_move()'s own plain ValueError,
+    # caught and discarded by plan_dispatch.py's intentionally-broad
+    # per-phase handler). Confirmed via a live repro of the user's own
+    # report; now rejected here instead, at compose time, with a clear
+    # reason.
     state = _state()
     state.add_army(ArmyState(900, 1, ArmyType.LEGION, Quality.AVERAGE, HOME, commanded_by=KING_ID, movement_points=0))
     form = _all_defend_form(KING_ID)

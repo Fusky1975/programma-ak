@@ -4844,28 +4844,35 @@ def parse_phase_inputs(
             # (state.armies_commanded_by(leader_id), never a GM-chosen
             # subset), and turn/move_execution.py execute_move() raises
             # a plain ValueError if even one of them has no movement
-            # points left this gameturn -- caught by plan_dispatch.py's
+            # points left this gameturn -- confirmed correct,
+            # user-confirmed rule: a group moves together, so one
+            # genuinely spent-out member rightly stops the whole group.
+            # That ValueError used to be caught by plan_dispatch.py's
             # own intentionally-broad per-phase handler and recorded as
             # a silent `error`, never narrated (unlike the one real
             # exception type this report does narrate,
-            # IllegalMoveFromContestedError). A King already commanding
-            # a mixed force -- some units carried over, one freshly
-            # Recruited this same turn (turn/recruit_execution.py's own
-            # real movement_points=0 for a fresh levy) -- used to save
-            # this Move order fine and then have it vanish completely
-            # during turn processing, with nothing anywhere to explain
-            # why. Checked here, at compose time, instead -- the same
-            # "composer informs, engine enforces" rejection every other
-            # real Move/target precondition in this function already
-            # gets, confirmed via a live repro of the user's own report.
+            # IllegalMoveFromContestedError) -- a King commanding a
+            # mixed force with one genuinely out-of-movement army used
+            # to save this Move order fine and then have it vanish
+            # completely during turn processing, with nothing anywhere
+            # to explain why. Checked here, at compose time, instead --
+            # the same "composer informs, engine enforces" rejection
+            # every other real Move/target precondition in this
+            # function already gets. NOT a freshly-Recruited unit's own
+            # doing, despite this bug's own original report -- that
+            # turned out to be a separate, now-fixed bug of its own
+            # (turn/recruit_execution.py used to seed a fresh levy with
+            # movement_points=0; user-confirmed, 2026-11-18: a fresh
+            # unit gets its full ARMY_TABLE speed, same as every other
+            # freshly-created ArmyState in this project).
             immobile_army = next(
                 (army for army in state.armies_commanded_by(leader_id) if army.movement_points < 1), None
             )
             if immobile_army is not None:
                 raise InvalidComposedMovesError(
                     f"P{n}: this leader's own {ARMY_TYPE_NAME[immobile_army.army_type]} has no movement points "
-                    "left this gameturn -- a unit Recruited this same turn, or one that already moved, can't "
-                    "Move again until next gameturn. Leave it behind (Leave order) or wait a turn."
+                    "left this gameturn -- it already moved, or some other effect spent its movement. Leave "
+                    "it behind (Leave order) or wait a turn."
                 )
             extra: list[int | str] = []
         elif action is ActionCode.DEFEND:

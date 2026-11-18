@@ -473,6 +473,31 @@ def march_table_extra_movement(march_skill_level: int, army_speed: int) -> int:
     return table[level]
 
 
+def _unclaimed_flat_movement_bonus(army: ArmyState, march_skill_level: int, naval_skill_level: int) -> int:
+    """How much ``army.movement_points`` is still due to grow this very
+    call, from whichever of ``march_table_extra_movement()``/
+    ``naval_movement_point_bonus()`` it hasn't already banked this turn
+    -- mirroring the real application loop's own two gates (``is_land_
+    army``/``SEA_ARMY_TYPES``, ``march_table_bonus_applied_this_turn``/
+    ``naval_bonus_applied_this_turn``) exactly, since this is purely a
+    look-ahead onto that same logic for the "can this army move at
+    all" precondition above. Deliberately excludes ``march_movement_
+    point_bonus()`` (the Advanced-Ability-gated one) -- its own bands
+    (Cavalry only at 3+, Infantry only at 1-2) already exclude 0, so it
+    can never rescue an army that's genuinely out of movement_points,
+    unlike these two flat, skill-level-only bonuses.
+    """
+
+    if army.army_type in SEA_ARMY_TYPES:
+        return 0 if army.naval_bonus_applied_this_turn else naval_movement_point_bonus(naval_skill_level)
+    if is_land_army(army.army_type):
+        if army.march_table_bonus_applied_this_turn:
+            return 0
+        army_stats = ARMY_TABLE.get(army.army_type)
+        return march_table_extra_movement(march_skill_level, army_stats.speed if army_stats is not None else 1)
+    return 0
+
+
 def _naval_hug_coastline_move_is_legal(
     state: GameState, origin: HexCoord, target: HexCoord, bounds: MapBounds
 ) -> bool:
@@ -1611,7 +1636,20 @@ def execute_move(
         current = armies[0].location
         if any(army.location != current for army in armies):
             raise ValueError("all armies must move together from the same province")
-        if any(army.movement_points < 1 for army in armies):
+        # 2026-11-18 bug fix (user-confirmed): an army that's genuinely
+        # out of movement_points can still have real movement left once
+        # its still-unclaimed MARCH TABLE/Naval bonus is counted -- both
+        # are a flat function of the leader's own skill level and the
+        # army's own catalog speed (march_table_extra_movement()/
+        # naval_movement_point_bonus() below, applied later in this same
+        # function once the move is actually committed), never of the
+        # army's current movement_points, unlike the Advanced-Ability-
+        # gated march_movement_point_bonus() (whose own banding already
+        # excludes 0, so it can never rescue an exhausted army and needs
+        # no accounting for here). Checking only the raw, pre-bonus
+        # movement_points here used to reject the whole move before
+        # either bonus ever got a chance to apply.
+        if any(army.movement_points + _unclaimed_flat_movement_bonus(army, march_skill_level, naval_skill_level) < 1 for army in armies):
             raise ValueError("an army with no movement points left this gameturn can't move")
     else:
         current = state.leaders[leader_id].location

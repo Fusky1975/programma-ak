@@ -4,7 +4,7 @@ import pytest
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -45,6 +45,25 @@ def test_recruits_and_debits_exact_cost():
     # recruited -- turn/plan_dispatch.py _dispatch_pick_up()'s own
     # real consumer of this flag.
     assert state.armies[new_army_id].recruited_this_turn is True
+
+
+def test_fresh_levy_gets_a_full_movement_allowance_not_zero():
+    # Bug fix, user-confirmed (2026-11-18): "Un'unita appena reclutata
+    # non ha 0 movimento. Ha l'intero movimento come da tabella delle
+    # armate... e' anche logico: e' un'unita fresca." Traced directly
+    # to a real reported failure: a King commanding a mixed force --
+    # some units carried over, one just Recruited this same turn and
+    # handed to him -- had his whole Move order rejected outright
+    # (turn/move_execution.py's own "all armies move together" rule),
+    # even though every other army of his could move fine.
+    state = build_state()
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    new_army_id = result.recruited[0].army_id
+    assert state.armies[new_army_id].movement_points == ARMY_TABLE[ArmyType.BOWMEN].speed
+    assert state.armies[new_army_id].movement_points > 0
 
 
 def test_new_army_commanded_by_requested_leader():

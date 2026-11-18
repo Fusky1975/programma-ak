@@ -1023,6 +1023,47 @@ def test_raises_without_movement_points():
         execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
 
 
+def test_does_not_raise_when_the_march_table_bonus_alone_covers_it():
+    # Bug fix, user-confirmed (2026-11-18): "quando un'armata ha anche
+    # solo una unita che ha finito il movimento, giustamente si ferma"
+    # -- but march_table_extra_movement()/naval_movement_point_bonus()
+    # are a flat function of the leader's own skill level and the
+    # army's own catalog speed, never of its current movement_points,
+    # so an army truly down to 0 can still have real movement due once
+    # that still-unclaimed bonus is counted. BOWMEN's own catalog speed
+    # (2, the SLOW column) gives march_skill_level=2 a +1 bonus
+    # (march_table_extra_movement(2, 2) == 1) -- enough, on its own, to
+    # cover army 101's own 0 current movement_points.
+    state = base_state()
+    state.armies[101].movement_points = 0
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=2)
+
+    assert result.moved is True
+
+
+def test_still_raises_without_movement_points_when_no_bonus_is_due():
+    # Same 0-movement-points army as above, but with no march skill at
+    # all (the default) -- march_table_extra_movement(0, ...) is 0, so
+    # there's genuinely nothing left to cover it and the group still
+    # correctly can't move.
+    state = base_state()
+    state.armies[101].movement_points = 0
+
+    with pytest.raises(ValueError):
+        execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=0)
+
+
+def test_does_not_raise_when_the_naval_bonus_alone_covers_it():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=0)
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, naval_skill_level=1)
+
+    assert result.moved is True
+
+
 def test_raises_when_armies_do_not_share_origin():
     state = base_state()
     state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, DEFENDER_HOME, movement_points=3))
