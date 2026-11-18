@@ -4616,6 +4616,11 @@ def test_execute_search_talk_language_failure_uses_the_dead_kings_own_skill_not_
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert result.leader_killed is True
+    # 2026-11-18 bug fix, user-confirmed: the King stays gone from
+    # `leaders` for the rest of this turn -- no Heir until
+    # install_pending_royal_heirs() runs at the real turn boundary.
+    assert LEADER_ID not in state.leaders
+    state.install_pending_royal_heirs()
     assert state.leaders[LEADER_ID].is_royal_heir is True  # the King really was replaced by a Heir
     assert result.talk_language_failure is False
 

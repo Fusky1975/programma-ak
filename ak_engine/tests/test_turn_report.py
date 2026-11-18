@@ -6490,29 +6490,43 @@ def test_describe_practice_renders_already_maxed():
     result = PracticeExecutionResult(ability=0, skill_rose=False, new_skill=9, new_aptitude=5)
     rng = ScriptedRandom([0.1] * 4)
 
-    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+    lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
 
-    assert line == "Aldric practiced Tactics even though Aldric had already reached the maximum skill level."
+    assert lines == ["Aldric practiced Tactics even though Aldric had already reached the maximum skill level."]
 
 
-def test_describe_practice_renders_tutored_when_a_teacher_is_supplied():
+def test_describe_practice_renders_tutored_then_skill_rose_when_a_teacher_is_supplied():
     result = PracticeExecutionResult(ability=0, skill_rose=True, new_skill=3, new_aptitude=5)
-    rng = ScriptedRandom([0.1] * 4)
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
 
-    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", teacher_name="Borin", rng=rng)
+    lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", teacher_name="Borin", rng=rng)
 
-    assert line == "Aldric was tutored in Tactics by Borin."
+    assert lines == [
+        "Aldric was tutored in Tactics by Borin.",
+        "Aldric practiced Aldric's Tactics and Aldric's skill in Tactics went up.",
+    ]
 
 
-def test_describe_practice_renders_nothing_for_a_solo_rise_with_no_teacher():
-    # No sourced narrative template exists for solo Practice success at
-    # all -- see describe_practice()'s own docstring.
+def test_describe_practice_renders_skill_rose_for_a_solo_rise_with_no_teacher():
+    # 2026-11-18 bug fix, user-confirmed ("qui c'è l'insegnante. E anche
+    # senza c'è il messaggio") -- a solo rise with no teacher at all
+    # still gets the real "skill rose" sentence; see render_practice_
+    # skill_rose()'s own docstring for the sourcing.
     result = PracticeExecutionResult(ability=0, skill_rose=True, new_skill=3, new_aptitude=5)
-    rng = ScriptedRandom([])
+    rng = ScriptedRandom([], choice_indices=[0])
 
-    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+    lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
 
-    assert line is None
+    assert lines == ["Aldric practiced Aldric's Tactics and Aldric's skill in Tactics went up."]
+
+
+def test_describe_practice_skill_rose_second_variant():
+    result = PracticeExecutionResult(ability=0, skill_rose=True, new_skill=3, new_aptitude=5)
+    rng = ScriptedRandom([], choice_indices=[1])
+
+    lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+
+    assert lines == ["Aldric practiced Aldric's Tactics and improved noticeably."]
 
 
 # -- PRACVAIN.X (Phase 601) --
@@ -6541,27 +6555,27 @@ def test_describe_practice_renders_pracvain_for_a_normal_failed_roll():
     result = PracticeExecutionResult(ability=0, skill_rose=False, new_skill=3, new_aptitude=5)
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
-    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+    lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
 
-    assert line == "Aldric tried hard to improve Aldric's Tactics, but Aldric practiced in vain."
+    assert lines == ["Aldric tried hard to improve Aldric's Tactics, but Aldric practiced in vain."]
 
 
 def test_describe_practice_renders_nothing_for_an_aptitude_only_rise():
     result = PracticeExecutionResult(ability=0, skill_rose=False, aptitude_rose=True, new_skill=3, new_aptitude=6)
     rng = ScriptedRandom([])
 
-    line = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
+    lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
 
-    assert line is None
+    assert lines == []
 
 
 def test_describe_practice_renders_nothing_when_not_implemented_for_ability():
     result = PracticeExecutionResult(ability=0, not_implemented_for_ability=True)
     rng = ScriptedRandom([])
 
-    line = describe_practice(result, character_name="Aldric", ability_name="Tactical", rng=rng)
+    lines = describe_practice(result, character_name="Aldric", ability_name="Tactical", rng=rng)
 
-    assert line is None
+    assert lines == []
 
 
 # -- FRUMOR.X rumor narrative (Phase 244) -------------------------------

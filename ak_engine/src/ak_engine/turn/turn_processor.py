@@ -981,6 +981,14 @@ def run_turn(
     # `movement_points` itself) still needs no priming call before its
     # own first `run_turn()`.
     _replenish_turn_scoped_state(state)
+    # 2026-11-18 bug fix, user-confirmed: a King who died this turn must
+    # stay genuinely gone from state.leaders for the rest of it (exactly
+    # like an ordinary Hero) -- the Royal Heir only takes the throne
+    # for the turn that comes after, hence installing it here, at this
+    # same real turn boundary, rather than synchronously inside
+    # GameState.remove_leader() itself. See that method's own docstring
+    # for the full reasoning.
+    state.install_pending_royal_heirs()
     state.turn_number += 1
 
     return results

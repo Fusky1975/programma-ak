@@ -1703,6 +1703,22 @@ class GameState:
     # Archived by remove_leader() (Phase 59) -- see module docstring. Keyed
     # by the same leader_id, so a resurrection can look it up directly.
     dead_leaders: dict[int, LeaderState] = field(default_factory=dict)
+    # 2026-11-18 bug fix, user-confirmed: a King who dies vanishes from
+    # `leaders` for the rest of THIS turn, exactly like an ordinary Hero
+    # -- "Vitello e Royal Heir sono due personaggi diversi. Quando un
+    # eroe o un Re muore sparisce. Il Royal Heir compare solo a fine
+    # turno." `remove_leader()` used to install the Royal Heir into
+    # `leaders` under the same `leader_id` immediately/synchronously
+    # (same call that archived the dead King), letting a later phase
+    # this same turn (a Pick_Up/Give/Recruit naming that `leader_id`)
+    # wrongly succeed against a King who, per the real rule, no longer
+    # exists at all until the next turn. This set holds the `leader_id`
+    # of every King who died this turn and is still owed a Royal Heir
+    # -- `install_pending_royal_heirs()` (called once, at the same
+    # "run at the end, not the start" turn boundary `turn/turn_
+    # processor.py run_turn()`'s own `_replenish_turn_scoped_state()`
+    # call already uses) installs each one and clears this set.
+    pending_king_successions: set[int] = field(default_factory=set)
     # Battle deaths only (Phase 60) -- see module docstring.
     battle_graveyard: dict[HexCoord, list[GraveyardEntry]] = field(default_factory=dict)
     # Phase 309: next GraveyardEntry.death_seq to hand out -- see module
@@ -2242,11 +2258,28 @@ class GameState:
         ``_LSucc``: "<3 was succeeded by > next-in-line (who will use >
         predecessor's name until next turn)."). If the removed leader was
         a King in active service (``is_king`` and ``kingdom_id is not
-        None``), a Royal Heir is installed on the throne immediately,
-        under the same ``leader_id`` (the "next-in-line" the quote
-        describes) -- the Kingdom is never left permanently Kingless the
-        way it silently was before this phase. The Heir starts with the
-        same automatic training bonus a fresh King gets at creation
+        None``), a Royal Heir is owed the throne, under the same
+        ``leader_id`` (the "next-in-line" the quote describes) -- the
+        Kingdom is never left permanently Kingless the way it silently
+        was before this phase.
+
+        **2026-11-18 bug fix, user-confirmed**: the Heir used to be
+        installed into ``leaders`` right here, in this same call --
+        meaning a later phase this same turn (a Pick_Up/Give/Recruit
+        order naming this exact ``leader_id``) could succeed against a
+        King who, per the real rule, no longer exists at all until the
+        *next* turn ("Vitello e Royal Heir sono due personaggi diversi.
+        Quando un eroe o un Re muore sparisce. Il Royal Heir compare
+        solo a fine turno.") -- the King's own death-until-the-end-of-
+        this-turn window should look exactly like an ordinary Hero's:
+        gone from ``leaders`` outright. The dying King's own ``leader_
+        id`` is recorded in ``pending_king_successions`` instead, and
+        ``install_pending_royal_heirs()`` -- called once, at the real
+        turn boundary (``turn/turn_processor.py run_turn()``'s own
+        ``_replenish_turn_scoped_state()`` call site) -- is what
+        actually installs the Heir, for the turn that comes *after*
+        this one. The Heir starts with the same automatic training
+        bonus a fresh King gets at creation
         (**Phase 552 correction**, sourced from
         ``AKGEN_reverse_engineering_report (5).md`` SS6.2, machine-verified
         against ``AK.EXE:0x1D8E8`` and ``AKE.EXE:0xC143-0xC191``):
@@ -2301,6 +2334,23 @@ class GameState:
         leader.merit_tally.apply_death_penalty()
         self.dead_leaders[leader_id] = leader
         if leader.is_king and leader.kingdom_id is not None:
+            self.pending_king_successions.add(leader_id)
+
+    def install_pending_royal_heirs(self) -> None:
+        """Installs a Royal Heir for every ``leader_id`` in ``pending_
+        king_successions`` (``remove_leader()``'s own 2026-11-18
+        addendum), then clears it -- called once, at the real turn
+        boundary (``turn/turn_processor.py run_turn()``'s own
+        ``_replenish_turn_scoped_state()`` call site), so a King who
+        died this turn stays genuinely gone from ``leaders`` for the
+        rest of it and only gets his Heir for the turn that follows.
+        Reads the dead King's own archived fields straight out of
+        ``dead_leaders`` -- see ``remove_leader()``'s own docstring for
+        the full Heir-shape sourcing (Phase 259/552/557).
+        """
+
+        for leader_id in self.pending_king_successions:
+            leader = self.dead_leaders[leader_id]
             heir_skills = SkillTable(raw_values=[0] * 31)
             for bonus_ability in (Ability.MELEE, Ability.ARCHERY, Ability.SAGE):
                 heir_skills.set_pair_for_ability(bonus_ability, skill=1, aptitude=3)
@@ -2316,6 +2366,7 @@ class GameState:
                 race=leader.race,
                 is_royal_heir=True,
             )
+        self.pending_king_successions.clear()
 
     def armies_at(self, coord: HexCoord) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.location == coord]

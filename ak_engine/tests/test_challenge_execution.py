@@ -829,9 +829,14 @@ def test_execute_challenge_mutual_king_encounter_can_result_in_combat():
 
     assert result.accepted is True
     assert result.winner_leader_id == 1
-    # Phase 259: a King's death installs a Royal Heir under the same
-    # leader_id rather than leaving the Kingdom leaderless.
+    # Phase 259: a King's death owes a Royal Heir under the same
+    # leader_id rather than leaving the Kingdom leaderless -- not
+    # installed until install_pending_royal_heirs() runs though
+    # (2026-11-18 bug fix, user-confirmed): the dead King stays
+    # genuinely gone from `leaders` for the rest of this turn.
     assert 2 in state.dead_leaders
+    assert 2 not in state.leaders
+    state.install_pending_royal_heirs()
     assert state.leaders[2].is_royal_heir is True
 
 

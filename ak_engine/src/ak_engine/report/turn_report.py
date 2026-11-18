@@ -9206,13 +9206,13 @@ def describe_turn_results(
                 if entry.result.teacher_leader_id is not None
                 else None
             )
-            line = describe_practice(
-                entry.result, character_name=caster_name, ability_name=ability_name, teacher_name=teacher_name, rng=rng
+            lines.extend(
+                describe_practice(
+                    entry.result, character_name=caster_name, ability_name=ability_name, teacher_name=teacher_name, rng=rng
+                )
             )
-            if line is not None:
-                lines.append(line)
             # Phase 772: the Sage device-discovery roll is independent of
-            # the skill-rise outcome `line` above already narrates -- can
+            # the skill-rise outcome just narrated above -- can
             # co-occur with any of `describe_practice()`'s own branches.
             lines.extend(describe_sage_discovery(entry.result, character_name=caster_name, rng=rng))
             continue
@@ -9993,6 +9993,40 @@ def render_practice_tutored(character_name: str, ability_name: str, teacher_name
     return render(PRACTICE_TUTORED_TEMPLATE, values, rng=rng)
 
 
+# 2026-11-18 bug fix, user-confirmed ("qui c'è l'insegnante. E anche
+# senza c'è il messaggio"): a real skill rise was rendering NOTHING at
+# all here -- `render_practice_tutored()` (``_LTeach`` above) only ever
+# narrates the *tutoring* fact itself ("X was tutored in Y by Z."), a
+# separate sentence from the actual "skill rose" beat, which this
+# project never had a template for at all -- confirmed missing by
+# directly reading this project's own real fixture turn-1 samples
+# (`SE3__T1.K1`/`.K2`), which show it firing unconditionally whenever
+# `skill_rose` is true, tutored or not: "Uga-Buga Makumb practiced his
+# Necromancy and his skill in Necromancy went up." (solo, no tutor --
+# Uga-Buga Makumb is the King, acting alone) and "Guerin was tutored in
+# Necromancy by Uga-Buga Makumb.  Guerin practiced his Necromancy and
+# his skill in Necromancy went up." (tutored -- the exact same closing
+# sentence, right after `_LTeach`'s own). Two distinct real surface
+# forms confirmed across both samples, picked via `pick_variant()`
+# exactly like `_PRACVAIN_TEMPLATES` above -- matches ``SE3__T1.K1``'s
+# own "Guerin practiced his Necromancy and improved noticeably." too.
+_PRACTICE_SKILL_ROSE_TEMPLATES: list[str] = [
+    "< practiced > ^ and > skill in ^ went up.",
+    "< practiced > ^ and improved noticeably.",
+]
+
+
+def render_practice_skill_rose(character_name: str, ability_name: str, rng: random.Random) -> str:
+    """Renders the real "skill rose" closing sentence -- fires whenever
+    ``result.skill_rose``, independently of whether a teacher was also
+    involved (see this function's own 2026-11-18 addendum right above).
+    """
+
+    variant = pick_variant(_PRACTICE_SKILL_ROSE_TEMPLATES, rng)
+    values = {"<": character_name, ">": f"{character_name}'s", "^": ability_name}
+    return render(variant, values, rng=rng)
+
+
 # HostAK/TP/SAY.PAS _LAlrMax -- a single, real, hardcoded template (no
 # file), immediately follows _LTeach in RUMORS.PAS's own CONST block.
 # See module docstring's Phase 120 addendum.
@@ -10047,16 +10081,12 @@ def describe_practice(
     ability_name: str,
     teacher_name: str | None = None,
     rng: random.Random,
-) -> str | None:
-    """Assembles the one-sentence Practice narrative from an already-computed
-    ``PracticeExecutionResult`` (``turn/practice_execution.py
-    execute_practice()``/``execute_practice_group()``, Phase 44/46) --
-    the same ``describe_give()``-style composer (Phase 142).
-
-    Three of this project's Practice renderers are reachable here, each
-    needing information ``PracticeExecutionResult`` alone doesn't
-    always carry, matching ``describe_battle()``'s own caller-supplies-
-    names convention:
+) -> list[str]:
+    """Assembles the Practice narrative (one or two sentences) from an
+    already-computed ``PracticeExecutionResult`` (``turn/practice_
+    execution.py execute_practice()``/``execute_practice_group()``,
+    Phase 44/46) -- the same ``describe_give()``-style composer (Phase
+    142).
 
     - ``render_practice_already_maxed`` (``_LAlrMax``) fires when the
       attempt started at ``MAX_SKILL_LEVEL`` (9, ``CTBOTH.PAS``'s own
@@ -10066,42 +10096,50 @@ def describe_practice(
       the *only* way ``new_skill == MAX_SKILL_LEVEL`` can coexist with
       ``skill_rose is False`` (a failed roll from any lower level
       leaves ``new_skill`` at that lower level, never at 9).
-    - ``render_practice_tutored`` (``_LTeach``) fires when the skill
-      genuinely rose (``skill_rose``) *and* the caller supplies a
-      ``teacher_name`` -- the higher-skilled co-practicer rulebook
-      [3.13]'s own group-practice rule requires. **Phase 853**:
-      ``PracticeExecutionResult.teacher_leader_id`` now carries this --
-      ``execute_practice_group()``'s own ``_select_teacher()`` call
-      (Phase 446, already computed for ``Office.TEACHER``'s own merit
-      credit) is the exact same real teacher this narration needs, so
-      ``describe_turn_results()`` resolves it (dead-actor-safe) and
-      passes it straight through; a solo Practice (``execute_practice()``)
-      never sets the field at all, so a solo rise still renders nothing,
-      matching this composer's own "no sourced narrative for solo
-      success" stance. A tied-skill group rise (every co-practicer at
-      the same starting skill, ``_select_teacher()``'s own "no teacher
-      when tied" rule) likewise still renders nothing -- a real,
-      documented gap, not fixed here, since no source names a narration
-      for that specific case either.
+    - ``render_practice_tutored`` (``_LTeach``) fires first, as its own
+      leading sentence, whenever the caller supplies a ``teacher_name``
+      -- the higher-skilled co-practicer rulebook [3.13]'s own group-
+      practice rule requires. **Phase 853**: ``PracticeExecutionResult.
+      teacher_leader_id`` carries this -- ``execute_practice_group()``'s
+      own ``_select_teacher()`` call (Phase 446, already computed for
+      ``Office.TEACHER``'s own merit credit) is the exact same real
+      teacher this narration needs, so ``describe_turn_results()``
+      resolves it (dead-actor-safe) and passes it straight through. A
+      tied-skill group rise (every co-practicer at the same starting
+      skill, ``_select_teacher()``'s own "no teacher when tied" rule)
+      gets no tutoring sentence, same as a solo Practice.
+    - **2026-11-18 bug fix, user-confirmed**: ``render_practice_skill_
+      rose()`` (see its own addendum right above) fires whenever
+      ``result.skill_rose``, *independently* of whether a teacher was
+      also involved -- confirmed missing entirely by reading this
+      project's own real ``SE3__T1.K1``/``.K2`` fixture samples, where
+      it fires both solo (the acting King, alone) and right after the
+      tutoring sentence above (a co-practicer). Previously a solo rise
+      rendered nothing at all, the one real case this bug report
+      traced back to.
     - **Phase 601**: ``render_practice_vain`` (``_LStudV``) fires for a
       genuine total failure -- not already-maxed, ``skill_rose`` False,
-      and (unlike the prior two cases above, which already exclude it)
-      also ``aptitude_rose`` False and ``not_implemented_for_ability``
-      False, since an aptitude-only rise did achieve *something* and an
-      implementation gap is an engineering limitation, not an in-game
-      "practiced in vain" outcome -- neither should be narrated as one.
-    - Every remaining case (an aptitude-only rise, a solo skill rise
-      with no ``teacher_name``, ``not_implemented_for_ability``) still
-      has no sourced narrative and renders nothing.
+      and also ``aptitude_rose`` False and ``not_implemented_for_
+      ability`` False, since an aptitude-only rise did achieve
+      *something* and an implementation gap is an engineering
+      limitation, not an in-game "practiced in vain" outcome -- neither
+      should be narrated as one.
+    - Every remaining case (an aptitude-only rise with no skill rise,
+      ``not_implemented_for_ability``) still has no sourced narrative
+      and renders nothing.
     """
 
     if result.new_skill == MAX_SKILL_LEVEL and not result.skill_rose:
-        return render_practice_already_maxed(character_name, ability_name, rng)
-    if result.skill_rose and teacher_name is not None:
-        return render_practice_tutored(character_name, ability_name, teacher_name, rng)
+        return [render_practice_already_maxed(character_name, ability_name, rng)]
+    if result.skill_rose:
+        lines = []
+        if teacher_name is not None:
+            lines.append(render_practice_tutored(character_name, ability_name, teacher_name, rng))
+        lines.append(render_practice_skill_rose(character_name, ability_name, rng))
+        return lines
     if not result.skill_rose and not result.aptitude_rose and not result.not_implemented_for_ability:
-        return render_practice_vain(character_name, ability_name, rng)
-    return None
+        return [render_practice_vain(character_name, ability_name, rng)]
+    return []
 
 
 # HostAK/TP/PROSE/DISCOV.X -- Sage's device-discovery success (rulebook
