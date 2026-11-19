@@ -213,10 +213,13 @@ def test_execute_use_mi_charm_wand_is_exempt_from_aggressive_intent():
 
 
 def test_execute_use_mi_invisibility_wand_never_marks_aggressive_intent():
-    # Ring of Invisibility is the other named exception. Invisibility has
-    # no strategic-level Cast execution in this project (Personal-Combat
-    # only), so this also confirms the flag stays False when nothing was
-    # actually cast, not just the exemption itself.
+    # Ring of Invisibility is the other named exception. Invisibility is
+    # a Personal-Combat-only spell with no effect outside combat -- see
+    # test_execute_use_mi_personal_combat_only_wand_is_used_improperly()
+    # below for the 2026-11-19, user-confirmed specific rejection this
+    # now reports (and the un-consumed charge) -- so this also confirms
+    # the flag stays False when nothing was actually cast, not just the
+    # exemption itself.
     state = build_state()
     item = state.add_item(Treasure.WAND_INVISIBILITY, owner_leader_id=CASTER_ID, charges=1)
     request = UseMIRequest(item_instance_id=item.item_id, target=CASTER_ID)
@@ -224,6 +227,27 @@ def test_execute_use_mi_invisibility_wand_never_marks_aggressive_intent():
     result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
 
     assert result.marks_aggressive_intent is False
+
+
+def test_execute_use_mi_personal_combat_only_wand_is_used_improperly():
+    # 2026-11-19 bug fix, user-confirmed: "Sono oggetti che vanno usati
+    # solo in combattimento. Se usati fuori dal combattimento non
+    # funzionano e compare un messaggio tipo: 'L'oggetto non funziona
+    # perché è stato usato in maniera impropria'" -- before this fix,
+    # using the Ring of Invisibility (or any of its 4 siblings) outside
+    # personal combat always fell through to the generic "spell effect
+    # not modeled" rejection instead. No charge is spent either way
+    # (same "a charge is spent only when the cast genuinely happens"
+    # rule this module's own docstring already establishes).
+    state = build_state()
+    item = state.add_item(Treasure.WAND_INVISIBILITY, owner_leader_id=CASTER_ID, charges=1)
+    request = UseMIRequest(item_instance_id=item.item_id, target=CASTER_ID)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is False
+    assert result.reason == "the item doesn't work because it was used improperly"
+    assert state.items[item.item_id].charges == 1
 
 
 def test_execute_use_mi_book_read_does_not_mark_aggressive_intent():
