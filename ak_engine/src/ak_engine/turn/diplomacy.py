@@ -163,7 +163,7 @@ def _is_evil_or_undead(state: GameState, kingdom_id: int) -> bool:
 
 
 def is_attackable_at(
-    state: GameState, defender_kingdom_id: int, attacker_kingdom_id: int, province: ProvinceState
+    state: GameState, defender_kingdom_id: int | None, attacker_kingdom_id: int, province: ProvinceState
 ) -> bool:
     """[8.1]'s own "triangle" rule, generalized (see module docstring):
     an army of ``defender_kingdom_id`` physically present at ``province``
@@ -175,6 +175,19 @@ def is_attackable_at(
     defender-gathering call site (``turn/move_execution.py``,
     ``turn/battle_orchestrator.py``) so the two project-wide "who's a
     legitimate target here" checks never drift apart.
+
+    ``defender_kingdom_id`` may be ``None`` (2026-11-19 bug fix, user-
+    confirmed via a real GW3 world file cross-check: an independent
+    Hero's own personally-led, non-mercenary army -- e.g. a wandering
+    Hero ruling and defending a province -- has ``kingdom_id=None`` too,
+    the same as a genuinely passive, recruitable mercenary band, but is
+    a real combatant). ``state.is_allied(None, ...)`` already returns
+    ``False`` (never allied), so a ``None`` defender is correctly
+    "attackable" by (a) above -- only (b), an Allied *province owner*
+    shielding it, can still exclude it. Every real call site is
+    responsible for excluding actual recruitable mercenaries itself
+    (``ArmyState.is_mercenary``, a separate, correct concept from
+    "which Kingdom commands this") before ever reaching this check.
     """
 
     if state.is_allied(defender_kingdom_id, attacker_kingdom_id):

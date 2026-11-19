@@ -2100,8 +2100,13 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         # based defender derivation below would then find zero real
         # defenders and raise -- uncaught here, unlike the per-leader
         # dispatch paths (see module docstring's own Phase 1041 note).
+        # 2026-11-19 bug fix, user-confirmed -- see turn/move_execution.py's
+        # own matching 2026-11-19 addendum: excludes actual recruitable
+        # mercenaries (`ArmyState.is_mercenary`), not every `kingdom_id
+        # is None` army (an independent Hero's own personally-led army
+        # is a real defender too).
         defenders_present = any(
-            army.kingdom_id is not None and is_attackable_at(state, army.kingdom_id, attacker_kingdom_id, province)
+            not army.is_mercenary and is_attackable_at(state, army.kingdom_id, attacker_kingdom_id, province)
             for army in armies_here
         )
         if not defenders_present:
@@ -2615,17 +2620,22 @@ def _sees_nonallied_defender(
     if not state.armies_commanded_by(tl.leader.leader_id):
         return False
     target_province = state.provinces.get(target)
+    # 2026-11-19 bug fix, user-confirmed -- see turn/move_execution.py's
+    # own matching 2026-11-19 addendum: excludes actual recruitable
+    # mercenaries (`ArmyState.is_mercenary`), not every `kingdom_id is
+    # None` army (an independent Hero's own personally-led army is a
+    # real defender too).
     if target_province is None:
         # Every in-bounds hex gets a real ProvinceState at worldgen time
         # (confirmed in the Batch 2b review of battle_orchestrator.py),
         # so this is not expected to be reachable -- kept as a graceful
         # fallback to the old, narrower check rather than a crash.
         return any(
-            army.kingdom_id is not None and not state.is_allied(army.kingdom_id, tl.kingdom_id)
+            not army.is_mercenary and not state.is_allied(army.kingdom_id, tl.kingdom_id)
             for army in state.armies_at(target)
         )
     return any(
-        army.kingdom_id is not None and is_attackable_at(state, army.kingdom_id, tl.kingdom_id, target_province)
+        not army.is_mercenary and is_attackable_at(state, army.kingdom_id, tl.kingdom_id, target_province)
         for army in state.armies_at(target)
     )
 

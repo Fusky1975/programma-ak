@@ -1931,10 +1931,25 @@ def execute_move(
     army_ids = planned_army_ids
     armies = planned_armies
 
+    # 2026-11-19 bug fix, user-confirmed via a real GW3 world file
+    # cross-check: `army.kingdom_id is not None` is NOT the right proxy
+    # for "a real combatant" -- an independent Hero's own personally-led
+    # army (e.g. a wandering Hero ruling and defending a province) also
+    # has `kingdom_id=None`, same as a genuinely passive, recruitable
+    # mercenary band, but it's a real defender (confirmed: GW3__T1's own
+    # Melantheus/Tao-Li both have `kingdom_id=None`, `is_mercenary=
+    # False`, and a real deployed army in the matching SE3__T1.K1 battle
+    # report). `ArmyState.is_mercenary` is this project's own already-
+    # established, correct proxy for "passive, not a combatant" (see its
+    # own docstring) -- excluding on that instead, and letting
+    # `is_attackable_at()` take a `None` defender_kingdom_id directly,
+    # fixes the gap: every province previously defended only by an
+    # independent Hero's own army (not a King-owned Kingdom) wrongly
+    # never triggered a battle at all.
     defenders_present = [
         army
         for army in state.armies_at(actual_target)
-        if army.kingdom_id is not None and is_attackable_at(state, army.kingdom_id, kingdom_id, target_province)
+        if not army.is_mercenary and is_attackable_at(state, army.kingdom_id, kingdom_id, target_province)
     ]
     occupied_by_enemy = bool(armies) and bool(defenders_present)
 

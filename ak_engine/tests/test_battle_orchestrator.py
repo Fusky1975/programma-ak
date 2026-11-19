@@ -893,9 +893,12 @@ def test_mercenaries_at_the_target_province_do_not_get_swept_in_as_defenders():
     # A masterless mercenary band sitting in a contested-owner province
     # isn't anyone's defender by default -- rulebook doesn't grant it that
     # role, and `is_allied(None, x)` being False must not be read as "this
-    # is an enemy".
+    # is an enemy". `is_mercenary=True` is what actually marks it passive
+    # (2026-11-19 bug fix: `kingdom_id is None` alone is NOT that signal --
+    # an independent Hero's own personally-led army has kingdom_id=None
+    # too, but is a real defender; this fixture needs the real flag).
     state = build_state()
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, FIELD))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, FIELD, is_mercenary=True))
     rng = no_luck_overwhelming_attacker_rng()
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
