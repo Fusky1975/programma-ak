@@ -402,7 +402,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
-from ak_engine.turn.cast_execution import CastExecutionResult, LocateObjectResult
+from ak_engine.turn.cast_execution import CastExecutionResult, LocateObjectResult, WAND_USED_IMPROPERLY_REASON
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
 from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
@@ -8174,6 +8174,22 @@ def test_describe_cast_renders_nothing_when_not_applied():
     assert line is None
 
 
+def test_describe_cast_renders_the_wand_used_improperly_message():
+    # 2026-11-19 bug fix, user-confirmed: the one rejection reason this
+    # function renders real text for instead of staying silent -- see
+    # WAND_USED_IMPROPERLY_REASON's own comment in turn/cast_execution.py.
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.INVISIBILITY, target=0),
+        applied=False,
+        reason=WAND_USED_IMPROPERLY_REASON,
+    )
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng)
+
+    assert line == "Aldric tried to use the Ring of Invisibility, but it doesn't work because it was used improperly."
+
+
 # -- Locate Object (Phase 878, project-original text) ------------------------
 
 
@@ -8424,6 +8440,23 @@ def test_describe_use_mi_renders_nothing_when_the_wand_cast_fizzled():
     line = describe_use_mi(result, caster_name="Aldric", rng=rng, target_name="Borin")
 
     assert line is None
+
+
+def test_describe_use_mi_renders_the_wand_used_improperly_message():
+    # 2026-11-19 bug fix, user-confirmed: delegates straight to describe_
+    # cast()'s own new branch, the same "wand use is a real Cast under
+    # the hood" delegation this function's docstring already describes.
+    cast_result = CastExecutionResult(
+        request=CastRequest(spell=Spell.FIREBALL, target=0),
+        applied=False,
+        reason=WAND_USED_IMPROPERLY_REASON,
+    )
+    result = UseMIExecutionResult(applied=False, reason=WAND_USED_IMPROPERLY_REASON, cast_result=cast_result)
+    rng = ScriptedRandom([])
+
+    line = describe_use_mi(result, caster_name="Aldric", rng=rng)
+
+    assert line == "Aldric tried to use the Wand of Fire, but it doesn't work because it was used improperly."
 
 
 def test_describe_use_mi_renders_nothing_for_a_skill_book_without_names():

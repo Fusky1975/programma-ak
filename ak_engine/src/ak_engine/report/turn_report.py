@@ -1372,7 +1372,15 @@ from ak_engine.models.discovery import (
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
-from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
+from ak_engine.models.treasure import (
+    GOLD_HOARD_DISPLAY_NAME,
+    TREASURE_CATEGORY,
+    TREASURE_LABEL,
+    TREASURE_NAME,
+    TREASURE_WAND_SPELL,
+    Treasure,
+    TreasureCategory,
+)
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.ascii_map import (
     LAYOUT_TIERS,
@@ -1397,7 +1405,12 @@ from ak_engine.turn.battle_luck import (
     render_cluck_event,
 )
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
-from ak_engine.turn.cast_execution import CastExecutionResult, is_unfinalized_royal_heir
+from ak_engine.turn.cast_execution import (
+    CastExecutionResult,
+    WAND_PERSONAL_COMBAT_ONLY_SPELLS,
+    WAND_USED_IMPROPERLY_REASON,
+    is_unfinalized_royal_heir,
+)
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.emperor_election import (
@@ -4682,7 +4695,13 @@ def describe_cast(
     target, an unsuitable province, or (``result.reason == "spell
     effect not modeled"``) one of the 10 unexecuted spells all have no
     sourced narrative and are correctly silent, mirroring ``describe_
-    practice()``'s own "no narratable outcome" stance. **Correction
+    practice()``'s own "no narratable outcome" stance. **2026-11-19
+    correction**: this is no longer true of every rejection -- ``result.
+    reason == WAND_USED_IMPROPERLY_REASON`` (a wand-triggered cast of
+    one of the 5 Personal-Combat-only spells with a real wand item, see
+    ``render_wand_used_improperly()``'s own comment) now renders real,
+    user-supplied text instead, checked first, before this function's
+    own "every other rejection is silent" stance applies. **Correction
     (Phase 603)**: this used to also claim "a fizzled roll" belongs in
     that same silent bucket -- ``SFAIL.X`` (``render_spell_cast_
     failed()`` below) is real, sourced text for exactly that scenario,
@@ -4771,6 +4790,14 @@ def describe_cast(
     """
 
     if not result.applied:
+        # 2026-11-19 bug fix, user-confirmed: the one real, sourced
+        # exception to this function's own "every rejection reason is
+        # correctly silent" rule above -- see ``render_wand_used_
+        # improperly()``'s own comment for the full quote and sourcing.
+        if result.reason == WAND_USED_IMPROPERLY_REASON:
+            treasure = _WAND_SPELL_TO_TREASURE.get(result.request.spell)
+            if treasure is not None:
+                return render_wand_used_improperly(caster_name, TREASURE_NAME[treasure], rng)
         return None
     spell = result.request.spell
     if spell is Spell.SKELETAL_ARMY:
@@ -5123,6 +5150,36 @@ def render_skill_book_read(character_name: str, book_name: str, ability_name: st
 
     values = {"<": character_name, ">": f"{character_name}'s", "\\": book_name, "^": ability_name}
     return render(SKILL_BOOK_READ_TEMPLATE, values, rng=rng)
+
+
+# 2026-11-19 bug fix, user-confirmed: **project-original, not sourced
+# from SAY.PAS/RUMORS.PAS**, the same "explicitly documented as an
+# unsourced design choice" convention ``SKILL_BOOK_READ_TEMPLATE`` above
+# already follows. User's own words (quoted in full in ``turn/cast_
+# execution.py WAND_USED_IMPROPERLY_REASON``'s own comment): "Sono
+# oggetti che vanno usati solo in combattimento. Se usati fuori dal
+# combattimento non funzionano e compare un messaggio tipo: 'L'oggetto
+# non funziona perché è stato usato in maniera impropria'". ``\\`` is
+# the item's own ``TREASURE_NAME`` display string, resolved via
+# ``_WAND_SPELL_TO_TREASURE`` below -- the same "\\" (Magic Item) marker
+# ``render_skill_book_read()``/``render_item_give()`` already use.
+WAND_USED_IMPROPERLY_TEMPLATE = "< tried to use the \\, but it doesn't work because it was used improperly."
+
+# The inverse of ``models/treasure.py TREASURE_WAND_SPELL`` (a 1:1
+# mapping already, by construction) -- resolves which of the 5 real
+# wand items a rejected ``WAND_PERSONAL_COMBAT_ONLY_SPELLS`` cast came
+# from, for ``render_wand_used_improperly()`` below.
+_WAND_SPELL_TO_TREASURE: dict[Spell, Treasure] = {spell: treasure for treasure, spell in TREASURE_WAND_SPELL.items()}
+
+
+def render_wand_used_improperly(character_name: str, item_name: str, rng: random.Random) -> str:
+    """Renders the project-original "used improperly" sentence -- see
+    ``WAND_USED_IMPROPERLY_TEMPLATE``'s own comment for why this isn't a
+    real ``SAY.PAS``/``RUMORS.PAS`` transcription.
+    """
+
+    values = {"<": character_name, "\\": item_name}
+    return render(WAND_USED_IMPROPERLY_TEMPLATE, values, rng=rng)
 
 
 def describe_use_mi(
@@ -9601,6 +9658,17 @@ def describe_turn_results(
                         lines.append(render_hide_feature_outcome(caster_name, province_name, feature_names, rng))
                     continue
                 if spell is Spell.SKELETAL_ARMY:
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell in WAND_PERSONAL_COMBAT_ONLY_SPELLS:
+                    # 2026-11-19 bug fix, user-confirmed: the one Use_MI
+                    # rejection `describe_use_mi()`/`describe_cast()` now
+                    # render real text for (`WAND_USED_IMPROPERLY_REASON`,
+                    # see that constant's own comment) -- needs no
+                    # province/character target of its own, the same
+                    # "no further context" shape as Skeletal Army above.
                     line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng)
                     if line is not None:
                         lines.append(line)

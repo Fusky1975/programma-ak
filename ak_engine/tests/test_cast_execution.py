@@ -33,6 +33,8 @@ from ak_engine.turn.cast_execution import (
     SCAR_TERRAIN_LAND_COLLAPSE_RACES,
     SCAR_TERRAIN_TAX_REDUCTION,
     UNDEAD_CONVERSION_STEP_BUDGET_NUMERATOR,
+    WAND_PERSONAL_COMBAT_ONLY_SPELLS,
+    WAND_USED_IMPROPERLY_REASON,
     LocateObjectResult,
     _apply_undead_king_alignment_conversion,
     _caster_holds_places_bonus,
@@ -112,6 +114,44 @@ def test_execute_cast_by_a_dead_leader_is_a_clean_refusal_not_a_crash():
 
     assert result.applied is False
     assert result.reason == "acting leader not found"
+
+
+# -- 2026-11-19 bug fix: wands of Personal-Combat-only spells, used outside combat --
+
+
+@pytest.mark.parametrize("spell", sorted(WAND_PERSONAL_COMBAT_ONLY_SPELLS, key=lambda spell: spell.value))
+def test_wand_cast_of_a_personal_combat_only_spell_is_used_improperly(spell: Spell):
+    # User-confirmed: "Sono oggetti che vanno usati solo in
+    # combattimento. Se usati fuori dal combattimento non funzionano e
+    # compare un messaggio tipo: 'L'oggetto non funziona perché è stato
+    # usato in maniera impropria'" -- a wand-triggered cast (wand_skill_
+    # level is not None) of one of these 5 spells must report this
+    # specific reason, not the generic "spell effect not modeled" every
+    # other Personal-Combat-only spell still gets.
+    state = build_state()
+    request = CastRequest(spell=spell, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, wand_skill_level=2)
+
+    assert result.applied is False
+    assert result.reason == WAND_USED_IMPROPERLY_REASON
+
+
+@pytest.mark.parametrize("spell", sorted(WAND_PERSONAL_COMBAT_ONLY_SPELLS, key=lambda spell: spell.value))
+def test_ordinary_cast_of_a_personal_combat_only_spell_stays_on_the_generic_fallback(spell: Spell):
+    # Without a real wand trigger (wand_skill_level=None), these 5 stay
+    # on the pre-existing generic rejection -- this project has no
+    # confirmed real path that ever decodes one of these as a top-level
+    # ActionCode.CAST in the first place (see cast_decode.py's own
+    # docstring), so nothing here is guessed at beyond the user's own
+    # wand-specific correction.
+    state = build_state()
+    request = CastRequest(spell=spell, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "spell effect not modeled"
 
 
 # -- Phase 547: Valhalla visitor spell immunity except Resurrection --

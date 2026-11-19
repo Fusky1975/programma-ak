@@ -1144,6 +1144,42 @@ class CastExecutionResult:
     plague_quality_downgraded: list[ArmyState] = field(default_factory=list)
 
 
+# 2026-11-19 bug fix, user-confirmed: of the 20 real spell-wands
+# (``models/treasure.py TREASURE_WAND_SPELL``, ordinals 0-19), exactly
+# 5 cast one of this module's own "Personal-Combat-only" spells (see
+# this module's own docstring) -- Holy Symbol (Golden Cross), Hand of
+# Death (Glove of Death), Fireball (Wand of Fire), Psychic Blast
+# (Antennae of Psychic Blasting), Invisibility (Ring of Invisibility).
+# Before this fix, using one of these 5 items via Use_MI always fell
+# through to the generic ``"spell effect not modeled"`` rejection below
+# -- accurate (nothing *is* modeled for these spells outside personal
+# combat) but not what the real game tells the player. User's own
+# words, quoted directly: "Sono oggetti che vanno usati solo in
+# combattimento. Se usati fuori dal combattimento non funzionano e
+# compare un messaggio tipo: 'L'oggetto non funziona perché è stato
+# usato in maniera impropria'" (these are items usable only in combat;
+# used outside combat they don't work, and a message like "the item
+# doesn't work because it was used improperly" appears). Scoped to
+# exactly these 5 (not the other 10 Personal-Combat-only spells, which
+# have no real wand item at all and can never reach this dispatch in
+# practice) and to a genuine wand trigger (``wand_skill_level is not
+# None``) specifically, since that's what the user's own description
+# names ("oggetti") -- an ordinary skill-based Cast order naming one of
+# these 5 ordinals directly is a separate, still-unconfirmed scenario
+# (never observed in any real sample Cast phase, per ``turn/cast_
+# decode.py``'s own docstring) left on the pre-existing generic
+# fallback rather than guessed at here.
+WAND_PERSONAL_COMBAT_ONLY_SPELLS = frozenset(
+    {Spell.HOLY_SYMBOL, Spell.HAND_OF_DEATH, Spell.FIREBALL, Spell.PSYCHIC_BLAST, Spell.INVISIBILITY}
+)
+
+# Named so ``report/turn_report.py describe_cast()`` can render the
+# user-supplied message for this one specific rejection reason (every
+# other reason this module ever sets stays correctly silent, per that
+# function's own docstring) without duplicating the literal string.
+WAND_USED_IMPROPERLY_REASON = "the item doesn't work because it was used improperly"
+
+
 def execute_cast(
     state: GameState,
     kingdom_id: int,
@@ -1256,6 +1292,8 @@ def execute_cast(
         result = _execute_locate_object(state, leader_id, request, rng, wand_skill_level)
     elif spell is Spell.ILLUS_FOG:
         result = _execute_illus_fog(state, leader_id, request, rng, board_width, wand_skill_level)
+    elif spell in WAND_PERSONAL_COMBAT_ONLY_SPELLS and wand_skill_level is not None:
+        return CastExecutionResult(request, applied=False, reason=WAND_USED_IMPROPERLY_REASON)
     else:
         return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
 
