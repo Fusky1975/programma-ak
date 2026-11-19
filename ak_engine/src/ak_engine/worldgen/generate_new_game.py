@@ -706,6 +706,14 @@ def generate_new_game(
     humanoid_coords = [coord for coord in grid if race_grid[coord] in _HUMANOID_RACES]
     lord_count = max(0, owner_leader_count(len(humanoid_coords), leader_count, king_count) - king_count)
     lord_coords = [coord for coord in humanoid_coords if coord not in king_home_set][:lord_count]
+    # 2026-11-19 bug fix, user-confirmed ("Tutti gli eroi indipendenti
+    # dovrebbero avere una provincia. L'esercito è quello che viene
+    # creato nella provincia."): recorded here so the real army-linking
+    # loop below -- which must run *after* the ordinary-humanoid-
+    # province loop further down actually builds each coord's own
+    # armies -- knows which lord governs which coord. See that loop's
+    # own comment for the full reasoning.
+    lord_hero_id_by_coord: dict[HexCoord, int] = {}
 
     for coord in lord_coords:
         hero_id = next(unused_hero_ids, None)
@@ -727,6 +735,7 @@ def generate_new_game(
                 race=lord_effects.leader_race,
             )
         )
+        lord_hero_id_by_coord[coord] = hero_id
 
     for king in kings:
         king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
@@ -951,6 +960,35 @@ def generate_new_game(
                     is_skeletal=index == 0 and first_army_is_skeletal,
                 )
             )
+
+    # 2026-11-19 bug fix, user-confirmed ("Tutti gli eroi indipendenti
+    # dovrebbero avere una provincia. L'esercito è quello che viene
+    # creato nella provincia."): the ordinary-humanoid-province branch
+    # above already built each lord-governed coord's own real garrison
+    # army(ies) (kingdom_id=None, is_mercenary=False, same as every
+    # other non-Home humanoid province) -- but at that point no lord
+    # existed yet to command them, so they were left `commanded_by=
+    # None` ("the provincial garrison commander"). Run only now, after
+    # this loop has actually created them (the lord-placement loop
+    # above runs *before* this one, so it could only ever have found
+    # an empty `armies_at(coord)` itself). An independent lord taking a
+    # province takes command of that same army instead -- it never had
+    # any other commander to begin with, so this can never steal an
+    # army out from under an existing leader. `IndependentLordEffects.
+    # province_owner_id` (a confirmed, real disassembly finding:
+    # "province owner becomes leader id") is deliberately NOT written
+    # to `ProvinceState.owner_kingdom_id` -- that field is this
+    # project's own established "real Kingdom id" index everywhere
+    # else it's read (`state.kingdoms[province.owner_kingdom_id]`), and
+    # an independent lord's own leader_id is not one; `commanded_by`
+    # plus the lord's own real physical presence already conveys the
+    # same real-world effect without that risk (the same "an
+    # independent Hero resolves to None legitimately" convention this
+    # project's own GW-import bridge already uses for the identical
+    # case).
+    for lord_coord, lord_hero_id in lord_hero_id_by_coord.items():
+        for army in game_state.armies_at(lord_coord):
+            army.commanded_by = lord_hero_id
 
     # Phase 982: a King starts physically present in their own Home
     # province, the same real "known provinces" floor `turn/move_

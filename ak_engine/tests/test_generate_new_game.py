@@ -589,6 +589,33 @@ def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes(
         assert lord.is_starting_companion is False
 
 
+def test_independent_lords_command_their_own_provinces_pre_existing_army():
+    # 2026-11-19 bug fix, user-confirmed ("Tutti gli eroi indipendenti
+    # dovrebbero avere una provincia. L'esercito è quello che viene
+    # creato nella provincia."): a lord-governed province's own
+    # ordinary-humanoid-province garrison (already built by the main
+    # per-province loop, before any lord existed to command it) must
+    # end up `commanded_by` the lord -- not left at `commanded_by=None`
+    # ("the provincial garrison commander"), confirmed wrong against a
+    # real GW3__T1 cross-check (Melantheus/Tao-Li's own armies there are
+    # `commanded_by` their own leader_id, not unled).
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    lords = _lords(result, kings)
+    assert lords
+    at_least_one_lord_commands_a_real_army = False
+    for lord in lords:
+        armies_there = [army for army in result.armies.values() if army.location == lord.location]
+        for army in armies_there:
+            assert army.commanded_by == lord.leader_id
+            assert army.kingdom_id is None
+            assert army.is_mercenary is False
+            at_least_one_lord_commands_a_real_army = True
+    assert at_least_one_lord_commands_a_real_army
+
+
 def test_every_ordinary_hero_gets_a_real_temper_not_left_unknown():
     # Phase 982: no real source covers a generated hero's own starting
     # Temper (unlike Alignment, roll_alignment() above) -- user-
