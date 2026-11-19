@@ -561,6 +561,27 @@ def test_move_into_province_with_only_a_mercenary_band_is_uncontested():
     assert result.followed_mercenary_army_ids == []
 
 
+def test_move_into_province_defended_only_by_an_independent_heros_own_army_is_contested():
+    # 2026-11-19 bug fix, user-confirmed via a real GW3 world file
+    # cross-check: an independent Hero's own personally-led army (e.g. a
+    # wandering Hero ruling and defending a province) has kingdom_id=
+    # None too, same as a masterless mercenary band -- but unlike one,
+    # it's a real combatant and must still trigger a battle. Confirmed
+    # directly against GW3__T1's own Melantheus (leader_id 30): his own
+    # army there has kingdom_id=None, is_mercenary=False -- exactly this
+    # shape -- and SE3__T1.K1's own matching battle report shows a real
+    # fought battle with troop deployment, not an uncontested move.
+    state = base_state()
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET, is_mercenary=False, commanded_by=30))
+
+    with patch("ak_engine.turn.move_execution.fight_battle") as mock_fight_battle:
+        mock_fight_battle.return_value = BattleReport(battle_result=BattleResult(), conquered=False)
+        result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=ScriptedRandom([]))
+
+    assert mock_fight_battle.called
+    assert result.battle_report is not None
+
+
 # -- Phase 754: ADDEND.AK [3.6] "Wandering Mercenaries", real mechanism ----
 # (`Desktop/MOVE.md` corrects Phase 746's own coin-flip/destination design:
 # the real routine scans the ORIGIN the general departs, is deterministic

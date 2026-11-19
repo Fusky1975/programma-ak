@@ -2724,11 +2724,19 @@ def fight_battle(
     province = state.provinces[province_coord]
 
     attacker_armies = [state.armies[army_id] for army_id in attacker_army_ids]
+    # 2026-11-19 bug fix, user-confirmed -- see turn/move_execution.py's
+    # own matching 2026-11-19 addendum: `army.kingdom_id is not None` is
+    # not the right proxy for "a real combatant" (an independent Hero's
+    # own personally-led army has `kingdom_id=None` too, same as a
+    # passive mercenary band, but is a real defender). Excludes actual
+    # recruitable mercenaries (`ArmyState.is_mercenary`) instead, and
+    # lets `is_attackable_at()` take a `None` defender_kingdom_id
+    # directly.
     defender_armies = [
         army
         for army in state.armies_at(province_coord)
         if army.army_id not in attacker_army_ids
-        and army.kingdom_id is not None
+        and not army.is_mercenary
         and is_attackable_at(state, army.kingdom_id, attacker_kingdom_id, province)
     ]
     if not attacker_armies:
@@ -3525,9 +3533,15 @@ def fight_multi_attacker_battle(
             if member.kingdom_id == claiming_kingdom_id
         )
 
+        # 2026-11-19 bug fix, user-confirmed -- see turn/move_execution.py's
+        # own matching 2026-11-19 addendum: excludes actual recruitable
+        # mercenaries (`ArmyState.is_mercenary`), not every `kingdom_id
+        # is None` army (an independent Hero's own personally-led army
+        # is a real defender too). `is_attackable_at()`/`is_allied()`
+        # both already handle a `None` defender_kingdom_id correctly.
         defenders_present = any(
             army.army_id not in combined_army_ids
-            and army.kingdom_id is not None
+            and not army.is_mercenary
             and (
                 is_attackable_at(state, army.kingdom_id, claiming_kingdom_id, target_province)
                 if target_province is not None
