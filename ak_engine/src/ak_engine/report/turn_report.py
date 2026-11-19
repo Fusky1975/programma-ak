@@ -7043,6 +7043,39 @@ def render_hire_accepted(character_name: str, hireling_name: str, king_name: str
     return render(variant, values, rng=rng)
 
 
+# 2026-11-19, user-confirmed: HireExecutionResult.rare_alignment_
+# exception (turn/hire_pay.py roll_rare_alignment_exception(), Phase
+# 264 -- a 15% chance to let an otherwise-refused alignment gap through
+# anyway) was computed but never surfaced anywhere -- an exception hire
+# rendered through the exact same render_hire_accepted() sentence as an
+# ordinary one, with nothing telling the player this particular hire
+# only went through because of a rare stroke of luck. Project-original
+# text (no sourced template exists for this -- the "rare exception"
+# itself is unsourced, see hire_pay.py's own docstring), same convention
+# already used for the Practice-side-effects/wand-misuse/skill-book-read
+# templates. Markers match render_hire_accepted()'s own ("<" offerer,
+# "[" hireling, "]" hireling's possessive, "^K" king).
+RARE_ALIGNMENT_EXCEPTION_ACCEPTED_TEMPLATE = (
+    "Against all/Revery expectation/Rodds, [ set_aside/Rput_aside ]'s usual distrust/Rmisgivings of ^K's "
+    "alignment and agreed to serve ^K after all."
+)
+
+
+def render_hire_rare_alignment_exception(character_name: str, hireling_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders the project-original sentence for a Hire that only
+    succeeded via the rare alignment-exception bypass -- see this
+    constant's own comment above.
+    """
+
+    values = {
+        "<": character_name,
+        "[": hireling_name,
+        "]": f"{hireling_name}'s",
+        "^K": king_name,
+    }
+    return render(RARE_ALIGNMENT_EXCEPTION_ACCEPTED_TEMPLATE, values, rng=rng)
+
+
 # HostAK/TP/PROSE/REFHIRE.X -- a refused Hire (alignment/enmity
 # reasons). See module docstring's Phase 114 addendum.
 _REFHIRE_TEMPLATES: list[str] = [
@@ -7150,8 +7183,16 @@ def describe_hire(
     already in service", "not co-located", "insufficient treasury") stay
     administrative, with no sourced narrative template -- same as most
     of ``describe_give()``'s own failure reasons.
+
+    **2026-11-19, user-confirmed**: ``result.rare_alignment_exception``
+    (checked first, before the ordinary ``result.hired`` branch) renders
+    ``render_hire_rare_alignment_exception()`` instead of the ordinary
+    acceptance sentence -- see that function's own comment for why this
+    one specific case needed its own text.
     """
 
+    if result.hired and result.rare_alignment_exception:
+        return render_hire_rare_alignment_exception(character_name, hireling_name, king_name, rng)
     if result.hired:
         return render_hire_accepted(character_name, hireling_name, king_name, rng)
     if result.reason == "alignment gap too wide":

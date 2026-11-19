@@ -212,6 +212,7 @@ from ak_engine.report.turn_report import (
     render_guardian_pacified_by_fulfill,
     render_guardian_undeterred,
     render_hire_accepted,
+    render_hire_rare_alignment_exception,
     render_hire_counter_offer,
     render_illegal_move_attempted,
     render_illegal_move_choice,
@@ -4079,6 +4080,23 @@ def test_describe_hire_renders_acceptance():
     line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
 
     assert line == "Aldric spoke to Borin and convinced Borin to pledge Borin's allegiance to King Harold the Bold."
+
+
+def test_describe_hire_renders_the_rare_alignment_exception_outcome_not_ordinary_acceptance():
+    # 2026-11-19, user-confirmed: a rare_alignment_exception hire must
+    # render render_hire_rare_alignment_exception(), not the ordinary
+    # render_hire_accepted() sentence every other hired=True case uses --
+    # previously this flag was computed but never consulted here at all.
+    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=4), hired=True, minimum_gold=4, rare_alignment_exception=True)
+    rng = ScriptedRandom([0.1] * 10)
+
+    line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+
+    assert line == render_hire_rare_alignment_exception(
+        "Aldric", "Borin", "King Harold the Bold", ScriptedRandom([0.1] * 10)
+    )
+    assert "Borin" in line
+    assert "King Harold the Bold" in line
 
 
 def test_describe_hire_renders_nothing_on_administrative_failure_reasons():
