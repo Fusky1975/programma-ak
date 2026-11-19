@@ -1326,7 +1326,7 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
-from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.turn.army_naming import make_army_ordinal
@@ -9272,6 +9272,26 @@ def describe_turn_results(
             # the skill-rise outcome just narrated above -- can
             # co-occur with any of `describe_practice()`'s own branches.
             lines.extend(describe_sage_discovery(entry.result, character_name=caster_name, rng=rng))
+            # 2026-11-19: the 5 other independent Practice side effects
+            # (army training, Advanced Ability grant, Society Maps, Make
+            # Gems, Banditry/Piracy) -- see describe_practice_side_
+            # effects()'s own docstring. province_name/is_sea only matter
+            # for a real gold_looted_as_bandit this call; resolved via the
+            # acting leader's own current location, same dead-actor-safe
+            # _leader_location() every other composer here already uses.
+            province_name = None
+            is_sea = False
+            if entry.result.gold_looted_as_bandit > 0:
+                coord = _leader_location(state, entry.leader_id)
+                if coord is not None:
+                    province_name = _province_label(state, coord)
+                    province = state.provinces.get(coord)
+                    is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+            lines.extend(
+                describe_practice_side_effects(
+                    entry.result, character_name=caster_name, state=state, province_name=province_name, is_sea=is_sea, rng=rng
+                )
+            )
             continue
         elif entry.action is ActionCode.CAST and isinstance(entry.result, CastExecutionResult):
             spell = entry.result.request.spell
@@ -10283,6 +10303,104 @@ def describe_sage_discovery(
     if result.discovery_granted is not None:
         return [render_sage_discovery(character_name, result.discovery_granted, rng)]
     return [render_sage_no_discovery(character_name, rng)]
+
+
+# 2026-11-19, user-confirmed: 5 real Practice side effects (`turn/
+# practice_execution.py` -- Tactical/Naval army training, Advanced
+# Ability grants, Society Maps, Make Gems, Thief Banditry/Piracy) all
+# correctly mutate `GameState` but had no turn-report narration at all
+# anywhere in this module -- found while auditing Practice's own
+# connectivity, confirmed by grep (none of `PracticeExecutionResult.
+# trained_army_ids`/`advanced_ability_granted`/`society_maps_revealed`/
+# `gems_gold_gained`/`gold_looted_as_bandit` had a single reader outside
+# `practice_execution.py` itself). **Project-original, not sourced from
+# SAY.PAS/RUMORS.PAS/PROSE** -- same convention as `SKILL_BOOK_READ_
+# TEMPLATE`/`WAND_USED_IMPROPERLY_TEMPLATE` above: no matching template
+# exists anywhere in the available archive for any of these five (the
+# same "Congratulations, new ability" gap already flagged, project-wide,
+# for Move's own naval/march Advanced Ability grants). User's own
+# explicit choice, asked directly: project-original text for all 5
+# rather than leaving them silent.
+PRACTICE_ARMY_TRAINED_TEMPLATE = "< drilled = in training maneuvers, and it is now rated as ^A ^Q unit."
+PRACTICE_ADVANCED_ABILITY_GRANTED_TEMPLATE = "< has gained a new Advanced Ability: \\."
+# "#" carries the full "N map"/"N maps" phrase (computed in Python, not
+# via this template language's own "{...}" -- that's a *random* 50%
+# inclusion roll, per _resolve_optional_inclusion()'s own docstring, not
+# count-driven grammatical agreement, so it would pluralize wrongly).
+PRACTICE_SOCIETY_MAPS_TEMPLATE = "< received # of unexplored provinces from the Explorers' Society."
+PRACTICE_GEMS_MADE_TEMPLATE = "< made gems worth # gold as a byproduct of > researches."
+PRACTICE_BANDIT_RAID_TEMPLATE = "< raided @ as a bandit and brought back # gold to the treasury."
+PRACTICE_PIRATE_RAID_TEMPLATE = "< raided @ as a pirate and brought back # gold to the treasury."
+
+
+def render_practice_army_trained(leader_name: str, army_name: str, quality_name: str, rng: random.Random) -> str:
+    values = {"<": leader_name, "=": army_name, "^Q": quality_name}
+    return render(PRACTICE_ARMY_TRAINED_TEMPLATE, values, rng=rng)
+
+
+def render_practice_advanced_ability_granted(leader_name: str, ability_name: str, rng: random.Random) -> str:
+    values = {"<": leader_name, "\\": ability_name}
+    return render(PRACTICE_ADVANCED_ABILITY_GRANTED_TEMPLATE, values, rng=rng)
+
+
+def render_practice_society_maps_received(leader_name: str, count: int, rng: random.Random) -> str:
+    noun = "map" if count == 1 else "maps"
+    values = {"<": leader_name, "#": f"{count} {noun}"}
+    return render(PRACTICE_SOCIETY_MAPS_TEMPLATE, values, rng=rng)
+
+
+def render_practice_gems_made(leader_name: str, amount: int, rng: random.Random) -> str:
+    values = {"<": leader_name, ">": f"{leader_name}'s", "#": str(amount)}
+    return render(PRACTICE_GEMS_MADE_TEMPLATE, values, rng=rng)
+
+
+def render_practice_bandit_raid(leader_name: str, province_name: str, amount: int, rng: random.Random, *, is_sea: bool = False) -> str:
+    template = PRACTICE_PIRATE_RAID_TEMPLATE if is_sea else PRACTICE_BANDIT_RAID_TEMPLATE
+    values = {"<": leader_name, "@": province_name, "#": str(amount)}
+    return render(template, values, rng=rng)
+
+
+def describe_practice_side_effects(
+    result: PracticeExecutionResult,
+    *,
+    character_name: str,
+    state: GameState,
+    province_name: str | None = None,
+    is_sea: bool = False,
+    rng: random.Random,
+) -> list[str]:
+    """Sibling composer to ``describe_practice()``/``describe_sage_
+    discovery()`` for the 5 Practice side effects named in the comment
+    above -- same "independent, can co-occur" shape, called alongside
+    the other two rather than folded into either (none of the three
+    gates on the others' own outcome).
+
+    ``province_name``/``is_sea`` (``None``/``False`` by default) are
+    only needed for ``gold_looted_as_bandit`` -- omitted by a caller with
+    no board width to resolve the acting leader's own province, the
+    same opt-in convention ``describe_rumor()``'s own ``board_width``
+    parameter already established elsewhere in this module; every other
+    effect here needs no province context at all.
+    """
+
+    lines: list[str] = []
+    for army_id in result.trained_army_ids:
+        army = state.armies.get(army_id)
+        if army is None:
+            continue
+        army_name = _trail_army_name(state, army)
+        quality_name = QUALITY_NAME[army.quality]
+        lines.append(render_practice_army_trained(character_name, army_name, quality_name, rng))
+    if result.advanced_ability_granted is not None:
+        ability_name = ADVANCED_ABILITY_NAME[result.advanced_ability_granted]
+        lines.append(render_practice_advanced_ability_granted(character_name, ability_name, rng))
+    if result.society_maps_revealed:
+        lines.append(render_practice_society_maps_received(character_name, len(result.society_maps_revealed), rng))
+    if result.gems_gold_gained > 0:
+        lines.append(render_practice_gems_made(character_name, result.gems_gold_gained, rng))
+    if result.gold_looted_as_bandit > 0 and province_name is not None:
+        lines.append(render_practice_bandit_raid(character_name, province_name, result.gold_looted_as_bandit, rng, is_sea=is_sea))
+    return lines
 
 
 # HostAK/TP/SAY.PAS _ADishK -- a real entry made of two separate

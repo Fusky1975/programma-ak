@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
@@ -126,6 +126,7 @@ from ak_engine.report.turn_report import (
     describe_transport_illegal_move,
     describe_pick_up,
     describe_practice,
+    describe_practice_side_effects,
     describe_sage_discovery,
     describe_pursue,
     describe_pursue_guessed_distance,
@@ -319,6 +320,11 @@ from ak_engine.report.turn_report import (
     render_monster_description,
     render_practice_already_maxed,
     render_practice_tutored,
+    render_practice_advanced_ability_granted,
+    render_practice_army_trained,
+    render_practice_bandit_raid,
+    render_practice_gems_made,
+    render_practice_society_maps_received,
     render_sage_discovery,
     render_sage_no_discovery,
     render_skill_book_read,
@@ -6439,6 +6445,142 @@ def _sage_practice_state() -> GameState:
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
     return state
+
+
+# -- describe_practice_side_effects (2026-11-19) --------------------------
+
+
+def test_render_practice_army_trained():
+    rng = ScriptedRandom([])
+    line = render_practice_army_trained("Aldric", "1st Pikemen", "Average", rng)
+    assert line == "Aldric drilled 1st Pikemen in training maneuvers, and it is now rated as an Average unit."
+
+
+def test_render_practice_advanced_ability_granted():
+    rng = ScriptedRandom([])
+    line = render_practice_advanced_ability_granted("Aldric", ADVANCED_ABILITY_NAME[AdvancedAbility.MAKE_GEMS_TALENT], rng)
+    assert line == f"Aldric has gained a new Advanced Ability: {ADVANCED_ABILITY_NAME[AdvancedAbility.MAKE_GEMS_TALENT]}."
+
+
+def test_render_practice_society_maps_received_singular():
+    rng = ScriptedRandom([])
+    line = render_practice_society_maps_received("Aldric", 1, rng)
+    assert line == "Aldric received 1 map of unexplored provinces from the Explorers' Society."
+
+
+def test_render_practice_society_maps_received_plural():
+    rng = ScriptedRandom([])
+    line = render_practice_society_maps_received("Aldric", 3, rng)
+    assert line == "Aldric received 3 maps of unexplored provinces from the Explorers' Society."
+
+
+def test_render_practice_gems_made():
+    rng = ScriptedRandom([])
+    line = render_practice_gems_made("Aldric", 2, rng)
+    assert line == "Aldric made gems worth 2 gold as a byproduct of Aldric's researches."
+
+
+def test_render_practice_bandit_raid_on_land():
+    rng = ScriptedRandom([])
+    line = render_practice_bandit_raid("Aldric", "Sageleaf", 15, rng, is_sea=False)
+    assert line == "Aldric raided Sageleaf as a bandit and brought back 15 gold to the treasury."
+
+
+def test_render_practice_bandit_raid_at_sea():
+    rng = ScriptedRandom([])
+    line = render_practice_bandit_raid("Aldric", "The Shallows", 50, rng, is_sea=True)
+    assert line == "Aldric raided The Shallows as a pirate and brought back 50 gold to the treasury."
+
+
+def _army_training_state() -> GameState:
+    state = GameState()
+    state.add_army(ArmyState(1, None, ArmyType.GARRISON, Quality.AVERAGE, HexCoord(0, 0)))
+    return state
+
+
+def test_describe_practice_side_effects_renders_the_army_training_outcome():
+    state = _army_training_state()
+    result = PracticeExecutionResult(ability=Ability.TACTICAL, trained_army_ids=(1,))
+    lines = describe_practice_side_effects(result, character_name="Aldric", state=state, rng=ScriptedRandom([]))
+    assert lines == ["Aldric drilled 1st Garrison in training maneuvers, and it is now rated as an Average unit."]
+
+
+def test_describe_practice_side_effects_skips_an_army_id_no_longer_in_state():
+    # Defensive -- shouldn't happen in practice (training never destroys
+    # the army it just trained), but a missing id must not crash the
+    # whole composer.
+    state = GameState()
+    result = PracticeExecutionResult(ability=Ability.TACTICAL, trained_army_ids=(999,))
+    lines = describe_practice_side_effects(result, character_name="Aldric", state=state, rng=ScriptedRandom([]))
+    assert lines == []
+
+
+def test_describe_practice_side_effects_renders_the_advanced_ability_grant():
+    result = PracticeExecutionResult(ability=Ability.ELEMENTAL, advanced_ability_granted=AdvancedAbility.MAKE_GEMS_TALENT)
+    lines = describe_practice_side_effects(result, character_name="Aldric", state=GameState(), rng=ScriptedRandom([]))
+    assert lines == [
+        f"Aldric has gained a new Advanced Ability: {ADVANCED_ABILITY_NAME[AdvancedAbility.MAKE_GEMS_TALENT]}."
+    ]
+
+
+def test_describe_practice_side_effects_renders_the_society_maps_outcome():
+    result = PracticeExecutionResult(ability=Ability.EXPLORER, society_maps_revealed=(HexCoord(1, 1), HexCoord(2, 2)))
+    lines = describe_practice_side_effects(result, character_name="Aldric", state=GameState(), rng=ScriptedRandom([]))
+    assert lines == ["Aldric received 2 maps of unexplored provinces from the Explorers' Society."]
+
+
+def test_describe_practice_side_effects_renders_the_gems_outcome():
+    result = PracticeExecutionResult(ability=Ability.ELEMENTAL, gems_gold_gained=2)
+    lines = describe_practice_side_effects(result, character_name="Aldric", state=GameState(), rng=ScriptedRandom([]))
+    assert lines == ["Aldric made gems worth 2 gold as a byproduct of Aldric's researches."]
+
+
+def test_describe_practice_side_effects_renders_the_bandit_raid_outcome_when_province_name_is_supplied():
+    result = PracticeExecutionResult(ability=Ability.THIEF, gold_looted_as_bandit=15)
+    lines = describe_practice_side_effects(
+        result, character_name="Aldric", state=GameState(), province_name="Sageleaf", is_sea=False, rng=ScriptedRandom([])
+    )
+    assert lines == ["Aldric raided Sageleaf as a bandit and brought back 15 gold to the treasury."]
+
+
+def test_describe_practice_side_effects_skips_the_bandit_raid_outcome_without_a_province_name():
+    # No board_width means no caller can resolve the acting leader's own
+    # province -- same opt-in convention describe_rumor() already uses.
+    result = PracticeExecutionResult(ability=Ability.THIEF, gold_looted_as_bandit=15)
+    lines = describe_practice_side_effects(result, character_name="Aldric", state=GameState(), rng=ScriptedRandom([]))
+    assert lines == []
+
+
+def test_describe_practice_side_effects_renders_nothing_for_an_ordinary_rise_with_no_side_effect():
+    result = PracticeExecutionResult(ability=Ability.MELEE, skill_rose=True, new_skill=3)
+    lines = describe_practice_side_effects(result, character_name="Aldric", state=GameState(), rng=ScriptedRandom([]))
+    assert lines == []
+
+
+def test_describe_practice_side_effects_renders_every_independent_effect_together():
+    # Several of these can genuinely co-occur in one call (e.g. a Thief
+    # who also happens to hold Make Gems from a different Practice
+    # history is still just one PracticeExecutionResult for this phase's
+    # own ability) -- the composer must not gate one on the others.
+    state = _army_training_state()
+    result = PracticeExecutionResult(
+        ability=Ability.TACTICAL,
+        trained_army_ids=(1,),
+        advanced_ability_granted=AdvancedAbility.MAKE_GEMS_TALENT,
+        society_maps_revealed=(HexCoord(1, 1),),
+        gems_gold_gained=2,
+        gold_looted_as_bandit=15,
+    )
+    lines = describe_practice_side_effects(
+        result, character_name="Aldric", state=state, province_name="Sageleaf", is_sea=False, rng=ScriptedRandom([])
+    )
+    assert lines == [
+        "Aldric drilled 1st Garrison in training maneuvers, and it is now rated as an Average unit.",
+        f"Aldric has gained a new Advanced Ability: {ADVANCED_ABILITY_NAME[AdvancedAbility.MAKE_GEMS_TALENT]}.",
+        "Aldric received 1 map of unexplored provinces from the Explorers' Society.",
+        "Aldric made gems worth 2 gold as a byproduct of Aldric's researches.",
+        "Aldric raided Sageleaf as a bandit and brought back 15 gold to the treasury.",
+    ]
 
 
 def test_describe_turn_results_practice_renders_only_the_discovery_line_when_describe_practice_has_none():
