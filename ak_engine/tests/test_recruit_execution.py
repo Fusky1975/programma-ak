@@ -563,10 +563,11 @@ def test_recruit_hires_a_non_native_mercenary_without_requiring_prior_ownership(
     assert len(result.recruited) == 1
     assert result.recruited[0].army_id == 999
     assert result.recruited[0].hired is True
-    # Still subject to the real non-native doubling the module docstring's
-    # own "doesn't distinguish hiring from levying on price" rule
-    # (Phase 16) describes -- 2 base, doubled to 4.
-    assert result.total_gold_spent == 4
+    # 2026-11-20 bug fix, user-confirmed (live AK0 playtest): a
+    # mercenary hire never pays the native/non-native doubling -- it
+    # always costs exactly the Army Type Table price (2 for Bowmen),
+    # not the doubled 4 this used to assert.
+    assert result.total_gold_spent == 2
 
 
 def test_recruit_ignores_mercenary_below_average_quality():

@@ -12369,6 +12369,29 @@ def test_describe_home_province_neighbors_unclaimed_humanoid_neighbor_still_gets
     assert "Their Orcish warriors fight as Phalanx." in paragraph
 
 
+def test_describe_home_province_neighbors_names_an_independent_lord_as_ruler():
+    # 2026-11-20 bug fix, user-confirmed (live AK0 playtest): an
+    # independent-lord-governed neutral province (owner_kingdom_id is
+    # deliberately None, PR #91's own reasoning) must still name the
+    # real governing Hero as ruler at Turn 0, not "ruled by no one" --
+    # resolved via the lord's own co-located, commanded garrison army.
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    neighbor = _neighbor_coord(home, Direction.W, state)
+    state.add_province(
+        ProvinceState(neighbor, Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=None, name="Macondo", recruit_type_1=ArmyType.PHALANX)
+    )
+    state.add_leader(LeaderState(50, kingdom_id=None, name="Gorbash", location=neighbor, race=Race.ORCISH))
+    state.add_army(ArmyState(99, None, ArmyType.PHALANX, Quality.AVERAGE, neighbor, commanded_by=50))
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "where Gorbash rules" in paragraph
+    assert "no one rules" not in paragraph
+
+
 def test_describe_home_province_neighbors_unclaimed_monster_neighbor_gets_a_muster_sentence():
     state = GameState()
     home = HexCoord(5, 5)

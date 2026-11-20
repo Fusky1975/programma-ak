@@ -13485,6 +13485,41 @@ def _neighbor_ending(race: Race, race_plural: str, race_adjective: str, province
     return f"If need be, they can muster an army of {race_plural} to defend their province."
 
 
+def _independent_lord_ruler_name(state: GameState, coord: HexCoord) -> str | None:
+    """2026-11-20 bug fix, user-confirmed (live AK0 playtest): a
+    neutral province governed by an independent lord
+    (``worldgen/leader_placement.py independent_lord_effects()``, Phase
+    426, wired via ``generate_new_game.py``'s own ``commanded_by``
+    linkage, PR #91) has no ``owner_kingdom_id`` at all -- deliberately,
+    since that field is this project's own real index into
+    ``state.kingdoms`` and an independent lord's own ``leader_id`` isn't
+    one (see that PR's own reasoning). ``_describe_neighbor_sentence()``
+    above only ever checked ``owner_kingdom_id``, so every one of these
+    provinces rendered "ruled/owned by no one" at Turn 0 even when a
+    real lord governs it -- user's own words: "nel turno zero dovrebbe
+    essere scritto quale eroe è al comando delle province neutrali."
+
+    Only safe to call for the Turn 0 report specifically (this
+    function's only real caller, ``describe_home_province_neighbors()``
+    -- never wired into any later-turn composer): before any order has
+    ever run, an independent lord's own ``LeaderState.location`` is
+    still exactly their governed province, so "an independent Hero
+    standing here and commanding the garrison army here" is an
+    unambiguous, structurally sound proxy for "governs this province" --
+    a later turn's own Move orders could move such a Hero elsewhere
+    (or an entirely different independent Hero could wander through),
+    at which point this exact check would no longer mean the same
+    thing.
+    """
+
+    for leader in state.leaders.values():
+        if leader.kingdom_id is not None or leader.is_king or leader.location != coord:
+            continue
+        if any(army.commanded_by == leader.leader_id for army in state.armies_at(coord)):
+            return leader.name
+    return None
+
+
 def _describe_neighbor_sentence(direction: Direction, coord: HexCoord, state: GameState) -> str | None:
     province = state.provinces.get(coord)
     if province is None:
@@ -13505,6 +13540,8 @@ def _describe_neighbor_sentence(direction: Direction, coord: HexCoord, state: Ga
     race_adjective = RACE_ADJECTIVE[province.race]
     owner = state.kingdoms.get(province.owner_kingdom_id) if province.owner_kingdom_id is not None else None
     ruler_name = _leader_name(state, _king_leader_id(state, owner.kingdom_id)) if owner is not None else None
+    if ruler_name is None:
+        ruler_name = _independent_lord_ruler_name(state, coord)
     ending = _neighbor_ending(province.race, race_plural, race_adjective, province)
 
     if direction is Direction.NE:

@@ -178,10 +178,13 @@ def test_resolve_recruit_hiring_existing_mercenary_bypasses_non_native_ownership
         ArmyType.HVY_CAVALRY, Race.HUMAN,
         is_home_province=False, is_native_to_province=False, hiring_existing_mercenary=True,
     )
-    # Still subject to the real non-native doubling -- the module's own
-    # "doesn't distinguish hiring from levying on price" rule (Phase 16)
-    # -- only the two eligibility exceptions are bypassed, not the cost.
-    assert result.gold_per_unit == 6
+    # 2026-11-20 bug fix, user-confirmed (live AK0 playtest): a
+    # mercenary hire never pays the native/non-native doubling -- it
+    # always costs exactly the Army Type Table price. Previously this
+    # asserted the opposite (6, the doubled price), the exact bug
+    # reported: Fusky's own mercenary Eagles/Vitello's own mercenary
+    # Bowmen cost double instead of the table price.
+    assert result.gold_per_unit == 3
 
 
 def test_resolve_recruit_hiring_existing_mercenary_still_requires_a_rulebook_cost():
