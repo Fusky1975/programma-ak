@@ -7654,6 +7654,44 @@ def describe_cargo_boarded(
     return lines
 
 
+# 2026-11-20 bug fix, user-confirmed via a deep audit: `turn/sense_
+# magic_items.py sense_magic_items_in_province()` already correctly
+# computes the real Office.MAGE "Sense Magic Items in Province" perk on
+# every Move (wired from the real LMOVE dispatch, `turn/plan_dispatch.py`),
+# but that module's own docstring documented a deliberate "no narrative
+# rendering" scope -- no sourced `.X2` template exists for this perk --
+# so the Arch-Mage's own sensed items were computed and then silently
+# discarded, never actually shown in any report. This closes that gap
+# with project-original text, explicitly authorized by the user (no
+# sourced prose exists to transcribe instead).
+SENSED_MAGIC_ITEMS_TEMPLATE = "As the realm's own Arch-Mage, < senses the presence of the ^L\\ nearby, though not precisely where."
+
+
+def render_sensed_magic_items(character_name: str, item_names: list[str], rng: random.Random) -> str:
+    """Renders ``Office.MAGE``'s own "Sense Magic Items in Province" perk
+    -- see ``SENSED_MAGIC_ITEMS_TEMPLATE``'s own docstring addendum above
+    for why this is project-original text, not a transcription.
+    """
+
+    return render(SENSED_MAGIC_ITEMS_TEMPLATE, {"<": character_name}, rng=rng, lists={"\\": item_names})
+
+
+def describe_sensed_magic_items(
+    result: MoveExecutionResult, *, character_name: str, rng: random.Random
+) -> list[str]:
+    """One sentence naming every magic item ``result.sensed_magic_items``
+    found (Office.MAGE's own Move-triggered perk) -- ``[]`` for a Mover
+    who doesn't hold the office (``None``) or senses nothing (``[]``,
+    a real, empty result, matching ``sense_magic_items_in_province()``'s
+    own docstring distinction between the two).
+    """
+
+    if not result.sensed_magic_items:
+        return []
+    item_names = [TREASURE_NAME[treasure] for treasure in result.sensed_magic_items]
+    return [render_sensed_magic_items(character_name, item_names, rng)]
+
+
 # Phase 736 -- project-original, per the user's own directive: the
 # transported unit sinks together with the annihilated fleet and
 # disappears into the depths of the sea. See ``CARGO_BOARDED_TEMPLATE``
@@ -10067,6 +10105,7 @@ def describe_turn_results(
             if line is not None:
                 lines.append(line)
             lines.extend(describe_cargo_boarded(entry.result, state, character_name=caster_name, rng=rng))
+            lines.extend(describe_sensed_magic_items(entry.result, character_name=caster_name, rng=rng))
             continue
         elif entry.action is None and isinstance(entry.result, MoveExecutionResult):
             # Phase 766: the Naval Hug Coastline stragglers sentinel
@@ -11965,6 +12004,27 @@ def render_guardian_proposes_quest_location(monster_name: str, quest_location: T
     return f"{monster_name} proposes a quest: {text}"
 
 
+# 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
+# PSYCHIC_MAGE's own "will sense whether the monster intends to keep
+# its end of the bargain" perk (`models/office.py OFFICE_TITLE_
+# DESCRIPTION[Office.PSYCHIC_MAGE]`) had no implementation anywhere --
+# see `turn/search_execution.py SearchExecutionResult.sensed_fulfill_
+# honor`'s own docstring for the real, single-roll mechanic this
+# narrates. No sourced MTALK.X2-family text exists for this reveal, so
+# -- same convention as TALK_LANGUAGE_FAILURE_TEMPLATE/TALK_IGNORED_
+# TEMPLATE right above -- this is project-original text, explicitly
+# authorized by the user, using that same family's own `~` monster-name
+# marker for consistency.
+SENSED_FULFILL_WILL_HONOR_TEMPLATE = "< senses that the ~ truly intends to honor its word."
+SENSED_FULFILL_WILL_BREAK_TEMPLATE = "< senses that the ~ has no intention of honoring its word."
+
+
+def render_sensed_fulfill_honor(character_name: str, monster_name: str, will_honor: bool, rng: random.Random) -> str:
+    template = SENSED_FULFILL_WILL_HONOR_TEMPLATE if will_honor else SENSED_FULFILL_WILL_BREAK_TEMPLATE
+    values = {"<": character_name, "~": monster_name}
+    return render(template, values, rng=rng)
+
+
 # HostAK/TP/RUMORS.PAS Check_Raid -- a single, real, hardcoded
 # template (no file), dispatched inline within FD's own MTALK.X2
 # file-dispatch flow rather than the main Say_Code CASE. See module
@@ -12502,6 +12562,13 @@ def describe_search(
         lines.append(render_guardian_poses_riddle(monster_name, result.guardian_riddle))
     if result.guardian_quest_location is not None:
         lines.append(render_guardian_proposes_quest_location(monster_name, result.guardian_quest_location))
+    # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
+    # PSYCHIC_MAGE's own "senses whether the monster intends to keep
+    # its end of the bargain" perk -- see SearchExecutionResult.
+    # sensed_fulfill_honor's own docstring for why this is only ever
+    # set alongside a newly-struck deal.
+    if result.sensed_fulfill_honor is not None:
+        lines.append(render_sensed_fulfill_honor(character_name, monster_name, result.sensed_fulfill_honor, rng))
     # 2026-11-20: the two previously-silent "Talk went nowhere" outcomes
     # -- see SearchExecutionResult.talk_language_failure's/talk_ignored's
     # own docstrings. Mutually exclusive by construction (_apply_talk_

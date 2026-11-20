@@ -1040,6 +1040,16 @@ class SearchExecutionResult:
     # player-facing effect is identical either way -- nothing happened,
     # the guardian paid no attention.
     talk_ignored: bool = False
+    # 2026-11-20 bug fix, user-confirmed via a deep audit:
+    # ``Office.PSYCHIC_MAGE``'s own "senses whether the monster intends
+    # to keep its end of the bargain" perk -- set only when ``_resolve_
+    # talk()``'s own QUEST_OR_AGREEMENT branch struck a new deal *and*
+    # the caster held the office at that moment (``None`` otherwise,
+    # including every Talk that doesn't result in a deal at all). See
+    # ``models/feature.py Feature.psychic_mage_sensed_fulfill_honor``'s
+    # own docstring for why this is a real, single advance roll, not a
+    # second, independent one that could disagree with Fulfill's own.
+    sensed_fulfill_honor: bool | None = None
     # Phase 616: the Feature->Power [5.8] outcome from a full ("fully
     # known", level 3) Scout discovery, when the Feature's own derived
     # power is one of this phase's 9 `TRACTABLE_POWERS`. `None` covers
@@ -3548,6 +3558,22 @@ def _resolve_search_encounter(
         if outcome_category is TalkReplyOutcome.IGNORE:
             return None
         feature.pending_deal_leader_id = leader_id
+        # 2026-11-20 bug fix, user-confirmed via a deep audit:
+        # Office.PSYCHIC_MAGE's own "senses whether the monster intends
+        # to keep its end of the bargain" perk. Rolls the *same* real
+        # honor-outcome Fulfill would otherwise roll later, now instead
+        # of then, and persists it for Fulfill to consume -- see
+        # Feature.psychic_mage_sensed_fulfill_honor's own docstring for
+        # why this isn't a second, independent roll.
+        sensed_fulfill_honor = None
+        psychic_mage_holder = resolve_office_holder(state, Office.PSYCHIC_MAGE)
+        if psychic_mage_holder is not None and psychic_mage_holder.leader_id == leader_id:
+            silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
+            caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
+            sensed_fulfill_honor = resolve_fulfill_honored(
+                feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
+            )
+            feature.psychic_mage_sensed_fulfill_honor = sensed_fulfill_honor
         intimidated, undeterred = _resolve_guardian_pacification()
         guardian_riddle = (
             _select_guardian_riddle(feature.guardian_monster, feature.feature_id) if reply is MonsterTalkReply.R_RIDDLE else None
@@ -3566,6 +3592,7 @@ def _resolve_search_encounter(
             guardian_riddle=guardian_riddle,
             guardian_quest_location=guardian_quest_location,
             guardian_monster=feature.guardian_monster,
+            sensed_fulfill_honor=sensed_fulfill_honor,
         )
 
     def _resolve_fulfill() -> SearchExecutionResult | None:
@@ -3605,14 +3632,26 @@ def _resolve_search_encounter(
         if feature.pending_deal_leader_id != leader_id:
             return None
         feature.pending_deal_leader_id = None
+        # 2026-11-20 bug fix: if Talk's own Psychic Mage sensing already
+        # rolled this exact deal's real honor outcome (see Feature.
+        # psychic_mage_sensed_fulfill_honor's own docstring), reuse it
+        # rather than rolling a second, independent one that could
+        # disagree with what was sensed.
+        sensed_fulfill_honor = feature.psychic_mage_sensed_fulfill_honor
+        feature.psychic_mage_sensed_fulfill_honor = None
         # Phase 468: Silver Tongue (Office.DIPLOMAT) always honors a
         # completed deal -- report SS18.4's own "onora sempre un accordo
         # completato".
         silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
         caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
-        if resolve_fulfill_honored(
-            feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
-        ):
+        honored = (
+            sensed_fulfill_honor
+            if sensed_fulfill_honor is not None
+            else resolve_fulfill_honored(
+                feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
+            )
+        )
+        if honored:
             leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
             # Phase 671: THUNDERBIRD.md section 4.2's own compiled
             # pacification snippet -- see turn/monster_raids.py apply_

@@ -4918,6 +4918,93 @@ def test_execute_search_talk_deal_reaction_records_the_pending_deal():
     assert feature.pending_deal_leader_id == LEADER_ID
 
 
+# 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
+# PSYCHIC_MAGE's own "senses whether the monster intends to keep its
+# end of the bargain" perk had no implementation anywhere.
+
+
+def test_execute_search_talk_psychic_mage_senses_the_fulfill_honor_outcome():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.leaders[LEADER_ID].merit_tally.psychic_spell_casts = 50  # the real Office.PSYCHIC_MAGE titleholder
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_REGAIN
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel"), patch(
+        "ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True
+    ) as mock_honor:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+    mock_honor.assert_called_once()
+    assert result.sensed_fulfill_honor is True
+    assert feature.psychic_mage_sensed_fulfill_honor is True
+
+
+def test_execute_search_talk_non_psychic_mage_does_not_sense_the_outcome():
+    state = _state_with_leader()  # no Office.PSYCHIC_MAGE titleholder
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_REGAIN
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel"), patch(
+        "ak_engine.turn.search_execution.resolve_fulfill_honored"
+    ) as mock_honor:
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+    mock_honor.assert_not_called()
+    assert result.sensed_fulfill_honor is None
+    assert feature.psychic_mage_sensed_fulfill_honor is None
+
+
+def test_execute_search_fulfill_reuses_the_sensed_honor_outcome_without_rerolling():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+        psychic_mage_sensed_fulfill_honor=True,
+    )
+    state.add_feature(feature)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored") as mock_honor, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_honor.assert_not_called()  # the sensed outcome is reused, not re-rolled
+    assert not mock_melee.called
+    assert result.winner == "leader"
+    assert feature.psychic_mage_sensed_fulfill_honor is None  # consumed either way
+
+
+def test_execute_search_fulfill_rolls_fresh_when_nothing_was_sensed():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+    )
+    state.add_feature(feature)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True) as mock_honor, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_honor.assert_called_once()
+
+
 def test_execute_search_talk_riddle_reply_sets_guardian_riddle_deterministically():
     state = _state_with_leader()
     feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX)

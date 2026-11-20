@@ -119,6 +119,7 @@ from ak_engine.report.turn_report import (
     describe_defend,
     describe_defend_reinforcement,
     describe_cargo_boarded,
+    describe_sensed_magic_items,
     describe_disband,
     describe_leave,
     describe_move,
@@ -240,6 +241,7 @@ from ak_engine.report.turn_report import (
     render_spell_fizzled_in_combat,
     render_spell_cast_failed,
     render_cargo_boarded,
+    render_sensed_magic_items,
     render_defend,
     render_defend_reinforcement,
     render_disband_unit,
@@ -2852,6 +2854,58 @@ def test_describe_cargo_boarded_returns_empty_with_no_boarded_armies():
     )
 
     lines = describe_cargo_boarded(result, state, character_name="Arthur", rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+# 2026-11-20 bug fix, user-confirmed via a deep audit: Office.MAGE's own
+# "Sense Magic Items in Province" perk was already correctly computed on
+# every Move but never actually shown in any report.
+
+
+def test_render_sensed_magic_items():
+    result = render_sensed_magic_items("Merlin", ["Platinum Wand"], ScriptedRandom([]))
+    assert result == "As the realm's own Arch-Mage, Merlin senses the presence of the Platinum Wand nearby, though not precisely where."
+
+
+def test_render_sensed_magic_items_joins_multiple_names():
+    result = render_sensed_magic_items("Merlin", ["Platinum Wand", "Ivory Rod"], ScriptedRandom([]))
+    assert "Platinum Wand and Ivory Rod" in result
+
+
+def test_describe_sensed_magic_items_renders_a_line_when_present():
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1,
+        new_location=HexCoord(3, 9), sensed_magic_items=[Treasure.ABILITY_TACTICAL],
+    )
+
+    lines = describe_sensed_magic_items(result, character_name="Merlin", rng=ScriptedRandom([]))
+
+    assert len(lines) == 1
+    assert "Merlin" in lines[0]
+    assert TREASURE_NAME[Treasure.ABILITY_TACTICAL] in lines[0]
+
+
+def test_describe_sensed_magic_items_empty_list_renders_nothing():
+    # A real, empty sensing (the Mage holds the office but nobody else's
+    # item is nearby) -- distinct from None (not the Mage at all).
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1,
+        new_location=HexCoord(3, 9), sensed_magic_items=[],
+    )
+
+    lines = describe_sensed_magic_items(result, character_name="Merlin", rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_sensed_magic_items_none_renders_nothing():
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1,
+        new_location=HexCoord(3, 9), sensed_magic_items=None,
+    )
+
+    lines = describe_sensed_magic_items(result, character_name="Merlin", rng=ScriptedRandom([]))
 
     assert lines == []
 
@@ -9207,6 +9261,60 @@ def test_describe_search_non_riddle_quest_reply_appends_no_extra_line():
         reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
         guardian_monster=Monster.ARCHER,
         guardian_riddle=None,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_sensed_fulfill_honor_true_appends_the_honor_line():
+    # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
+    # PSYCHIC_MAGE's own sensing perk previously had no narration (and
+    # no implementation) at all.
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.GARGOYLE,
+        sensed_fulfill_honor=True,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric senses that the Gargoyle truly intends to honor its word.",
+    ]
+
+
+def test_describe_search_sensed_fulfill_honor_false_appends_the_break_line():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.GARGOYLE,
+        sensed_fulfill_honor=False,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric senses that the Gargoyle has no intention of honoring its word.",
+    ]
+
+
+def test_describe_search_no_sensed_fulfill_honor_appends_no_extra_line():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.ARCHER,
+        sensed_fulfill_honor=None,
     )
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
