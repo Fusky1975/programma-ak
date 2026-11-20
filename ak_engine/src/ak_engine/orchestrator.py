@@ -66,6 +66,7 @@ from ak_engine.report.turn_report import (
     record_wandering_world_events,
 )
 from ak_engine.turn.assassin_guild import resolve_pending_guild_assassination
+from ak_engine.turn.diplomacy import sync_treat_orders_from_kingdom_headers
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
 from ak_engine.turn.final_standings import FinalStandingsReport, compose_final_standings_report
 from ak_engine.turn.kingdom_bridge import KingdomBridgeReport, sync_leaders_from_kingdom
@@ -237,6 +238,14 @@ def process_turn(
     for kingdom_id in state.kingdoms:
         if kingdom_id not in kingdom_headers:
             turn_leaders.extend(build_missed_deadline_turn_leaders(state, kingdom_id))
+
+    # 2026-11-20: bridges this turn's own real Treat/Break Treat requests
+    # (kingdom_headers[*].allreq/.brreq, decoded but never read anywhere
+    # until now) into state.treat_permissions/break_treat_orders before
+    # run_turn()'s own early apply_treat_orders() call reads them -- see
+    # turn/diplomacy.py sync_treat_orders_from_kingdom_headers()'s own
+    # docstring for why this has to happen here, not inside run_turn().
+    sync_treat_orders_from_kingdom_headers(state, kingdom_headers)
 
     results = run_turn(turn_leaders, state, board_width=board_width, rng=rng)
 

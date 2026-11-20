@@ -127,8 +127,11 @@ contingent for it to join.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, ProvinceState
+from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.parser.gw_world import DiplomaticRelation
 
 _RELATION_RANK: dict[DiplomaticRelation, int] = {
@@ -395,3 +398,57 @@ def advance_pending_diplomacy(state: GameState) -> None:
         kingdom_a, kingdom_b = sorted(pair)
         set_relation(state, kingdom_a, kingdom_b, new_relation)
     state.pending_treat_transitions = {}
+
+
+def _set_bits(bitmask: int) -> Iterator[int]:
+    """Yields the index of every ``1`` bit in ``bitmask``, low to high --
+    the bit-position-is-a-Kingdom-id scan both ``allreq``/``brreq`` need.
+    """
+
+    index = 0
+    while bitmask:
+        if bitmask & 1:
+            yield index
+        bitmask >>= 1
+        index += 1
+
+
+def sync_treat_orders_from_kingdom_headers(state: GameState, kingdom_headers: Mapping[int, KingdomMoveHeader]) -> None:
+    """Bridges this turn's real, decoded Treat/Break Treat requests --
+    ``models/kingdom.py KingdomMoveHeader.allreq``/``.brreq``, a per-
+    Kingdom-id bitmask confirmed-decoded and cross-validated against
+    real ``GWKingExtension`` data turn-for-turn (see that property's own
+    docstring for the full two-part confirmation) -- into ``state.
+    treat_permissions``/``state.break_treat_orders``, the directed-tuple
+    shape ``apply_treat_orders()`` actually reads. Closes the gap this
+    module's own docstring names ("real, decoded, correct, and simply
+    never read by this module -- or anywhere else"): a real submitted
+    Treat/Break Treat order used to vanish silently, with ``diplomatic_
+    relations`` left untouched and no report line at all, because
+    nothing ever copied ``allreq``/``brreq`` into the two sets ``apply_
+    treat_orders()`` reads -- only two GM-manual webapp routes ever
+    populated them.
+
+    Bit ``i`` of a Kingdom's own ``allreq``/``brreq`` means "propose
+    upgrading/downgrading relations with Kingdom ``i`` this turn" --
+    read directly as the directed pair ``(issuing_kingdom_id, i)``, no
+    further translation needed.
+
+    Must run once per real turn, with ``kingdom_headers`` holding every
+    Kingdom's own just-parsed header for *this* turn (``orchestrator.py
+    process_turn()``'s own parsing loop already collects exactly this),
+    called from there right before its own ``run_turn()`` call -- not
+    from inside ``run_turn()`` itself, whose early ``apply_treat_
+    orders()`` call already assumes both sets hold this turn's real
+    intent by the time it runs, and whose own end-of-call ``_replenish_
+    turn_scoped_state()`` is what leaves them empty for this function to
+    populate in the first place.
+    """
+
+    for kingdom_id, header in kingdom_headers.items():
+        for target_id in _set_bits(header.allreq):
+            if target_id != kingdom_id and target_id in state.kingdoms:
+                state.treat_permissions.add((kingdom_id, target_id))
+        for target_id in _set_bits(header.brreq):
+            if target_id != kingdom_id and target_id in state.kingdoms:
+                state.break_treat_orders.add((kingdom_id, target_id))
