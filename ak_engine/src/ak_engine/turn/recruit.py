@@ -82,7 +82,6 @@ class RecruitResolution:
     max_units: int
     gold_per_unit: int
     ally_fee_per_unit: int
-    is_double_cost: bool
 
 
 # Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description
@@ -230,5 +229,4 @@ def resolve_recruit(
         ),
         gold_per_unit=base_pay if is_native_to_province else base_pay * 2,
         ally_fee_per_unit=1 if in_ally_territory else 0,
-        is_double_cost=not is_native_to_province,
     )
