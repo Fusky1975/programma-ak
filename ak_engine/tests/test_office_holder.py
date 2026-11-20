@@ -294,6 +294,70 @@ def test_commit_office_holders_never_writes_emperor():
     assert Office.EMPEROR not in state.office_holders
 
 
+# 2026-11-20 bug fix, user-confirmed via a live playtest: becoming an
+# office's #1 holder used to never record the real `titchar[ofc] <>
+# prevchar[ofc]` title-change event (SS93.1) anywhere, so the real
+# `_ODesc` acquisition narrative never had anything to fire on.
+
+
+def test_commit_office_holders_records_a_title_change_the_first_time_an_office_is_won():
+    state = make_state()
+    a = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    a.merit_tally.monster_hp_defeated = 10
+    state.add_leader(a)
+
+    commit_office_holders(state)
+
+    assert state.office_title_change_notices[Office.DEFENDER] == 1
+
+
+def test_commit_office_holders_records_no_title_change_for_an_unchanged_holder():
+    state = make_state()
+    a = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    a.merit_tally.monster_hp_defeated = 10
+    state.add_leader(a)
+    commit_office_holders(state)
+    assert state.office_title_change_notices[Office.DEFENDER] == 1
+
+    commit_office_holders(state)  # same holder again, second turn
+
+    assert Office.DEFENDER not in state.office_title_change_notices
+
+
+def test_commit_office_holders_records_a_title_change_when_the_holder_flips():
+    state = make_state()
+    a = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    a.merit_tally.monster_hp_defeated = 10
+    state.add_leader(a)
+    commit_office_holders(state)
+    assert state.office_holders[Office.DEFENDER] == 1
+
+    b = LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True)
+    b.merit_tally.monster_hp_defeated = 20  # beats Aldric's own 10
+    state.add_leader(b)
+    commit_office_holders(state)
+
+    assert state.office_holders[Office.DEFENDER] == 2
+    assert state.office_title_change_notices[Office.DEFENDER] == 2
+
+
+def test_commit_office_holders_only_reports_offices_that_actually_changed():
+    # A dict, not a growing log -- an office resolving to the same
+    # holder every call never lingers in it just because *some other*
+    # office changed hands this same call.
+    state = make_state()
+    a = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    a.merit_tally.monster_hp_defeated = 10
+    state.add_leader(a)
+    commit_office_holders(state)
+    assert state.office_title_change_notices[Office.DEFENDER] == 1
+
+    commit_office_holders(state)  # nothing changed this second call
+
+    assert Office.DEFENDER not in state.office_title_change_notices
+    assert Office.TREASURER not in state.office_title_change_notices  # Aldric already held it too
+
+
 def test_resolve_office_holder_raises_for_a_non_office():
     state = make_state()
     import pytest
@@ -663,6 +727,28 @@ def test_commit_army_office_holders_leaves_a_now_vacant_office_untouched():
     commit_army_office_holders(state)
 
     assert state.army_office_holders[Office.AIR_FORCE] == 101  # sticky, not cleared
+
+
+def test_commit_army_office_holders_records_a_title_change_the_first_time_a_title_is_won():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+
+    commit_army_office_holders(state)
+
+    assert state.army_office_title_change_notices == {Office.AIR_FORCE: 101}
+
+
+def test_commit_army_office_holders_records_no_title_change_for_an_unchanged_holder():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+    commit_army_office_holders(state)
+    assert state.army_office_title_change_notices == {Office.AIR_FORCE: 101}
+
+    commit_army_office_holders(state)  # same holder again, second turn
+
+    assert state.army_office_title_change_notices == {}
 
 
 # -- Phase 668: army-office ranking primitives (Rank/ftoppts/Best Hope/runner-up) --

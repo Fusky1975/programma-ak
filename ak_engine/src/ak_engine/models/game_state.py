@@ -2163,6 +2163,30 @@ class GameState:
     # invoked commit step, never cleared automatically" shape as
     # `office_holders` itself.
     army_office_holders: dict[Office, int] = field(default_factory=dict)
+    # 2026-11-20 bug fix, user-confirmed via a live playtest ("alcuni
+    # eroi e Re sono primi in alcune cariche imperiali... ma non c'è
+    # scritto che quei Re o eroi hanno acquisito l'abilità corrispondente
+    # alla carica"): `models/office.py OFFICE_TITLE_DESCRIPTION` (SAY.PAS
+    # `_ODesc`, the real "As the <Title>, <name> has won..." narrative)
+    # is fully transcribed but was never wired to anything -- becoming
+    # the #1 holder of an office never actually announced the title/
+    # ability a King or Hero just acquired. The real condition is
+    # `titchar[ofc] <> prevchar[ofc]` (SS93.1 of the disassembly report):
+    # office -> the leader_id who newly became that office's holder
+    # *this turn* (a leader who already held it last turn, or an office
+    # with no qualifying holder at all, isn't included). Written fresh
+    # every call by `turn/office_holder.py commit_office_holders()`
+    # (overwritten, not appended -- that function already runs exactly
+    # once per real turn, from `orchestrator.py`, same as `office_
+    # holders` above), read by `report/turn_report.py describe_
+    # imperial_office_report()` to decide whether to append the
+    # acquisition paragraph after a given office's row.
+    office_title_change_notices: dict[Office, int] = field(default_factory=dict)
+    # Same as `office_title_change_notices` right above, for the 3 army-
+    # scoped Royal Titles (`turn/office_holder.py ARMY_RANKED_OFFICES`)
+    # -- office -> the army_id who newly became that title's holder this
+    # turn. Written by `commit_army_office_holders()`.
+    army_office_title_change_notices: dict[Office, int] = field(default_factory=dict)
     # Phase 614: the Grandfather of Assassins title's own free-attempt
     # queue -- `turn/plan_dispatch.py _dispatch_fire()` sets this instead
     # of running an ordinary Fire when the order-giver holds Office.

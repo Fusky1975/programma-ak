@@ -609,13 +609,32 @@ def commit_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]
     **Phase 676**: the real call site is `orchestrator.py process_turn()`,
     right after the election/final-standings step -- see that function's
     own Phase 676 docstring addendum.
+
+    **2026-11-20 bug fix**: also computes `state.office_title_change_
+    notices` -- the real `titchar[ofc] <> prevchar[ofc]` comparison
+    (SS93.1) that gates SAY.PAS's own `_ODesc` title-acquisition
+    narrative (`models/office.py OFFICE_TITLE_DESCRIPTION`, confirmed
+    real but never wired anywhere else -- see that field's own
+    docstring). Must compare against the *previous* `state.office_
+    holders[office]` before this same call overwrites it below, so the
+    comparison is done first, per office, right alongside the write.
+    Freshly overwritten every call (not merged/appended) since this
+    runs exactly once per real turn -- a leader who held an office
+    before this method ever ran (a loaded mid-game save, say) reads as
+    a "new" acquisition the first time `commit_office_holders()` is
+    ever called for that game, same as the real engine's own `prevchar`
+    starting at a sentinel no real leader_id can match.
     """
 
     results = resolve_all_office_holders(state)
+    title_changes: dict[Office, int] = {}
     for office, holder in results.items():
         if office is Office.EMPEROR or holder is None:
             continue
+        if state.office_holders.get(office) != holder.leader_id:
+            title_changes[office] = holder.leader_id
         state.office_holders[office] = holder.leader_id
+    state.office_title_change_notices = title_changes
     return results
 
 
@@ -969,13 +988,23 @@ def commit_army_office_holders(state: GameState) -> dict[Office, ArmyOfficeHolde
     turn). **Phase 676**: the real call site is `orchestrator.py
     process_turn()`, right alongside `commit_office_holders()` -- see
     that function's own Phase 676 docstring addendum.
+
+    **2026-11-20 bug fix**: also computes `state.army_office_title_
+    change_notices`, the army-scoped mirror of `commit_office_holders()`'s
+    own same-phase `office_title_change_notices` fix -- see that field's
+    own docstring for the real `titchar[ofc] <> prevchar[ofc]` condition
+    this reproduces.
     """
 
     results = resolve_all_army_office_holders(state)
+    title_changes: dict[Office, int] = {}
     for office, holder in results.items():
         if holder is None:
             continue
+        if state.army_office_holders.get(office) != holder.army_id:
+            title_changes[office] = holder.army_id
         state.army_office_holders[office] = holder.army_id
+    state.army_office_title_change_notices = title_changes
     return results
 
 

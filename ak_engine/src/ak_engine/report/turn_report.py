@@ -1342,7 +1342,7 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster
-from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, Office
+from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, OFFICE_TITLE_DESCRIPTION, Office
 from ak_engine.models.power import (
     MCOND_TEMPLATE,
     PCOND_TEMPLATE,
@@ -15071,6 +15071,29 @@ def _office_candidate_line(state: GameState, office: Office, holder: OfficeHolde
     return f"{prefix}{name} ({holder.merit_points} points, rank {rank}, {riv})"
 
 
+def _office_title_acquired_paragraph(office: Office, values: dict[str, str]) -> str:
+    """2026-11-20 bug fix, user-confirmed via a live playtest: renders
+    `models/office.py OFFICE_TITLE_DESCRIPTION[office]` -- SAY.PAS's own
+    `_ODesc`, a real, fully-transcribed "As the <Title>, <name> has
+    won..." narrative (one per real office, confirmed never wired to
+    any production caller before this fix) -- for the leader/army who
+    *just this turn* became that office's own new holder (`state.
+    office_title_change_notices`/`army_office_title_change_notices`,
+    the real `titchar[ofc] <> prevchar[ofc]` condition, SS93.1).
+
+    No real source for this paragraph's own exact placement survives
+    (SS93's own disassembly only confirms `_ODesc` fires as part of
+    `Pray_Report`'s per-office loop, not a layout) -- shown inline,
+    right after that office's own row in this same report, rather than
+    atop ACTION REPORT the way a diplomacy change notice is: this
+    mirrors the real per-office loop's own "render this office, then
+    maybe this office's own `_ODesc`" structure more closely than a
+    separate top-of-report block would.
+    """
+
+    return render(OFFICE_TITLE_DESCRIPTION[office], values)
+
+
 def _army_office_candidate_line(state: GameState, office: Office, holder: ArmyOfficeHolder, *, prefix: str) -> str:
     """Phase 668: the army-scoped equivalent of `_office_candidate_line()`,
     for one of the 3 titles that "evaluate the military unit directly
@@ -15322,6 +15345,17 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
     + current province (`_army_office_candidate_line()`'s own docstring
     has the full reasoning) -- a documented, narrower approximation,
     not a literal transcription.
+
+    **2026-11-20 bug fix, user-confirmed via a live playtest**: a row's
+    own top candidate now also gets the real `_ODesc` title-acquisition
+    paragraph (`_office_title_acquired_paragraph()`) right after their
+    row, but only when `state.office_title_change_notices`/`army_
+    office_title_change_notices` (`turn/office_holder.py commit_office_
+    holders()`/`commit_army_office_holders()`) says they *just this
+    turn* became that office's new holder -- a King or Hero who already
+    held the office last turn, or whose row is only this Kingdom's own
+    pre-election "Best Hope" and not the true global winner, gets no
+    paragraph (nothing changed for them this turn to announce).
     """
 
     lines = [_IMPERIAL_OFFICE_REPORT_HEADER]
@@ -15365,6 +15399,11 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
 
         lines.append(_office_candidate_line(state, office, top, prefix=office_name))
 
+        if state.office_title_change_notices.get(office) == top.leader_id:
+            name = state.leaders[top.leader_id].name
+            lines.append("")
+            lines.append(_office_title_acquired_paragraph(office, {"<": name, "<2": name, ">": f"{name}'s"}))
+
         runner_up = kingdom_runner_up(state, office, kingdom_id, exclude_leader_id=top.leader_id)
         if runner_up is not None:
             lines.append(_office_candidate_line(state, office, runner_up, prefix=f"{'':26}"))
@@ -15397,6 +15436,12 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
             continue
 
         lines.append(_army_office_candidate_line(state, office, army_top, prefix=office_name))
+
+        if state.army_office_title_change_notices.get(office) == army_top.army_id:
+            army = state.armies[army_top.army_id]
+            army_name = f"{ARMY_TYPE_NAME[army.army_type]} army in {_province_label(state, army.location)}"
+            lines.append("")
+            lines.append(_office_title_acquired_paragraph(office, {"=": army_name}))
 
         army_runner_up = kingdom_runner_up_army(state, office, kingdom_id, exclude_army_id=army_top.army_id)
         if army_runner_up is not None:
