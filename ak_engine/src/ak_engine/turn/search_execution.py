@@ -1020,11 +1020,26 @@ class SearchExecutionResult:
     # Phase 544: a Talk tactic's own Druid DR gate failed against a
     # guardian too unintelligent to be silently ignored (``mintel <
     # Medium`` -- see ``_apply_talk_language_failure()``'s own Phase 544
-    # docstring for the full citation). ``False`` covers both "no Talk
-    # attempted" and the silent ``_LIgnore`` branch (``mintel >=
-    # Medium``) alike -- neither has any observable trace, matching this
-    # project's own pre-existing ``TalkReplyOutcome.IGNORE`` convention.
+    # docstring for the full citation).
     talk_language_failure: bool = False
+    # 2026-11-20, user-confirmed (live AK0 playtest -- a hero sent to
+    # Talk to a black and a red dragon produced no report trace at
+    # all): the two distinct ways a Talk attempt observably goes
+    # nowhere, from the player's own perspective -- ``_LIgnore`` (the DR
+    # gate failed, but the guardian is smart enough to just ignore the
+    # attempt rather than look puzzled) and the real 24-reply table's
+    # own ``TalkReplyOutcome.IGNORE`` category (the DR gate *passed*,
+    # the hero and guardian understood each other fine, but the
+    # guardian's own rolled reply was simply to ignore it). Both were
+    # previously silent by design ("matches this project's own IGNORE
+    # convention" -- see ``_apply_talk_language_failure()``'s own
+    # updated docstring); user's own explicit choice, asked directly:
+    # project-original text for both, same as every other such gap this
+    # session. Collapsed into one field rather than two: neither case
+    # has (or ever had) its own distinguishable sourced text, and the
+    # player-facing effect is identical either way -- nothing happened,
+    # the guardian paid no attention.
+    talk_ignored: bool = False
     # Phase 616: the Feature->Power [5.8] outcome from a full ("fully
     # known", level 3) Scout discovery, when the Feature's own derived
     # power is one of this phase's 9 `TRACTABLE_POWERS`. `None` covers
@@ -1172,18 +1187,30 @@ def _apply_talk_language_failure(
     the computer will simply do your Scout tactic after all other
     encounter tactics are completed").
 
-    ``_LIgnore`` (``mintel >= Medium``) sets nothing observable --
-    matching this project's own pre-existing convention that the
-    successful-Talk reply system's semantically identical
-    ``TalkReplyOutcome.IGNORE`` (``RPuzzled``/``RWarn``, Phase 528) is
-    already a silent no-op with no trace. Only the ``mintel < Medium``
-    "puzzled" branch sets ``result.talk_language_failure`` --
-    ``MTALK.X2``'s own literal reply text is unsourced everywhere in
-    this project (see ``report/turn_report.py``'s own docstring), so
-    this stays a bare boolean rather than fabricated prose; any report-
-    layer text for it is a project-original placeholder, the same
-    "mechanic sourced, text is not" split Phase 543's own Arcane's
-    Valor unification line already established.
+    ``_LIgnore`` (``mintel >= Medium``) sets ``result.talk_ignored``;
+    the ``mintel < Medium`` "puzzled" branch sets ``result.talk_
+    language_failure`` instead -- ``MTALK.X2``'s own literal reply text
+    is unsourced everywhere in this project (see ``report/turn_
+    report.py``'s own docstring), so both stay bare booleans rather
+    than fabricated prose; any report-layer text for either is a
+    project-original placeholder, the same "mechanic sourced, text is
+    not" split Phase 543's own Arcane's Valor unification line already
+    established.
+
+    **2026-11-20 addendum**: also re-derives the real 24-reply table's
+    own outcome for a DR-gate-*passed* Talk, off ``Feature.guardian_
+    talk_reply_id`` -- the exact same real value ``_resolve_talk()``
+    itself (this module's own, Phase 240/528/727) already generated or
+    reused earlier in this very call's own tactic walk, so this is a
+    free re-read, not a second roll. Sets ``result.talk_ignored`` when
+    that reply's own ``TalkReplyOutcome`` category is ``IGNORE`` --
+    the real guardian understood the hero fine, just didn't react. Any
+    other category (``ATTACK``, suppressed or not, and every real
+    ``QUEST_OR_AGREEMENT`` reply) already produced its own real,
+    distinguishable outcome earlier in the same walk (forced combat, or
+    ``_resolve_talk()``'s own early, non-``None`` return respectively),
+    so this addendum only ever adds a new, previously-silent fact --
+    never contradicts or duplicates one already recorded.
 
     **Bug fix**: ``leader`` used to be re-derived here via ``state.
     leaders.get(leader_id)`` instead of being passed in as the caller's
@@ -1208,11 +1235,23 @@ def _apply_talk_language_failure(
     if holds_monster_command_item_for(state, leader.leader_id, feature.guardian_monster):
         return  # Phase 537 carve-out -- Talk's own social roll never runs at all
     druid_level = effective_skill_level(state, leader, Ability.DRUID)
-    if can_talk_to_monster(feature.guardian_monster, druid_level):
-        return  # the DR gate passed -- no language-failure branch at all
-    if monster_intelligence_at_least_medium(feature.guardian_monster):
-        return  # _LIgnore -- silent, matches this project's own IGNORE convention
-    result.talk_language_failure = True
+    if not can_talk_to_monster(feature.guardian_monster, druid_level):
+        if monster_intelligence_at_least_medium(feature.guardian_monster):
+            result.talk_ignored = True  # _LIgnore
+        else:
+            result.talk_language_failure = True  # RPuzzled
+        return
+
+    # The DR gate passed -- re-derive the real reply-table outcome from
+    # the same persisted value _resolve_talk() itself already set this
+    # same call (see this function's own 2026-11-20 addendum above).
+    # None means Talk never actually reached the reply roll this call --
+    # nothing to re-derive.
+    if feature.guardian_talk_reply_id is None:
+        return
+    reply = MonsterTalkReply(feature.guardian_talk_reply_id)
+    if MONSTER_TALK_REPLY_OUTCOME[reply] is TalkReplyOutcome.IGNORE:
+        result.talk_ignored = True
 
 
 def _register_search_target_known(

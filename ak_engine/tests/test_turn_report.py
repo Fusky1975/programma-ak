@@ -9133,6 +9133,59 @@ def test_describe_search_non_riddle_quest_reply_appends_no_extra_line():
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
 
 
+def test_describe_search_talk_language_failure_appends_the_language_failure_line():
+    # 2026-11-20 bug fix, user-confirmed: previously rendered nothing at
+    # all beyond the opening line.
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=False, guardian_monster=Monster.GARGOYLE, talk_language_failure=True
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric tried to talk to the Gargoyle, but neither could understand the other.",
+    ]
+
+
+def test_describe_search_talk_ignored_appends_the_ignored_line():
+    # 2026-11-20 bug fix, user-confirmed: previously rendered nothing at
+    # all beyond the opening line.
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=False, guardian_monster=Monster.GI_EAGLE, talk_ignored=True
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric tried to talk to the Giant Eagle, but it simply ignored the attempt.",
+    ]
+
+
+def test_describe_search_talk_language_failure_takes_precedence_over_ignored():
+    # Mutually exclusive by construction (_apply_talk_language_failure()
+    # only ever sets one), but the composer's own ordering is still
+    # worth pinning down directly.
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        guardian_monster=Monster.GARGOYLE,
+        talk_language_failure=True,
+        talk_ignored=True,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric tried to talk to the Gargoyle, but neither could understand the other.",
+    ]
+
+
 def test_describe_search_guardian_quest_location_appends_the_quest_line():
     result = SearchExecutionResult(
         accepted=True,

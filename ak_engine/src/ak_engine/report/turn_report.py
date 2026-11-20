@@ -11850,6 +11850,27 @@ def _resolve_ctrl_a_markers(text: str) -> str:
     return resolved
 
 
+# 2026-11-20, user-confirmed (live AK0 playtest -- a hero sent to Talk
+# to a black and a red dragon produced no report trace at all):
+# project-original text for SearchExecutionResult.talk_language_
+# failure/talk_ignored (turn/search_execution.py), same convention
+# already used for the Practice-side-effects/wand-misuse/skill-book-
+# read/rare-alignment-exception templates -- see those fields' own
+# docstrings for why no sourced MTALK.X2 text exists for either.
+TALK_LANGUAGE_FAILURE_TEMPLATE = "< tried to talk to the ~, but neither could understand the other."
+TALK_IGNORED_TEMPLATE = "< tried to talk to the ~, but it simply ignored the attempt."
+
+
+def render_talk_language_failure(character_name: str, monster_name: str, rng: random.Random) -> str:
+    values = {"<": character_name, "~": monster_name}
+    return render(TALK_LANGUAGE_FAILURE_TEMPLATE, values, rng=rng)
+
+
+def render_talk_ignored(character_name: str, monster_name: str, rng: random.Random) -> str:
+    values = {"<": character_name, "~": monster_name}
+    return render(TALK_IGNORED_TEMPLATE, values, rng=rng)
+
+
 def render_guardian_poses_riddle(monster_name: str, riddle: Treasure) -> str:
     """Surfaces ``RIDDLE.X2``'s own already-transcribed riddle text
     (``QUEST_RIDDLE_TEXT``) in the ACTION REPORT once a Talk resolves to
@@ -12454,6 +12475,14 @@ def describe_search(
         lines.append(render_guardian_poses_riddle(monster_name, result.guardian_riddle))
     if result.guardian_quest_location is not None:
         lines.append(render_guardian_proposes_quest_location(monster_name, result.guardian_quest_location))
+    # 2026-11-20: the two previously-silent "Talk went nowhere" outcomes
+    # -- see SearchExecutionResult.talk_language_failure's/talk_ignored's
+    # own docstrings. Mutually exclusive by construction (_apply_talk_
+    # language_failure() only ever sets one or the other per call).
+    if result.talk_language_failure:
+        lines.append(render_talk_language_failure(character_name, monster_name, rng))
+    elif result.talk_ignored:
+        lines.append(render_talk_ignored(character_name, monster_name, rng))
 
     # Phase 858 (backlog: SBUNGLE.X, the "personal-combat Cast that just
     # fizzles" sentence -- see `SearchExecutionResult.fizzled_spells`'s
