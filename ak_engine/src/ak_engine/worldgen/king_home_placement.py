@@ -59,6 +59,15 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 MIN_HOME_DISTANCE = 3
 
+# 2026-11-20, project-original, user-confirmed from their own real-game
+# play experience (same sourcing category as this module's other three
+# rules -- see module docstring): a King's Home province always has
+# exactly one neighboring "Rich" province. Mirrors `report/ascii_map.py
+# _status_word()`'s own tax>=7 "Rich" tier threshold -- not imported
+# from there (worldgen has no business depending on a report-layer
+# helper), just the same project-original number.
+RICH_PROVINCE_MIN_TAX = 7
+
 _HUMANOID_RACES: frozenset[Race] = frozenset({Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH})
 _HOME_CANDIDATE_TERRAINS: tuple[Terrain, ...] = (Terrain.PLAINS, Terrain.JUNGLE, Terrain.FOREST, Terrain.MTNS)
 _SECOND_SLOT_CAVALRY_OR_CHARIOTS: tuple[ArmyType, ...] = (ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY, ArmyType.CHARIOTS)
@@ -77,6 +86,13 @@ def _has_sea_neighbor(coord: HexCoord, grid: dict[HexCoord, Terrain], bounds: Ma
     return any(grid.get(neighbor) is Terrain.SEA for neighbor in neighbors(coord, bounds))
 
 
+def _has_exactly_one_rich_neighbor(coord: HexCoord, tax_grid: dict[HexCoord, int], bounds: MapBounds) -> bool:
+    """See ``RICH_PROVINCE_MIN_TAX``'s own docstring for the sourcing."""
+
+    rich_neighbors = sum(1 for neighbor in neighbors(coord, bounds) if tax_grid.get(neighbor, 0) >= RICH_PROVINCE_MIN_TAX)
+    return rich_neighbors == 1
+
+
 def eligible_home_coords(
     grid: dict[HexCoord, Terrain],
     race_grid: dict[HexCoord, Race],
@@ -84,8 +100,20 @@ def eligible_home_coords(
     taken_homes: list[HexCoord],
     *,
     naval: bool,
+    tax_grid: dict[HexCoord, int] | None = None,
 ) -> list[HexCoord]:
-    """Every coordinate satisfying terrain/race/distance/(sea-adjacency if Naval)."""
+    """Every coordinate satisfying terrain/race/distance/(sea-adjacency if
+    Naval)/(exactly one Rich neighbor if ``tax_grid`` is given).
+
+    ``tax_grid`` (2026-11-20) is optional and keyword-only so every
+    pre-existing caller that doesn't have one yet (none real remain,
+    but this keeps the function itself honest about the new
+    constraint's own opt-in shape) keeps its prior behavior unchanged.
+    When given, candidates are filtered to exactly one Rich neighbor
+    first; if that leaves nothing, the caller (``choose_king_home()``)
+    is the one that falls back, not this function -- it only ever
+    returns the single, most-filtered list for whichever call it got.
+    """
 
     result = []
     for coord, terrain in grid.items():
@@ -96,6 +124,8 @@ def eligible_home_coords(
         if any(hex_distance(coord, taken) < MIN_HOME_DISTANCE for taken in taken_homes):
             continue
         if naval and not _has_sea_neighbor(coord, grid, bounds):
+            continue
+        if tax_grid is not None and not _has_exactly_one_rich_neighbor(coord, tax_grid, bounds):
             continue
         result.append(coord)
     return result
@@ -109,8 +139,18 @@ def choose_king_home(
     rng: PascalRandom,
     *,
     naval: bool,
+    tax_grid: dict[HexCoord, int] | None = None,
 ) -> HexCoord:
-    """Uniform random draw among ``eligible_home_coords()``."""
+    """Uniform random draw among ``eligible_home_coords()``.
+
+    ``tax_grid`` (2026-11-20, project-original, user-confirmed): when
+    given, prefers a candidate with exactly one Rich (``tax >=
+    RICH_PROVINCE_MIN_TAX``) neighbor -- falling back to the plain
+    terrain/race/distance/(sea-adjacency) candidate list, user-
+    confirmed, if no coordinate satisfies every constraint at once
+    (rather than failing world generation outright over this one new,
+    best-effort rule).
+    """
 
     candidates = eligible_home_coords(grid, race_grid, bounds, taken_homes, naval=naval)
     if not candidates:
@@ -118,6 +158,12 @@ def choose_king_home(
             "No eligible King Home province found (terrain/race/distance"
             f"{'/sea-adjacency' if naval else ''} constraints) -- map too small or too crowded."
         )
+    if tax_grid is not None:
+        rich_neighbor_candidates = eligible_home_coords(
+            grid, race_grid, bounds, taken_homes, naval=naval, tax_grid=tax_grid
+        )
+        if rich_neighbor_candidates:
+            candidates = rich_neighbor_candidates
     return candidates[rng.irand() % len(candidates)]
 
 

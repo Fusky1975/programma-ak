@@ -1411,6 +1411,50 @@ def test_dispatch_leave_can_pass_a_colocated_garrison_commanded_army_to_another_
     assert state.armies[army_id].commanded_by == 2
 
 
+def test_dispatch_leave_all_includes_a_colocated_garrison_commanded_army():
+    # 2026-11-20 bug fix, user-confirmed via a live playtest ("LEAVE
+    # ALL non ha dato alcuna unità dal garrison commander al Re
+    # Vitello"): a Hero with nothing personally commanded, but
+    # co-located with a Garrison-commanded army of his own Kingdom,
+    # must still get it from LEAVE ALL -- the same army the specific-
+    # list case right above this already allows by number.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None  # Garrison-commanded, nothing personally commanded
+    state.add_leader(LeaderState(2, 1, "Other Leader", location))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, 255, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == 2
+
+
+def test_dispatch_leave_all_excludes_a_noncolocated_garrison_commanded_army():
+    state, army_id = _state_with_army(HexCoord(3, 9), {HexCoord(4, 9): Terrain.PLAINS})
+    state.armies[army_id].commanded_by = None
+    state.armies[army_id].location = HexCoord(4, 9)  # not co-located with the acting leader
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, 255, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == []
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_leave_all_excludes_a_colocated_garrison_commanded_army_of_a_different_kingdom():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None
+    state.armies[army_id].kingdom_id = 2  # a different Kingdom's own Garrison-commanded army
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, 255, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == []
+    assert state.armies[army_id].commanded_by is None
+
+
 def test_dispatch_leave_a_noncolocated_garrison_commanded_army_is_skipped():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     state.armies[army_id].commanded_by = None

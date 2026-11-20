@@ -1113,9 +1113,26 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
     unità dal Comando di Guarnigione a un Eroe") -- unled and co-located
     with the acting leader (``army.commanded_by is None and army.
     location == acting_leader.location``); either way the army must
-    belong to the acting leader's own Kingdom. ``request.all_armies``
-    needs no equivalent check: it already resolves to ``armies_
-    commanded_by(leader_id)``, which trivially satisfies this rule.
+    belong to the acting leader's own Kingdom.
+
+    **2026-11-20 bug fix, user-confirmed via a live playtest ("LEAVE
+    ALL non ha dato alcuna unità dal garrison commander al Re
+    Vitello")**: ``request.all_armies`` used to resolve to plain
+    ``armies_commanded_by(leader_id)`` only, on the reasoning that this
+    already trivially satisfies rule (1) above -- true, but it also
+    made "ALL" *narrower* than the specific-list case right above it:
+    the move-composer's own army-target dropdown (``webapp/moves_
+    compose.py leave_army_target_options()``) already lists a co-located
+    Garrison-commanded army as something this leader can Leave by
+    number, right next to the same dropdown's own "ALL" pseudo-option
+    -- so a Hero whose only real military presence at his own location
+    was a Garrison-commanded army, with nothing personally commanded at
+    all, saw "ALL" give away nothing. ``request.all_armies`` now
+    resolves to the exact same eligibility rule (1) spells out for a
+    specific list -- every army of the acting leader's own Kingdom that
+    he either commands or (Garrison-commanded, co-located) may pass
+    along -- so "ALL" can never give away less than picking every one
+    of the dropdown's own real choices by hand would.
 
     (2) Leaving to a named Hero (``request.target_leader_id is not
     None``) now requires that Hero to be of the acting leader's own
@@ -1168,7 +1185,17 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
         return result
 
     target_ids = (
-        [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
+        [
+            army.army_id
+            for army in state.armies.values()
+            if army.kingdom_id == acting_leader.kingdom_id
+            and (
+                army.commanded_by == leader_id
+                or (army.commanded_by is None and army.location == acting_leader.location)
+            )
+        ]
+        if request.all_armies
+        else request.army_ids
     )
 
     target_leader = state.leaders.get(request.target_leader_id) if request.target_leader_id is not None else None

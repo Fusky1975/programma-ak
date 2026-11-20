@@ -284,6 +284,32 @@ def test_build_initial_armies_returns_empty_when_budget_cannot_afford_slot0():
     assert build_initial_armies(ArmyType.LEGION, None, budget=2) == []
 
 
+# 2026-11-20 bug fix, user-confirmed via two separate live playtests:
+# every neutral province should always have at least one defender.
+
+
+def test_build_initial_armies_guarantee_minimum_forces_slot0_when_unaffordable():
+    armies = build_initial_armies(ArmyType.LEGION, None, budget=2, guarantee_minimum=True)
+    assert armies == [ArmyType.LEGION]
+
+
+def test_build_initial_armies_guarantee_minimum_is_a_noop_when_already_affordable():
+    # The loop already produces a real result -- guarantee_minimum must
+    # not add anything extra on top of it.
+    armies = build_initial_armies(ArmyType.LEGION, ArmyType.BOWMEN, budget=5, guarantee_minimum=True)
+    assert armies == [ArmyType.LEGION, ArmyType.BOWMEN]
+
+
+def test_build_initial_armies_guarantee_minimum_still_empty_without_slot0():
+    assert build_initial_armies(None, ArmyType.BOWMEN, budget=100, guarantee_minimum=True) == []
+
+
+def test_build_initial_armies_guarantee_minimum_defaults_off():
+    # Every pre-existing caller (King Home, special-race budgets) must
+    # keep its exact prior behavior unless it opts in.
+    assert build_initial_armies(ArmyType.LEGION, None, budget=2) == []
+
+
 def test_resolve_commander_matches_the_confirmed_three_cases():
     assert resolve_commander(owner_leader_id=None, is_king_home=True) == COMMANDER_NONE
     assert resolve_commander(owner_leader_id=None, is_king_home=False) == COMMANDER_NONE

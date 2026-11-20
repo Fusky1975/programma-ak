@@ -592,6 +592,41 @@ def generate_new_game(
 
     race_grid: dict[HexCoord, Race] = {coord: draw_base_race(terrain, rng) for coord, terrain in grid.items()}
 
+    # 2026-11-20 -- moved ahead of King Home selection (was previously
+    # built only after homes were chosen, further below) so a Home's
+    # own candidate search can see every other province's real tax --
+    # `king_home_placement.py choose_king_home()`'s own new "exactly one
+    # Rich neighbor" rule (user-confirmed, project-original) needs it.
+    # This also brings the implementation a step closer to the real,
+    # confirmed AKGEN.EXE stage order quoted at the top of this
+    # docstring ("assign base native race, automatic tax and recruit
+    # slots per province" is stage 3, strictly before stage 5's "place
+    # Kings... ") -- tax was previously computed after Home selection
+    # purely because special-race placement (below) needs `king_home_
+    # set` first; the *base* ordinary tax roll has no such dependency
+    # and can move up on its own. User-confirmed (2026-11-20): this
+    # reshuffles every later `rng` draw for every seed, so a very large
+    # share of this project's own existing world-gen tests needed their
+    # expected values updated -- not a sign anything else was wrong,
+    # just a different (and, for Home placement, more correct) draw
+    # order. Special-race coordinates still get their own `recompute_
+    # tax()` overwrite afterward, unchanged -- a neighbor's *base* tax
+    # used for the Home search below can therefore end up superseded by
+    # a later special-race recompute; this rule is a best-effort
+    # heuristic over the base tax map, not a guarantee that survives
+    # every subsequent overwrite (the same category of approximation as
+    # every other "documented, not a hard invariant" choice this module
+    # already makes elsewhere).
+    tax_grid: dict[HexCoord, int] = {}
+    for coord, terrain in grid.items():
+        if terrain is Terrain.SEA:
+            coast = coast_score(coord, grid, bounds)
+            is_edge_row = coord.y in (0, bounds.height - 1)
+            edge = compute_edge_score(coast, is_edge_row, rng)
+            tax_grid[coord] = true_sea_tax(edge, rng)
+        else:
+            tax_grid[coord] = ordinary_land_tax(terrain, rng)
+
     # Phase 427: resolve each King's own Home coordinate -- an explicit
     # KingSetup.home_coord is honored as-is; None triggers the
     # project-original (user-confirmed) automatic selection. Kept as a
@@ -603,7 +638,7 @@ def generate_new_game(
             continue
         naval = king_is_naval(game_state.leaders[king.leader_id].skills)
         home_coord_by_king[king.leader_id] = choose_king_home(
-            grid, race_grid, bounds, list(home_coord_by_king.values()), rng, naval=naval
+            grid, race_grid, bounds, list(home_coord_by_king.values()), rng, naval=naval, tax_grid=tax_grid
         )
 
     king_homes = [home_coord_by_king[king.leader_id] for king in kings]
@@ -613,16 +648,6 @@ def generate_new_game(
     special_race_placements = place_all_special_races(
         grid, race_grid, bounds, king_home_set, rng, new_rules=new_rules
     )
-
-    tax_grid: dict[HexCoord, int] = {}
-    for coord, terrain in grid.items():
-        if terrain is Terrain.SEA:
-            coast = coast_score(coord, grid, bounds)
-            is_edge_row = coord.y in (0, bounds.height - 1)
-            edge = compute_edge_score(coast, is_edge_row, rng)
-            tax_grid[coord] = true_sea_tax(edge, rng)
-        else:
-            tax_grid[coord] = ordinary_land_tax(terrain, rng)
 
     for race, placed_coords in special_race_placements.items():
         for coord in placed_coords:
@@ -916,8 +941,18 @@ def generate_new_game(
             if recruit_type_1 is not None:
                 recruit_type_2 = recruit2_grid.get(coord)
                 budget = ordinary_humanoid_budget(tax, rng)
+                # 2026-11-20 bug fix, user-confirmed via two separate
+                # live playtests: see `worldgen/initial_armies.py
+                # build_initial_armies()`'s own `guarantee_minimum`
+                # docstring addendum -- a Poor (tax 0-1) province's
+                # budget can never afford even one unit on its own,
+                # which used to leave it with no garrison at all.
                 army_types = build_initial_armies(
-                    recruit_type_1, recruit_type_2, budget, strength_of=_elephants_aware_strength_of(rng)
+                    recruit_type_1,
+                    recruit_type_2,
+                    budget,
+                    strength_of=_elephants_aware_strength_of(rng),
+                    guarantee_minimum=True,
                 )
 
         game_state.provinces[coord] = ProvinceState(

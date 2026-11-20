@@ -39,7 +39,26 @@ Sixth phase of the world-generation sub-plan. Source:
   independent R4 draws, left unclamped exactly as the source gives
   it -- a low-tax province can get a small or even negative budget,
   which `build_initial_armies()` naturally resolves to zero armies
-  rather than needing a special case).
+  rather than needing a special case -- this one budget formula's own
+  documented "zero armies" outcome is untouched by the 2026-11-20
+  ``guarantee_minimum`` addendum right below, which is scoped to
+  ``ordinary_humanoid_budget()`` only).
+
+  **2026-11-20 bug fix, user-confirmed via two separate live playtests
+  (every single province moved into across both games turned out
+  undefended):** ``ordinary_humanoid_budget()``'s own ``Trunc(ptax *
+  (0.9 - 0.25*Random)) + 1`` formula is always exactly 1 for a tax-0
+  or tax-1 ("Poor") province, but every recruitable unit type costs 2
+  or more -- so `build_initial_armies()`'s own ordinary creation loop
+  could never afford even its first unit there, leaving roughly a
+  third of all ordinary neutral provinces (confirmed empirically
+  across 20 generated worlds) with zero defenders, not merely a
+  minority edge case. The user confirmed directly: every neutral
+  province should always have at least one defending unit -- the
+  budget governs how many *more* it gets, not whether it has any at
+  all. `build_initial_armies()`'s own new ``guarantee_minimum`` flag
+  (above) is passed ``True`` only from this one call site in
+  ``generate_new_game.py``.
 
   **``ordinary_humanoid_budget()``, corrected by Phase 902 (``TROLL.md``,
   2026-09-25, a byte-level disassembly of this exact ``province_army_
@@ -608,8 +627,24 @@ def build_initial_armies(
     slot1: ArmyType | None,
     budget: int,
     strength_of: Callable[[ArmyType], int] | None = None,
+    *,
+    guarantee_minimum: bool = False,
 ) -> list[ArmyType]:
-    """The confirmed creation loop: alternate slots, spend budget, stop at 4 or when unaffordable."""
+    """The confirmed creation loop: alternate slots, spend budget, stop at 4 or when unaffordable.
+
+    ``guarantee_minimum`` (2026-11-20, project-original, user-confirmed
+    for the ordinary-humanoid case specifically): when the loop below
+    couldn't afford even its first unit, force ``slot0`` in anyway
+    (going into budget "debt") rather than leaving the province with
+    no defender at all. Defaults to ``False``, preserving every other
+    caller's exact pre-existing behavior unchanged -- in particular
+    ``flying_or_special_budget()``'s own documented "a low-tax province
+    can get a small or even negative budget, which this naturally
+    resolves to zero armies rather than needing a special case" (module
+    docstring) is a *separate*, still-intentional "no army" outcome for
+    that budget formula specifically, not something this new flag
+    should touch.
+    """
 
     if strength_of is None:
         strength_of = _base_strength_lookup
@@ -631,6 +666,9 @@ def build_initial_armies(
         remaining -= cost
         other = 1 - current
         current = current if slots[other] is None else other
+
+    if not armies and guarantee_minimum:
+        armies.append(slot0)
 
     return armies
 
