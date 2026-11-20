@@ -15351,6 +15351,50 @@ def test_describe_imperial_office_report_shows_a_real_office_holder():
     assert "High Priest Palatine      Aldric (3 points, rank 1, None)" in lines
 
 
+def test_describe_imperial_office_report_announces_a_newly_won_title():
+    # 2026-11-20 bug fix, user-confirmed via a live playtest: SAY.PAS's
+    # own `_ODesc` real title-acquisition narrative (`models/office.py
+    # OFFICE_TITLE_DESCRIPTION`) is now rendered right after a row whose
+    # own top candidate just became that office's new holder this turn
+    # (`state.office_title_change_notices`).
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.leaders[1].merit_tally.resurrection_bless_casts = 3
+    state.office_title_change_notices = {Office.PRIEST: 1}
+
+    lines = describe_imperial_office_report(state, 1)
+
+    top_index = next(i for i, line in enumerate(lines) if line.startswith("High Priest Palatine"))
+    assert lines[top_index + 1] == ""
+    assert "Aldric" in lines[top_index + 2]
+    assert "Ivory Rod" in lines[top_index + 2]
+
+
+def test_describe_imperial_office_report_says_nothing_for_an_unchanged_title_holder():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.leaders[1].merit_tally.resurrection_bless_casts = 3
+    state.office_title_change_notices = {}  # nothing changed this turn
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert not any("Ivory Rod" in line for line in lines)
+
+
+def test_describe_imperial_office_report_does_not_announce_a_different_kingdoms_winner():
+    # Pre-election, this Kingdom's own "Best Hope" row never gets the
+    # acquisition paragraph for a title some *other* Kingdom's leader
+    # actually just won this turn.
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.leaders[1].merit_tally.resurrection_bless_casts = 3
+    state.office_title_change_notices = {Office.PRIEST: 999}  # some other leader entirely
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert not any("Ivory Rod" in line for line in lines)
+
+
 def test_describe_imperial_office_report_shows_a_real_army_office_holder():
     # Phase 668: the 3 army-scoped titles "evaluate the military unit
     # directly rather than a leader" -- rendered with a type+province
@@ -15385,6 +15429,28 @@ def test_describe_imperial_office_report_army_office_riv_percent_and_runner_up()
     runner_up_line = lines[top_index + 1]
     assert "Dragons army" in runner_up_line
     assert runner_up_line.startswith(" " * 26)  # blank-indented runner-up prefix
+
+
+def test_describe_imperial_office_report_announces_a_newly_won_army_title():
+    state = _armies_state()
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(0, 0)))
+    state.army_office_title_change_notices = {Office.AIR_FORCE: 101}
+
+    lines = describe_imperial_office_report(state, 1)
+
+    top_index = next(i for i, line in enumerate(lines) if line.startswith("Royal Air Force"))
+    assert lines[top_index + 1] == ""
+    assert "greatest flying unit in the world" in lines[top_index + 2]
+
+
+def test_describe_imperial_office_report_says_nothing_for_an_unchanged_army_title_holder():
+    state = _armies_state()
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(0, 0)))
+    state.army_office_title_change_notices = {}
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert not any("greatest flying unit in the world" in line for line in lines)
 
 
 def test_describe_imperial_office_report_differs_per_kingdom_before_the_emperor_election():
