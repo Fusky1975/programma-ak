@@ -126,8 +126,13 @@ Phase 406, ``is_native_to_province`` was always computed from
 army type can be recruited *at all*, so by construction it could never
 observe a compatible-but-non-native type here; the double-cost path
 this project had already built for that case (``RecruitResolution.
-is_double_cost``) was consequently unreachable dead code. Real
-per-province data has existed since Phase 278
+gold_per_unit``'s own native/non-native doubling) was consequently
+unreachable dead code. **2026-11-20**: ``RecruitResolution`` also used
+to carry a separate ``is_double_cost`` flag alongside that doubled
+``gold_per_unit`` -- removed (never read by any caller, confirmed by
+grep; this project's own RECRUIT.X/HIREMERC.X narration never mentions
+cost at all, for any recruit, so there was never a consumer for it to
+feed). Real per-province data has existed since Phase 278
 (``ProvinceState.recruit_type_1``/``recruit_type_2``, decoded from a
 real world file's own ``Mod_PAT``) but was never read here. Now, when
 a province was bridged from a real world file (``recruit_type_1 is not

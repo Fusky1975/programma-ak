@@ -101,7 +101,6 @@ def test_resolve_recruit_native_cost_matches_army_table_pay():
         is_home_province=False, is_native_to_province=True,
     )
     assert result.gold_per_unit == 3
-    assert result.is_double_cost is False
     assert result.ally_fee_per_unit == 0
     assert result.max_units == 1
 
@@ -112,7 +111,6 @@ def test_resolve_recruit_non_native_cost_is_doubled():
         is_home_province=False, is_native_to_province=False, commander_already_has_type=True,
     )
     assert result.gold_per_unit == 6
-    assert result.is_double_cost is True
 
 
 def test_resolve_recruit_non_native_without_an_existing_unit_is_not_recruitable():
@@ -184,7 +182,6 @@ def test_resolve_recruit_hiring_existing_mercenary_bypasses_non_native_ownership
     # "doesn't distinguish hiring from levying on price" rule (Phase 16)
     # -- only the two eligibility exceptions are bypassed, not the cost.
     assert result.gold_per_unit == 6
-    assert result.is_double_cost is True
 
 
 def test_resolve_recruit_hiring_existing_mercenary_still_requires_a_rulebook_cost():
