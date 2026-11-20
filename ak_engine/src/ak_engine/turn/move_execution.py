@@ -1080,12 +1080,19 @@ def _auto_board_transport_group(
 # Whale itself cannot hop directly between two land provinces; Ents/
 # Dinosaurs additionally need a real, successful boarding (`DRUIDIC_
 # TRANSPORT`) or an active Part Sea effect to cross Sea at all; Mermen
-# need either an active Part Sea effect on the land endpoint
-# specifically, or a same-move air-type carrier, to cross onto
-# genuinely permanent land (`turn/sea_transport.py`'s own module
-# docstring: "I Tritoni muovono come le Flotte, con l'eccezione che
-# possono entrare ed uscire da una provincia colpita da un incantesimo
-# Separare le Acque... possono essere trasportate da unità aeree").
+# move like Fleets (ordinary Sea<->Land is always fine, same as Fleet/
+# Whale -- only a Land<->Land hop is illegal for them), **plus** two
+# Mermen-only exceptions a Fleet/Whale doesn't get: either endpoint
+# being under an active Part Sea effect, or a same-move air-type
+# carrier, also makes an otherwise-illegal hop legal for them
+# (`turn/sea_transport.py`'s own module docstring: "I Tritoni muovono
+# come le Flotte, con l'eccezione che possono entrare ed uscire da una
+# provincia colpita da un incantesimo Separare le Acque... possono
+# essere trasportate da unità aeree"). **2026-11-20 bug fix**: the
+# Mermen branch below used to require *both* endpoints to satisfy
+# "Sea or Part-Sea" (AND instead of OR), silently refusing even a
+# plain Sea<->Land hop that needs no exception at all -- see that
+# branch's own docstring.
 #
 # Twenty-ninth fresh codebase survey (2026-09-04), candidate #1. Four
 # design decisions confirmed directly with the user: (1) broad scope --
@@ -1281,9 +1288,18 @@ def find_transport_illegality(
         if army.army_type in OVERFLIGHT_AIR:
             continue  # "can move by land and sea... can end a turn on the sea"
         if army.army_type is ArmyType.MERMEN:
+            # 2026-11-20 bug fix, user-confirmed via a live playtest: "I
+            # Tritoni muovono come le Flotte" (Mermen move like Fleets)
+            # -- entering/leaving land on its own is fine for them too,
+            # same OR-based reciprocal rule as the SEA_ARMY_TYPES branch
+            # right below; only land-to-land is illegal. This used to
+            # AND the two endpoints' own passability instead of OR-ing
+            # them, so a plain Sea<->Land hop (no Part Sea/air-transport
+            # exception needed at all, just like a Fleet) was wrongly
+            # refused outright.
             origin_passable = origin_is_sea or _is_part_sea(origin_province)
             target_passable = target_is_sea or _is_part_sea(target_province)
-            if origin_passable and target_passable:
+            if origin_passable or target_passable:
                 continue
             return "mermen_air_transport"
         if army.army_type in SEA_ARMY_TYPES:  # Fleet, Whales

@@ -6816,6 +6816,88 @@ def test_describe_rumor_uses_the_described_coord_not_the_features_real_coord():
     assert "$4:" in line
 
 
+# 2026-11-20 bug fix, user-confirmed via a live playtest ("Vitello heard
+# a rumor about Cavern in $57, al posto di $57 andrebbe detto il nome
+# della provincia"): a province this same Kingdom already knows by name
+# must be named, not shown as a raw hex code.
+
+
+def test_describe_rumor_shows_the_real_name_for_a_province_this_kingdom_already_knows():
+    coord = HexCoord(9, 9)
+    state, feature = _rumor_state_with_feature(coord, guardian_monster=Monster.ARCHER)
+    state.add_province(
+        ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, name="Thornwood", explored_percent_by_kingdom={1: 50})
+    )
+    rumor = Rumor(
+        rumor_id=1,
+        kingdom_id=1,
+        leader_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=feature.feature_id,
+        is_true=True,
+        described_coord=coord,
+        described_monster=Monster.ARCHER,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
+
+    assert line == "Aldric heard of a feature in  Thornwood:  Dungeon inhabited by Renegade Archer."
+    assert "$" not in line
+
+
+def test_describe_rumor_shows_a_raw_hex_code_for_a_province_this_kingdom_does_not_know():
+    coord = HexCoord(9, 9)
+    state, feature = _rumor_state_with_feature(coord, guardian_monster=Monster.ARCHER)
+    state.add_province(
+        ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, name="Thornwood", explored_percent_by_kingdom={})
+    )
+    rumor = Rumor(
+        rumor_id=1,
+        kingdom_id=1,
+        leader_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=feature.feature_id,
+        is_true=True,
+        described_coord=coord,
+        described_monster=Monster.ARCHER,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
+
+    assert line == "Aldric heard of a feature in  $99:  Dungeon inhabited by Renegade Archer."
+    assert "Thornwood" not in line
+
+
+def test_describe_rumor_shows_a_different_kingdoms_knowledge_does_not_leak():
+    # Kingdom 2 knows the province; the rumor was heard by Kingdom 1,
+    # which doesn't -- its own report must still use the raw hex code.
+    coord = HexCoord(9, 9)
+    state, feature = _rumor_state_with_feature(coord, guardian_monster=Monster.ARCHER)
+    state.add_province(
+        ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, name="Thornwood", explored_percent_by_kingdom={2: 100})
+    )
+    rumor = Rumor(
+        rumor_id=1,
+        kingdom_id=1,
+        leader_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=feature.feature_id,
+        is_true=True,
+        described_coord=coord,
+        described_monster=Monster.ARCHER,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
+
+    assert line == "Aldric heard of a feature in  $99:  Dungeon inhabited by Renegade Archer."
+
+
 def test_describe_rumor_picks_the_selected_variant():
     coord = HexCoord(0, 0)
     state, feature = _rumor_state_with_feature(coord, guardian_monster=Monster.ARCHER)

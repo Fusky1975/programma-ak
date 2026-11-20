@@ -12195,6 +12195,23 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
     marker) -- ``turn/hex_numbering.py encode_hex_number()``, the exact
     inverse of the decode every LMOVE order already uses.
 
+    **2026-11-20 bug fix, user-confirmed via a live playtest**: this
+    used to render the raw hex code *unconditionally*, even when
+    ``rumor.described_coord`` names a province this same Kingdom
+    already knows by name (`turn/rumor.py``'s own "possibly false"
+    province substitution picks uniformly from *every* province on the
+    map, with no regard to whether this Kingdom has ever been there --
+    `described_coord`'s own docstring already says as much). Real
+    provinces always have a name from world generation onward
+    (`worldgen/generate_new_game.py` calls `turn/rename_province.py
+    assign_province_name()` for every one of them up front, not
+    lazily on first discovery) -- a raw hex code was never really
+    standing in for "no name exists yet," only for "this Kingdom
+    doesn't know it yet." So the "$#" raw-hex-code half of the
+    template is now used only when ``ProvinceState.known_to_kingdom()``
+    says this Kingdom genuinely doesn't know the province yet; the "@"
+    (province name) marker swaps in for it otherwise.
+
     Dispatches on ``rumor.content`` (``RumorContent.FEATURE_AND_MONSTER``
     -> ``MONSTER_NAMES[rumor.described_monster]``, ``RumorContent.ITEM``
     -> ``TREASURE_NAME[rumor.described_treasure]``) -- exactly one of the
@@ -12206,14 +12223,24 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
 
     feature = state.features[rumor.feature_id]
     feature_name = FEATURE_TYPE_NAMES[feature.kind]
-    location_code = str(encode_hex_number(rumor.described_coord, board_width))
-    values = {"<": character_name, "&": feature_name, "#": location_code}
+    values = {"<": character_name, "&": feature_name}
     if rumor.content is RumorContent.FEATURE_AND_MONSTER:
         values["+"] = MONSTER_NAMES[rumor.described_monster]
         variant = pick_variant(_FRUMOR_MONSTER_TEMPLATES, rng)
     else:
         values["\\"] = TREASURE_NAME[rumor.described_treasure]
         variant = pick_variant(_FRUMOR_ITEM_TEMPLATES, rng)
+
+    described_province = state.provinces.get(rumor.described_coord)
+    if (
+        described_province is not None
+        and described_province.name is not None
+        and described_province.known_to_kingdom(rumor.kingdom_id)
+    ):
+        variant = variant.replace("$#", "@")
+        values["@"] = described_province.name
+    else:
+        values["#"] = str(encode_hex_number(rumor.described_coord, board_width))
     return render(variant, values, rng=rng)
 
 

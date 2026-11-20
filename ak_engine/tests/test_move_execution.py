@@ -2432,9 +2432,26 @@ def test_find_transport_illegality_dinosaur_boarded_via_druidic_transport():
     assert reason is None
 
 
-def test_find_transport_illegality_mermen_into_genuinely_permanent_land():
+def test_find_transport_illegality_mermen_moves_like_a_fleet_sea_to_land():
+    # 2026-11-20 bug fix, user-confirmed via a live playtest: "I Tritoni
+    # muovono come le Flotte" -- an ordinary Sea->Land hop needs no Part
+    # Sea/air-transport exception at all, exactly like a Fleet/Whale.
     mermen = ArmyState(1, 1, ArmyType.MERMEN, Quality.AVERAGE, ORIGIN)
     reason = find_transport_illegality([mermen], [1], _sea_province(ORIGIN), _land_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_mermen_moves_like_a_fleet_land_to_sea():
+    mermen = ArmyState(1, 1, ArmyType.MERMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([mermen], [1], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_mermen_land_to_land_still_illegal():
+    # The one real Mermen restriction left, mirroring Fleet/Whale's own
+    # "naval_land_hop" -- neither endpoint is Sea or Part-Sea.
+    mermen = ArmyState(1, 1, ArmyType.MERMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([mermen], [1], _land_province(ORIGIN), _land_province(TARGET))
     assert reason == "mermen_air_transport"
 
 
