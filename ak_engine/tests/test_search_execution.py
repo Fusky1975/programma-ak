@@ -4552,11 +4552,12 @@ def test_execute_search_talk_language_failure_puzzled_for_low_intelligence_monst
     assert result.talk_language_failure is True
 
 
-def test_execute_search_talk_language_failure_silent_for_medium_intelligence_monster():
+def test_execute_search_talk_sets_ignored_not_language_failure_for_medium_intelligence_monster():
     # Same DR-gate failure shape, but Giant Eagle is MonsterIntelligence.
-    # MEDIUM (>= Medium) -- the dossier's own "_LIgnore" half, no
-    # observable trace, matching this project's own pre-existing
-    # TalkReplyOutcome.IGNORE convention.
+    # MEDIUM (>= Medium) -- the dossier's own "_LIgnore" half.
+    # 2026-11-20 bug fix, user-confirmed: this used to have no
+    # observable trace at all; now sets talk_ignored (not talk_
+    # language_failure, which stays specific to the RPuzzled half).
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GI_EAGLE))
     request = _talk_request(1, Maneuver.MELEE)
@@ -4567,6 +4568,28 @@ def test_execute_search_talk_language_failure_silent_for_medium_intelligence_mon
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert result.talk_language_failure is False
+    assert result.talk_ignored is True
+
+
+def test_execute_search_talk_sets_ignored_when_the_reply_table_outcome_is_ignore():
+    # 2026-11-20 bug fix, user-confirmed: the DR gate passes (real
+    # communication happens), but the real 24-reply table's own rolled
+    # outcome is TalkReplyOutcome.IGNORE -- previously no observable
+    # trace either. Archer needs Druid level 0, so the gate always
+    # passes regardless of the leader's own skill.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_PUZZLED
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.talk_language_failure is False
+    assert result.talk_ignored is True
 
 
 def test_execute_search_talk_language_failure_not_set_when_dr_gate_passes():
