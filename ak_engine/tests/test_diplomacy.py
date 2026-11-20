@@ -9,10 +9,17 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
+from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.parser.gw_world import DiplomaticRelation
-from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders, is_attackable_at, set_relation
+from ak_engine.turn.diplomacy import (
+    advance_pending_diplomacy,
+    apply_treat_orders,
+    is_attackable_at,
+    set_relation,
+    sync_treat_orders_from_kingdom_headers,
+)
 
 HOME_A = HexCoord(0, 0)
 HOME_B = HexCoord(1, 0)
@@ -367,3 +374,85 @@ def test_is_attackable_at_does_not_shield_on_unowned_or_non_allied_territory():
     state = _triangle_state()
     wild_province = ProvinceState(HexCoord(9, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
     assert is_attackable_at(state, defender_kingdom_id=2, attacker_kingdom_id=3, province=wild_province) is True
+
+
+# 2026-11-20 bug fix, user-confirmed via a live playtest ("Ho fatto fare un
+# Treat a tutti e due i Re della partita. Sarebbero dovuti diventare
+# alleati, ma non è successo nulla."): KingdomMoveHeader.allreq/.brreq were
+# decoded and cross-validated (Phase 920) but never bridged into the two
+# sets apply_treat_orders() actually reads -- see sync_treat_orders_from_
+# kingdom_headers()'s own docstring.
+
+
+def test_sync_treat_orders_reads_allreq_bit_as_a_directed_treat_permission():
+    state = _state()
+    header = KingdomMoveHeader(raw_fields=[27, 1 << 2, 0, 101, 1, 15, 1])  # allreq bit 2 -> Kingdom 2
+
+    sync_treat_orders_from_kingdom_headers(state, {1: header})
+
+    assert state.treat_permissions == {(1, 2)}
+    assert state.break_treat_orders == set()
+
+
+def test_sync_treat_orders_reads_brreq_bit_as_a_directed_break_treat_order():
+    state = _state()
+    header = KingdomMoveHeader(raw_fields=[27, 0, 1 << 2, 101, 1, 15, 1])  # brreq bit 2 -> Kingdom 2
+
+    sync_treat_orders_from_kingdom_headers(state, {1: header})
+
+    assert state.break_treat_orders == {(1, 2)}
+    assert state.treat_permissions == set()
+
+
+def test_sync_treat_orders_combines_both_kingdoms_own_requests():
+    state = _state()
+    header_1 = KingdomMoveHeader(raw_fields=[27, 1 << 2, 0, 101, 1, 15, 1])  # Kingdom 1 Treats toward 2
+    header_2 = KingdomMoveHeader(raw_fields=[27, 1 << 1, 0, 101, 1, 15, 1])  # Kingdom 2 Treats toward 1
+
+    sync_treat_orders_from_kingdom_headers(state, {1: header_1, 2: header_2})
+
+    assert state.treat_permissions == {(1, 2), (2, 1)}
+
+
+def test_sync_treat_orders_ignores_a_self_targeting_bit():
+    # Defensive only -- no real sample has ever shown a Kingdom naming its
+    # own id, but a self-pair would otherwise be silently dropped by
+    # apply_treat_orders()'s own `a != b` filter anyway.
+    state = _state()
+    header = KingdomMoveHeader(raw_fields=[27, 1 << 1, 0, 101, 1, 15, 1])  # Kingdom 1 naming itself (bit 1)
+
+    sync_treat_orders_from_kingdom_headers(state, {1: header})
+
+    assert state.treat_permissions == set()
+
+
+def test_sync_treat_orders_ignores_a_bit_naming_a_kingdom_not_in_the_game():
+    state = _state()
+    header = KingdomMoveHeader(raw_fields=[27, 1 << 9, 0, 101, 1, 15, 1])  # Kingdom 9 doesn't exist here
+
+    sync_treat_orders_from_kingdom_headers(state, {1: header})
+
+    assert state.treat_permissions == set()
+
+
+def test_sync_treat_orders_then_apply_treat_orders_produces_a_real_pending_alliance():
+    # The end-to-end bridge, not just the decode: once synced, a real
+    # mutual Treat request behaves exactly like the GM-manual-entry path
+    # already did -- deferred to next turn, same as test_mutual_treat_
+    # upgrades_neutral_to_allied_only_once_promoted_next_turn above.
+    state = _state()
+    header_1 = KingdomMoveHeader(raw_fields=[27, 1 << 2, 0, 101, 1, 15, 1])
+    header_2 = KingdomMoveHeader(raw_fields=[27, 1 << 1, 0, 101, 1, 15, 1])
+
+    sync_treat_orders_from_kingdom_headers(state, {1: header_1, 2: header_2})
+    apply_treat_orders(state)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+    assert state.pending_treat_transitions[frozenset({1, 2})] == (
+        DiplomaticRelation.NEUTRAL,
+        DiplomaticRelation.ALLIED,
+    )
+
+    advance_pending_diplomacy(state)
+
+    assert state.is_allied(1, 2)

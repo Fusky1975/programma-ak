@@ -15,6 +15,7 @@ from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.orchestrator import process_turn as _process_turn_unfiltered
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.emperor_election import ElectionCallOutcome
 
@@ -229,6 +230,57 @@ def test_process_turn_combines_multiple_kingdoms_orders_into_one_run_turn_call()
     # since WAIT produces no narratable content.
     assert "STATE OF THE NATION:" in outcome.letter_reports[1]
     assert "STATE OF THE NATION:" in outcome.letter_reports[2]
+
+
+def test_process_turn_bridges_a_real_mutual_treat_order_into_a_real_alliance():
+    # 2026-11-20 bug fix, user-confirmed via a live playtest ("Ho fatto
+    # fare un Treat a tutti e due i Re della partita. Sarebbero dovuti
+    # diventare alleati, ma non è successo nulla. Non c'è traccia di
+    # questo nel report e lì c'è ancora scritto tra i regni c'è
+    # neutralità."): each King's own real header.allreq bit was already
+    # correctly decoded (models/kingdom.py) but never bridged into
+    # state.treat_permissions, so apply_treat_orders() -- called from
+    # inside run_turn() -- always saw an empty set and the Treat order
+    # silently did nothing.
+    state = _base_state()
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 0)))
+    state.add_leader(LeaderState(30, kingdom_id=2, name="Baldric", location=HexCoord(1, 0), is_king=True))
+
+    def _treating_kingdom(kingdom_number: int, king_name: str, leaders: list[Leader], allreq: int) -> Kingdom:
+        return Kingdom(
+            source_filename=f"fake.K{kingdom_number}",
+            king_name=king_name,
+            king_title=None,
+            header=KingdomMoveHeader(raw_fields=[kingdom_number, allreq, 0, 101, 1, 15, 1]),
+            skills=SkillTable(raw_values=[0] * 31),
+            leaders=leaders,
+        )
+
+    kingdom_a = _treating_kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")], allreq=1 << 2)
+    kingdom_b = _treating_kingdom(2, "Baldric", [_wait_leader(30, "Baldric")], allreq=1 << 1)
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", side_effect=[kingdom_a, kingdom_b]):
+        process_turn(
+            state, [Path("a.K1"), Path("b.K2")], board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0], choice_indices=[0])
+        )
+
+    # [8.2]'s own "alla fine del turno" timing: not yet visible to this
+    # turn's own DIPLOMACY section or combat.
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+    assert state.pending_treat_transitions[frozenset({1, 2})] == (
+        DiplomaticRelation.NEUTRAL,
+        DiplomaticRelation.ALLIED,
+    )
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", side_effect=[kingdom_a, kingdom_b]):
+        outcome = process_turn(
+            state, [Path("a.K1"), Path("b.K2")], board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0], choice_indices=[0])
+        )
+
+    assert state.is_allied(1, 2)
+    # DIPLOMACY's own "wisely allied" list now really names the other
+    # King -- not just an internal is_allied() flip with no report trace.
+    assert "Baldric (#2)" in outcome.letter_reports[1]
 
 
 def test_process_turn_resolves_a_queued_guild_assassination_after_battles():
