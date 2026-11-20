@@ -118,6 +118,20 @@ fix: feature_id 1 keeps its own real facts unchanged (still the same
 own +1 Melee-skill advantage over the unskilled Searcher now lets it
 hit harder too, so seed ``2`` no longer wins -- re-scanned to seed
 ``13``.
+
+Re-scanned again (2026-11-20) after ``worldgen/generate_new_game.py``
+moved its ordinary tax-grid roll ahead of King Home selection (user-
+confirmed: Home placement's own new "exactly one Rich neighbor" rule
+needs every other province's real tax known before a Home is chosen --
+see ``worldgen/king_home_placement.py``'s own 2026-11-20 addendum) --
+every RNG draw from that point on shifts for the identical reason every
+prior rescan above lists, just from yet another new cause: feature_id 1
+is now guarded by a ``HYDRA`` and carries ``GOLD_HOARD_LARGE`` (a
+non-``SKILL_BOOK`` treasure, same as every prior rescan's own feature 1
+-- this test only needs *some* treasure+guardian pair, not a specific
+category), win seed ``0``; the ``SKILL_BOOK``-category feature moved to
+feature_id 5, now guarded by a ``BASILISK`` and carrying ``BOOK_DRUID``,
+win seed ``248``.
 """
 
 from __future__ import annotations
@@ -139,16 +153,16 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
-# Phase 986 note: generate_new_game(seed=1)'s own feature roster shifted
-# again after the land-ratio recalibration (see this module's own Phase
-# 986 rescan paragraph above) -- a fixed, reproducible fact of this
-# scenario, not a tuning choice. The first treasure+guardian feature
-# (feature_id 1) is now guarded by a good-aligned GENIE.
-_SEARCH_WIN_SEED = 13
-# feature_id 21 (a MEDUSA guarding a Tactical skill book) is the
+# 2026-11-20 note: generate_new_game(seed=1)'s own feature roster
+# shifted again after the tax-grid-before-Home-selection reorder (see
+# this module's own 2026-11-20 rescan paragraph above) -- a fixed,
+# reproducible fact of this scenario, not a tuning choice. The first
+# treasure+guardian feature (feature_id 1) is now guarded by a HYDRA.
+_SEARCH_WIN_SEED = 0
+# feature_id 5 (a BASILISK guarding a Druid skill book) is the
 # SKILL_BOOK-category feature this test now targets.
-_BOOK_FEATURE_ID = 21
-_BOOK_SEARCH_WIN_SEED = 30
+_BOOK_FEATURE_ID = 5
+_BOOK_SEARCH_WIN_SEED = 248
 
 
 def _generate_game(king_count: int = 10) -> GameState:
@@ -187,9 +201,9 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
     # This project's real generate_new_game(seed=1) scenario places a
-    # BOOK_TACTICAL on feature_id 21 (guarded by a MEDUSA) -- not tuned
+    # BOOK_DRUID on feature_id 5 (guarded by a BASILISK) -- not tuned
     # for that, just what this fixed, reproducible generation run
-    # produces (see _BOOK_FEATURE_ID's own Phase 986 note above). Any
+    # produces (see _BOOK_FEATURE_ID's own 2026-11-20 note above). Any
     # SKILL_BOOK category member would exercise the same chain.
     state = _generate_game()
     feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)

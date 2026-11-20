@@ -89,6 +89,89 @@ def test_choose_king_home_raises_when_nothing_is_eligible():
         choose_king_home(grid, race_grid, bounds, [], PascalRandom(seed=1), naval=False)
 
 
+# 2026-11-20 bug fix, user-confirmed from their own real-game play
+# experience: a King's Home province always has exactly one Rich
+# (tax >= RICH_PROVINCE_MIN_TAX) neighbor.
+
+
+def test_eligible_home_coords_tax_grid_requires_exactly_one_rich_neighbor():
+    grid = _flat_grid(5, 1, Terrain.PLAINS)
+    race_grid = _flat_race_grid(grid, Race.HUMAN)
+    bounds = MapBounds(5, 1)
+    # HexCoord(0,0)'s only neighbor within this tiny strip is (1,0);
+    # HexCoord(2,0) has two neighbors, (1,0) and (3,0).
+    tax_grid = {
+        HexCoord(0, 0): 1,
+        HexCoord(1, 0): 7,  # Rich
+        HexCoord(2, 0): 1,
+        HexCoord(3, 0): 7,  # Rich
+        HexCoord(4, 0): 1,
+    }
+
+    candidates = eligible_home_coords(grid, race_grid, bounds, [], naval=False, tax_grid=tax_grid)
+
+    # (0,0): one Rich neighbor (1,0) -> eligible.
+    # (2,0): two Rich neighbors (1,0) and (3,0) -> not exactly one, excluded.
+    # (4,0): one Rich neighbor (3,0) -> eligible.
+    assert set(candidates) == {HexCoord(0, 0), HexCoord(4, 0)}
+
+
+def test_eligible_home_coords_tax_grid_excludes_a_coord_with_no_rich_neighbor():
+    grid = _flat_grid(3, 1, Terrain.PLAINS)
+    race_grid = _flat_race_grid(grid, Race.HUMAN)
+    bounds = MapBounds(3, 1)
+    tax_grid = {HexCoord(0, 0): 1, HexCoord(1, 0): 1, HexCoord(2, 0): 1}  # nobody Rich
+
+    candidates = eligible_home_coords(grid, race_grid, bounds, [], naval=False, tax_grid=tax_grid)
+
+    assert candidates == []
+
+
+def test_eligible_home_coords_without_tax_grid_keeps_prior_behavior():
+    # No tax_grid passed -- the new constraint must not apply at all.
+    grid = _flat_grid(3, 1, Terrain.PLAINS)
+    race_grid = _flat_race_grid(grid, Race.HUMAN)
+    bounds = MapBounds(3, 1)
+
+    candidates = eligible_home_coords(grid, race_grid, bounds, [], naval=False)
+
+    assert set(candidates) == {HexCoord(0, 0), HexCoord(1, 0), HexCoord(2, 0)}
+
+
+def test_choose_king_home_prefers_a_rich_neighbor_candidate():
+    grid = _flat_grid(5, 1, Terrain.PLAINS)
+    race_grid = _flat_race_grid(grid, Race.HUMAN)
+    bounds = MapBounds(5, 1)
+    tax_grid = {
+        HexCoord(0, 0): 1,
+        HexCoord(1, 0): 7,  # Rich
+        HexCoord(2, 0): 1,
+        HexCoord(3, 0): 1,
+        HexCoord(4, 0): 1,
+    }
+
+    # (0,0) and (2,0) each have exactly one Rich neighbor, (1,0) itself
+    # -- (0,0)'s only neighbor is (1,0); (2,0)'s neighbors are (1,0)
+    # [Rich] and (3,0) [not]. (1,0)/(3,0)/(4,0) each have zero Rich
+    # neighbors of their own.
+    for seed in range(1, 10):
+        home = choose_king_home(grid, race_grid, bounds, [], PascalRandom(seed=seed), naval=False, tax_grid=tax_grid)
+        assert home in {HexCoord(0, 0), HexCoord(2, 0)}
+
+
+def test_choose_king_home_falls_back_when_no_rich_neighbor_candidate_exists():
+    # user-confirmed fallback: relax the Rich-neighbor rule rather than
+    # fail world generation outright when nothing satisfies it.
+    grid = _flat_grid(3, 1, Terrain.PLAINS)
+    race_grid = _flat_race_grid(grid, Race.HUMAN)
+    bounds = MapBounds(3, 1)
+    tax_grid = {HexCoord(0, 0): 1, HexCoord(1, 0): 1, HexCoord(2, 0): 1}  # nobody Rich
+
+    home = choose_king_home(grid, race_grid, bounds, [], PascalRandom(seed=1), naval=False, tax_grid=tax_grid)
+
+    assert home in grid
+
+
 def test_second_recruit_slot_naval_is_always_fleet():
     rng = PascalRandom(seed=1)
     for terrain in (Terrain.PLAINS, Terrain.JUNGLE, Terrain.FOREST, Terrain.MTNS):
