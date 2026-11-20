@@ -269,6 +269,21 @@ class Feature:
     # encounter.py resolve_fulfill_honored()`'s own module comment for
     # the honor-roll formula. `None` means no deal is currently pending.
     pending_deal_leader_id: int | None = None
+    # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
+    # PSYCHIC_MAGE's own "will sense whether the monster intends to keep
+    # its end of the bargain" perk (`models/office.py OFFICE_TITLE_
+    # DESCRIPTION[Office.PSYCHIC_MAGE]`) had no implementation anywhere.
+    # Whether the guardian will actually honor this specific pending
+    # deal is only ever decided by one real roll (`turn/encounter.py
+    # resolve_fulfill_honored()`'s own `rng.random() < threshold/100`);
+    # sensing it ahead of time means rolling that same real outcome
+    # early, at Talk, rather than at the later Fulfill it would
+    # otherwise roll at -- not a second, independent coin flip (which
+    # could disagree with the first and make the "sense" a lie). `None`
+    # unless Talk's own caster held the office at the moment the deal
+    # was struck; cleared alongside `pending_deal_leader_id` either way
+    # (sensed or not) once Fulfill consumes it.
+    psychic_mage_sensed_fulfill_honor: bool | None = None
     # Phase 528: which of the 24 real `MonsterTalkReply` ids (`turn/
     # encounter.py`) this feature's own guardian has been assigned to
     # give on Talk -- stored as a raw ordinal, not the enum itself, to
