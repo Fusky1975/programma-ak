@@ -53,10 +53,14 @@ province, then the mercenaries are hired" -- before levying a fresh
 matching-``army_type``, ``quality >= Average``, currently-hireable
 (``not unhireable_this_turn``) army and re-assigns it in place instead of
 creating a new one, preserving its (possibly higher) quality. Still
-costs the same ``unit_cost`` and still counts against
-``recruited_this_turn`` -- the rulebook doesn't distinguish hiring from
-levying on price or the per-province limit, only on where the army comes
-from. Reported via ``RecruitedUnit.hired``.
+counts against ``recruited_this_turn`` -- the rulebook doesn't
+distinguish hiring from levying on the per-province limit, only on
+where the army comes from. **2026-11-20 correction**: it *does*
+distinguish on price, though -- see ``turn/recruit.py resolve_recruit()``'s
+own ``hiring_existing_mercenary`` addendum, user-confirmed from a live
+playtest, for why a mercenary always costs exactly ``ARMY_TABLE[army_
+type].pay``, never the native/non-native doubling an ordinary levy of
+a non-listed type gets. Reported via ``RecruitedUnit.hired``.
 
 **The ally "Treat" order precondition (Phase 261)**: rulebook [3.4], "In
 order for you to Recruit in your ally's territory, he MUST issue a

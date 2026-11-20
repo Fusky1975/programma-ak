@@ -48,6 +48,7 @@ import random
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ak_engine.models.enums import ABILITY_NAME
 from ak_engine.models.game_state import GameState
 from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.parser.k1_moves import parse_k1_moves_file
@@ -335,6 +336,16 @@ def process_turn(
             board_width=board_width,
             election_outcome=election_outcome,
             king_cache=king_cache,
+            # 2026-11-20 bug fix, user-confirmed (live AK0 playtest): this
+            # is the one real production call to compose_letter_report()
+            # every played turn goes through -- without ability_names,
+            # describe_turn_results()'s own ActionCode.PRACTICE branch
+            # can never resolve a real ability_name, so it silently
+            # `continue`s past every single Practice order, no matter
+            # what happened. A real Practice attempt (skill rise,
+            # aptitude rise, Sage discovery, army training, ...) has
+            # never once appeared in any real played turn's own report.
+            ability_names=ABILITY_NAME,
         )
         for kingdom_id in state.kingdoms
     }

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import ActionCode
+from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader, SkillTable
 from ak_engine.models.leader import Leader
@@ -36,6 +36,11 @@ def process_turn(*args, **kwargs):
 
 def _wait_leader(leader_id: int, name: str) -> Leader:
     phase = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    return Leader(leader_id, name, ActionPlan(leader_id, [PlanSegment(0, 0, (), {"P0": phase})]))
+
+
+def _practice_leader(leader_id: int, name: str, ability: Ability) -> Leader:
+    phase = PlanPhase(label="P0", action=ActionCode.PRACTICE, obj=ability.value, extra=[0])
     return Leader(leader_id, name, ActionPlan(leader_id, [PlanSegment(0, 0, (), {"P0": phase})]))
 
 
@@ -95,6 +100,30 @@ def test_process_turn_syncs_bridges_dispatches_and_narrates():
     assert {r.leader_id for r in outcome.results} == {10, 20}
     assert isinstance(outcome.letter_reports[1], list)
     assert outcome.bridge_reports[1].not_found_leader_ids == []
+
+
+def test_process_turn_narrates_a_real_practice_order():
+    # 2026-11-20 bug fix, user-confirmed (live AK0 playtest): this is the
+    # one real production compose_letter_report() call every played
+    # turn goes through -- without ability_names, describe_turn_
+    # results()'s own ActionCode.PRACTICE branch can never resolve an
+    # ability_name and silently `continue`s past every single Practice
+    # order, no matter the outcome. With both skill and aptitude at 0,
+    # a solo Practice attempt's very first try always lands on "practiced
+    # in vain" (the credit threshold needs many attempts to cross), a
+    # deterministic outcome regardless of the real, unscripted RNG draws
+    # below -- this test only needs to confirm the line exists at all,
+    # and that it names the real practiced ability.
+    state = _base_state()
+    state.kingdoms[1].treasury = 1000  # avoid Cedric's own desertion/standby roll entirely -- unrelated to this test
+    state.leaders[20].skills = SkillTable(raw_values=[0] * 31)
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _practice_leader(20, "Cedric", Ability.MELEE)])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    report_text = "\n".join(outcome.letter_reports[1])
+    assert "Cedric" in report_text and "Melee" in report_text and "practiced" in report_text
 
 
 # -- Phase 676: commit_office_holders()/commit_army_office_holders() are

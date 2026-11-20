@@ -170,11 +170,20 @@ def resolve_recruit(
     location regardless of what this province's own race or recruit-
     slot table says about it, so neither "can this type exist here at
     all" nor "is it native here" is the right question once one is
-    already present and hireable. Does NOT change ``gold_per_unit``'s
-    own native/non-native doubling below -- the module docstring's own
-    "the rulebook doesn't distinguish hiring from levying on price"
-    rule (Phase 16) still applies, using whatever ``is_native_to_
-    province`` the caller actually passed.
+    already present and hireable.
+
+    **2026-11-20 bug fix, user-confirmed (live AK0 playtest)**: for the
+    identical reason, it now also bypasses ``gold_per_unit``'s own
+    native/non-native doubling below -- Phase 16's old "the rulebook
+    doesn't distinguish hiring from levying on price" reading is wrong.
+    User's own words, after reporting a province's own mercenary Eagles/
+    Bowmen costing double the Army Type Table price: "Un'unità
+    mercenaria costa esattamente quanto è scritto nella tabella delle
+    unità" (a mercenary unit costs exactly what the Army Type Table
+    says). A mercenary army already *exists*, physically, at this exact
+    quality -- there is no "native populace" doubling story to apply to
+    hiring one in the first place, unlike a fresh levy of a type the
+    province's own populace doesn't normally field.
 
     ``chief_of_staff_discount`` (Phase 663): `models/office.py OFFICE_
     TITLE_DESCRIPTION[Office.CHIEF_OF_STAFF]`'s own real "effect_while_
@@ -227,6 +236,6 @@ def resolve_recruit(
             province_race=province_race,
             is_former_home_province_now_allied=is_former_home_province_now_allied,
         ),
-        gold_per_unit=base_pay if is_native_to_province else base_pay * 2,
+        gold_per_unit=base_pay if (is_native_to_province or hiring_existing_mercenary) else base_pay * 2,
         ally_fee_per_unit=1 if in_ally_territory else 0,
     )
