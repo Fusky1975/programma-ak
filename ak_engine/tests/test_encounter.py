@@ -2250,6 +2250,8 @@ def test_resolve_hand_of_death_channel_ends_the_instant_the_caster_is_hit():
     # Phase 413: the one round the caster did get to squeeze, even though
     # the channel itself ended without a winner.
     assert result.squeeze_hits == (2,)
+    # 2026-11-21: the disrupting hit's damage is carried for the report.
+    assert result.interrupt_damage == 10 - caster.hit_points
 
 
 def test_resolve_hand_of_death_channel_victim_counter_attack_that_kills_the_caster_wins():

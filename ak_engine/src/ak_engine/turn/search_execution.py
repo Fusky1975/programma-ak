@@ -997,6 +997,16 @@ class SearchExecutionResult:
     # execution.py sibling field, which has no equivalent "leader"/
     # "monster" concept to borrow).
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    # 2026-11-21: every Hand of Death cast that engaged but did NOT end the
+    # fight, one ``(caster side "leader"/"monster", squeeze hits dealt
+    # before the end, interrupting damage)`` entry each -- the victim's own
+    # counter-hit broke the channel ("l'incantesimo svanisce"). An
+    # ``interrupting damage`` of ``None`` means the spell never engaged
+    # because the target is immune. Previously both left no trace in the
+    # report at all, so a real, slot-consuming cast looked like it had
+    # never been attempted (the squeeze damage already dealt was silent
+    # too). A winning channel is still reported via ``squeeze_hits``.
+    hand_of_death_aborts: tuple[tuple[str, tuple[int, ...], int | None], ...] = ()
     guardian_monster: Monster | None = None
     # Phase 213: the originating request, so a caller (report/turn_report.py
     # describe_turn_results()) can resolve the searched feature's own id.
@@ -1905,6 +1915,12 @@ def _resolve_search_encounter(
     monster_cast_spells_attempted: set[Spell] = set()
 
     def _outcome_from(combat_result: EncounterCombatResult) -> SearchExecutionResult | None:
+        outcome = _outcome_from_raw(combat_result)
+        if outcome is not None:
+            outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
+        return outcome
+
+    def _outcome_from_raw(combat_result: EncounterCombatResult) -> SearchExecutionResult | None:
         """Translate a resolved duel into a terminal result, or None if the
         encounter isn't over yet (only possible for Fire Arrow -- Melee
         always ends in a winner, see resolve_melee_duel's own docstring).
@@ -2638,6 +2654,14 @@ def _resolve_search_encounter(
             channel_result = resolve_hand_of_death_channel(
                 caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
             )
+            if channel_result.winner is None:
+                hand_of_death_aborts.append(
+                    (
+                        "leader" if caster_is_leader else "monster",
+                        channel_result.squeeze_hits,
+                        None if target_is_immune else channel_result.interrupt_damage,
+                    )
+                )
             if channel_result.winner is not None:
                 # "a" in resolve_hand_of_death_channel's own convention means
                 # the caster won; "b" (Phase 1050 bug fix) means the
@@ -3112,6 +3136,7 @@ def _resolve_search_encounter(
     # into this module's own leader-vs-monster Cast dispatch too (`if not
     # succeeded:` inside `_resolve_cast_tactic()` below).
     fizzled_spells: list[tuple[str, Spell]] = []
+    hand_of_death_aborts: list[tuple[str, tuple[int, ...], int | None]] = []
 
     def _resolve_guardian_pacification() -> tuple[bool, bool]:
         """Phase 673 (``Desktop/BOLD OK.txt``): called once, whenever this
@@ -3166,6 +3191,7 @@ def _resolve_search_encounter(
         outcome.fire_arrow_shots = fire_arrow_shots
         outcome.melee_swings = tuple(melee_swings)
         outcome.fizzled_spells = tuple(fizzled_spells)
+        outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
         outcome.guardian_monster = feature.guardian_monster
         return outcome
 
@@ -3309,6 +3335,7 @@ def _resolve_search_encounter(
         if outcome is not None:
             outcome.fire_arrow_shots = fire_arrow_shots
             outcome.fizzled_spells = tuple(fizzled_spells)
+            outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
             outcome.guardian_monster = feature.guardian_monster
         return outcome
 
@@ -3411,6 +3438,7 @@ def _resolve_search_encounter(
             if outcome is not None:
                 outcome.melee_swings = tuple(melee_swings)
                 outcome.fizzled_spells = tuple(fizzled_spells)
+                outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
                 outcome.guardian_monster = feature.guardian_monster
             return outcome
         # Phase 1052 bug fix: this used to call resolve_fire_arrow_duel()
@@ -3434,6 +3462,7 @@ def _resolve_search_encounter(
         if outcome is not None:
             outcome.fire_arrow_shots = fire_arrow_shots
             outcome.fizzled_spells = tuple(fizzled_spells)
+            outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
             outcome.guardian_monster = feature.guardian_monster
         return outcome
 

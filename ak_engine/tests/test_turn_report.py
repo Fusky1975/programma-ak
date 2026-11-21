@@ -120,6 +120,7 @@ from ak_engine.report.turn_report import (
     describe_defend_reinforcement,
     describe_cargo_boarded,
     describe_sensed_magic_items,
+    render_hand_of_death_abort,
     describe_disband,
     describe_leave,
     describe_move,
@@ -16229,11 +16230,27 @@ def test_record_battle_world_events_skips_a_tie():
     assert state.world_events == []
 
 
-def test_record_battle_world_events_skips_a_report_with_no_defender_kingdom():
+def test_record_battle_world_events_records_a_battle_against_independent_defenders():
+    # 2026-11-21: a battle with no defender Kingdom (a neutral province's
+    # native garrison) used to be skipped, so the fight was invisible.
     state, battle_coord, _watcher_coord = _gir_state()
     report = BattleReport(
         battle_result=BattleResult(winner="attacker"), conquered=True,
         province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=None,
+    )
+    results = [PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)]
+
+    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].coord == battle_coord
+
+
+def test_record_battle_world_events_skips_a_report_with_no_attacker_kingdom():
+    state, battle_coord, _watcher_coord = _gir_state()
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker"), conquered=True,
+        province_coord=battle_coord, attacker_kingdom_id=None, defender_kingdom_id=2,
     )
     results = [PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)]
 
@@ -17199,14 +17216,14 @@ def test_record_battle_narratives_populates_both_kingdoms_with_identical_content
     assert any("Attackia" in line for line in state.battle_narratives_by_kingdom[1])
 
 
-def test_record_battle_narratives_skips_a_report_missing_a_kingdom_id():
+def test_record_battle_narratives_skips_a_report_missing_the_attacker_kingdom_id():
     state, battle_coord, _watcher_coord = _gir_state()
     report = BattleReport(
         battle_result=BattleResult(winner="attacker"),
         conquered=True,
         province_coord=battle_coord,
-        attacker_kingdom_id=1,
-        defender_kingdom_id=None,
+        attacker_kingdom_id=None,
+        defender_kingdom_id=2,
     )
     results = [
         PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)
@@ -17215,6 +17232,31 @@ def test_record_battle_narratives_skips_a_report_missing_a_kingdom_id():
     record_battle_narratives(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
 
     assert state.battle_narratives_by_kingdom == {}
+
+
+def test_record_battle_narratives_narrates_a_battle_against_independent_defenders_for_the_attacker_only():
+    # 2026-11-21: this used to be skipped, so a King who fought and killed a
+    # neutral province's garrison saw only "boldly marched into X".
+    state, battle_coord, _watcher_coord = _gir_state()
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker", columns=[column]),
+        conquered=True,
+        destroyed_army_ids=[20],
+        province_coord=battle_coord,
+        attacker_kingdom_id=1,
+        defender_kingdom_id=None,
+    )
+    results = [
+        PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)
+    ]
+
+    record_battle_narratives(state, results, ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0]))
+
+    assert list(state.battle_narratives_by_kingdom) == [1]
+    lines = state.battle_narratives_by_kingdom[1]
+    assert lines != []
+    assert any("the natives of" in line for line in lines)
 
 
 def test_record_battle_narratives_resolves_real_retreat_destination_names():
@@ -17840,3 +17882,30 @@ def test_record_wandering_world_events_skips_when_entity_no_longer_exists():
     record_wandering_world_events(state, results, ScriptedRandom([]))
 
     assert state.world_events == []
+
+
+def test_render_hand_of_death_abort_interrupted_narrates_the_squeezes_the_hit_and_the_fade():
+    lines = render_hand_of_death_abort("Bagmore", "Giant Amoeba", (2, 3), 4, ScriptedRandom([0.1] * 20, choice_indices=[0] * 20))
+
+    assert len(lines) == 4  # two squeezes, the counter-blow, the fade
+    assert "Giant Amoeba broke Bagmore's concentration with a counter-blow" in lines[2]
+    assert "4" in lines[2]
+    assert lines[3] == "Bagmore's Hand Of Death spell faded away."
+
+
+def test_render_hand_of_death_abort_with_no_interrupt_damage_says_the_target_is_beyond_reach():
+    lines = render_hand_of_death_abort("Bagmore", "Vampire", (), None, ScriptedRandom([0.1] * 5))
+
+    assert lines == ["Bagmore squeezed Bagmore's fist in vain, for Vampire is beyond the reach of the Hand Of Death spell."]
+
+
+def test_describe_search_narrates_an_interrupted_hand_of_death():
+    result = SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
+    result.hand_of_death_aborts = (("leader", (2,), 3),)
+
+    lines = describe_search(
+        result, character_name="Bagmore", feature_name="Olympus Mons", rng=ScriptedRandom([0.1] * 40, choice_indices=[0] * 40)
+    )
+
+    assert any("broke Bagmore's concentration" in line for line in lines)
+    assert any("Hand Of Death spell faded away" in line for line in lines)

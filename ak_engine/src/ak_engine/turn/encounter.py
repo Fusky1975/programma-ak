@@ -3901,6 +3901,12 @@ class EncounterCombatResult:
     # `resolve_hand_of_death_channel()`'s own Phase 413 addendum and
     # `report/turn_report.py render_squeeze_attack()`.
     squeeze_hits: tuple[int, ...] = ()
+    # 2026-11-21: the damage of the victim's own counter-hit that broke a
+    # Hand of Death channel (``resolve_hand_of_death_channel()``'s
+    # ``winner=None`` interruption), so the report can narrate the spell
+    # fading instead of leaving the whole cast invisible. 0 for every other
+    # result.
+    interrupt_damage: int = 0
     # Phase 415: every Melee swing across every round, in order, for
     # narrating each individually -- the same per-swing-detail role
     # `shots` plays for Fire Arrow. Only `resolve_melee_duel()` (via
@@ -4556,7 +4562,9 @@ def resolve_hand_of_death_channel(
                     caster.hit_points -= damage
                     if caster.hit_points <= 0:
                         return EncounterCombatResult(winner="b", rounds=round_number, squeeze_hits=tuple(squeeze_hits))
-                    return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
+                    return EncounterCombatResult(
+                        winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits), interrupt_damage=damage
+                    )
         _apply_end_of_round_regeneration(caster, victim, round_number)
     return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
 

@@ -2771,6 +2771,52 @@ def test_execute_search_cast_hand_of_death_caster_wins_instantly():
     assert result.squeeze_hits == (2, 2, 3)
 
 
+def test_execute_search_cast_hand_of_death_records_an_interrupted_channel():
+    # 2026-11-21: a channel broken by the victim's counter-hit used to leave
+    # no trace on the result, so the cast looked like it was never attempted.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=2, squeeze_hits=(2, 3), interrupt_damage=4)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.hand_of_death_aborts == (("leader", (2, 3), 4),)
+
+
+def test_execute_search_cast_hand_of_death_records_an_immune_target_as_no_effect():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=0)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.hand_of_death_aborts == (("leader", (), None),)
+
+
+def test_execute_search_cast_hand_of_death_win_records_no_abort():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=3, squeeze_hits=(2, 2, 3))
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.hand_of_death_aborts == ()
+
+
 def test_execute_search_cast_hand_of_death_victims_lethal_counter_attack_wins():
     # Phase 1050 bug fix: resolve_hand_of_death_channel() can now return
     # winner="b" (the victim's own disrupting counter-attack was itself
