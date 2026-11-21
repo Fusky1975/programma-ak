@@ -23,6 +23,8 @@
           </div>
           <div style="display: flex; gap: 0.5rem;">
             <a class="button" href="{{ url_for('players_setup', slug=game.slug) }}">Open</a>
+            <a class="button" href="{{ url_for('games_export', slug=game.slug) }}"
+               title="Download a zip with every file of this game plus a diagnostics summary, to share for bug analysis">Export for debugging</a>
             <form class="inline" method="post" action="{{ url_for('games_delete', slug=game.slug) }}"
                   data-confirm="Permanently delete the game &quot;{{ game.name }}&quot;?">
               <button type="submit" class="danger">Delete</button>
