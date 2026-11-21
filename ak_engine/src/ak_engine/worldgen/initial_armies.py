@@ -39,10 +39,10 @@ Sixth phase of the world-generation sub-plan. Source:
   independent R4 draws, left unclamped exactly as the source gives
   it -- a low-tax province can get a small or even negative budget,
   which `build_initial_armies()` naturally resolves to zero armies
-  rather than needing a special case -- this one budget formula's own
-  documented "zero armies" outcome is untouched by the 2026-11-20
-  ``guarantee_minimum`` addendum right below, which is scoped to
-  ``ordinary_humanoid_budget()`` only).
+  rather than needing a special case -- as of the 2026-11-21 addendum
+  right below, that "zero armies" outcome is overridden by
+  ``generate_new_game.py`` for every neutral province, special races
+  included).
 
   **2026-11-20 bug fix, user-confirmed via two separate live playtests
   (every single province moved into across both games turned out
@@ -57,8 +57,18 @@ Sixth phase of the world-generation sub-plan. Source:
   province should always have at least one defending unit -- the
   budget governs how many *more* it gets, not whether it has any at
   all. `build_initial_armies()`'s own new ``guarantee_minimum`` flag
-  (above) is passed ``True`` only from this one call site in
+  (above) is passed ``True`` from the ordinary-humanoid call site in
   ``generate_new_game.py``.
+
+  **2026-11-21 follow-up, user-reported again on a fresh game (Tanglewood,
+  Pinehaven, Khurum all conquered with no battle):** the same flag is now
+  also passed ``True`` for the special-race call site
+  (Dragons/Eagles/Ents/Werefolk/Mermen/Whales/Trolls). Their
+  ``flying_or_special_budget()`` (``tax + R4 - R4``) is <= 0 for most Poor
+  provinces (empirically ~70% of Entish forests, 100% of Dragon deserts
+  were left empty), so the 2026-11-20 fix, scoped to ordinary humanoids
+  only, left them open. Only the King Home call site keeps its exact
+  prior behavior.
 
   **``ordinary_humanoid_budget()``, corrected by Phase 902 (``TROLL.md``,
   2026-09-25, a byte-level disassembly of this exact ``province_army_
@@ -638,12 +648,9 @@ def build_initial_armies(
     (going into budget "debt") rather than leaving the province with
     no defender at all. Defaults to ``False``, preserving every other
     caller's exact pre-existing behavior unchanged -- in particular
-    ``flying_or_special_budget()``'s own documented "a low-tax province
-    can get a small or even negative budget, which this naturally
-    resolves to zero armies rather than needing a special case" (module
-    docstring) is a *separate*, still-intentional "no army" outcome for
-    that budget formula specifically, not something this new flag
-    should touch.
+    King Home's own call site (which spends `pay`, not Str) -- this
+    flag is passed ``True`` for every neutral-province call site
+    (ordinary humanoid and special race), see module docstring.
     """
 
     if strength_of is None:

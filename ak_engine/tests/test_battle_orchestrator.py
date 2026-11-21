@@ -2886,6 +2886,26 @@ def test_pursuit_destroys_a_caught_retreating_army():
     assert state.battle_graveyard[FIELD][0].army_type is ArmyType.GARRISON
 
 
+@pytest.mark.parametrize("variable_strength_type", [ArmyType.ELEPHANTS, ArmyType.DINOSAURS])
+def test_pursuit_of_a_variable_strength_loser_does_not_crash(variable_strength_type):
+    # 2026-11-21: _apply_pursuit() used to call compute_effective_strength()
+    # on the fleeing army with no base_strength_override, which raises
+    # ValueError for Elephants/Dinosaurs (variable strength) and aborted the
+    # whole move/battle whenever such an army lost and fled.
+    for seed in range(8):
+        state = build_state()
+        state.armies[201].army_type = variable_strength_type
+        for extra_id in (102, 103, 104):
+            state.add_army(ArmyState(extra_id, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+
+        report = fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102, 103, 104],
+            rng=random.Random(seed),
+        )
+
+        assert report.conquered is True
+
+
 def test_pursuit_does_not_apply_when_loser_retreats_is_false():
     state = build_state()
     rng = no_luck_overwhelming_attacker_rng()

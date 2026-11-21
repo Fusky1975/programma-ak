@@ -257,6 +257,28 @@ def test_special_race_provinces_get_their_own_native_recruit_slot():
     assert found_any
 
 
+def test_every_neutral_special_race_province_keeps_at_least_one_native_defender():
+    # 2026-11-21: flying_or_special_budget() (tax + R4 - R4) is <= 0 for most
+    # Poor Entish/Eagle/Dragon/Werefolk/Mermish provinces, which used to
+    # leave them with no defender at all (a King walked in uncontested).
+    from ak_engine.worldgen.initial_armies import NATIVE_ARMY_TYPE
+
+    checked = 0
+    for seed in (4, 11, 23):
+        game_state, kings = _setup()
+        result = generate_new_game(PascalRandom(seed=seed), game_state, kings, gamevers=1)
+        for coord, province in result.provinces.items():
+            if province.race not in SPECIAL_RACE_BASE_COUNT or province.owner_kingdom_id is not None:
+                continue
+            native = NATIVE_ARMY_TYPE.get(province.race)
+            if native is None:
+                continue
+            checked += 1
+            defenders = [a for a in result.armies_at(coord) if not a.is_mercenary]
+            assert defenders, f"seed {seed}: {province.race} province {coord} has no defender"
+    assert checked > 0
+
+
 def test_king_home_recruit_type_1_is_unaffected_by_the_new_ordinary_humanoid_pass():
     # Phase 797's own new recruit1_grid pass explicitly excludes King
     # Home coordinates -- proves the new pass doesn't clobber the
