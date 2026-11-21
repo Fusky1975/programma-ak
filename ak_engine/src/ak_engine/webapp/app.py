@@ -60,6 +60,7 @@ from ak_engine.webapp.games import (
     open_game,
     save_game,
 )
+from ak_engine.webapp.game_export import build_game_bundle
 from ak_engine.webapp.hex_map import build_hex_map, kingdom_color
 from ak_engine.webapp.players import (
     MAX_PLAYERS,
@@ -425,6 +426,19 @@ def create_app(games_root: Path | None = None) -> Flask:
         except DuplicateGameNameError:
             return redirect(url_for("games_list", error=f'A game named "{name}" already exists.'))
         return redirect(url_for("games_list"))
+
+    @app.get("/games/<slug>/export")
+    def games_export(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            data = build_game_bundle(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        return Response(
+            data,
+            mimetype="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{slug}_debug_bundle.zip"'},
+        )
 
     @app.post("/games/<slug>/delete")
     def games_delete(slug: str):

@@ -927,7 +927,15 @@ def generate_new_game(
             recruit_type_1 = special_race_recruit_slot(race)
             budget = _special_race_army_budget(race, tax, rng)
             if budget is not None:
-                army_types = build_initial_armies(recruit_type_1, None, budget)
+                # 2026-11-21 bug fix, user-confirmed (same rule as the
+                # ordinary-humanoid branch below, which the 2026-11-20 fix
+                # had scoped alone): `flying_or_special_budget()`'s own
+                # `tax + R4 - R4` is <= 0 for most Poor Entish/Eagle/Dragon/
+                # Werefolk/Mermish provinces, so they ended up with no
+                # defender at all -- a king walking in conquered them with
+                # no battle. Every neutral province now keeps at least one
+                # native defender; the budget only governs how many more.
+                army_types = build_initial_armies(recruit_type_1, None, budget, guarantee_minimum=True)
         elif race in _HUMANOID_RACES:
             # Phase 797 (backlog #22, land-side half): an ordinary
             # (non-Home, non-special-race) humanoid province -- mirrors

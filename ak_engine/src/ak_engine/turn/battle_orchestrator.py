@@ -2035,9 +2035,20 @@ def _apply_pursuit(
         kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
         army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         pursued_quality = Quality(max(int(Quality.DEPLETED), int(army.quality) - 1))
+        # 2026-11-21 bug fix (crash): Elephants/Dinosaurs have no fixed base
+        # strength, so a fleeing one reaching this step used to raise
+        # ValueError and abort the whole move (the battle's own
+        # _build_battle_units() already rolls the same override).
+        if army.army_type is ArmyType.ELEPHANTS:
+            strength_override: float | None = roll_elephants_strength(rng)
+        elif army.army_type is ArmyType.DINOSAURS:
+            strength_override = roll_dinosaurs_strength(rng)
+        else:
+            strength_override = None
         strength = compute_effective_strength(
             army.army_type, army_race, pursued_quality, terrain, is_defender=True, is_island=is_island,
             illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
+            base_strength_override=strength_override,
         )
         retreating_units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
 

@@ -9536,3 +9536,52 @@ def test_leader_edit_shows_the_real_curated_race_name(tmp_path):
     race_select = response.data.split(b'<select id="race" name="race">')[1].split(b"</select>")[0]
     assert b">Elf<" in race_select
     assert b"Elven" not in race_select
+
+
+def test_games_export_returns_a_zip_with_every_game_file_and_diagnostics(tmp_path):
+    import io
+    import zipfile
+
+    from ak_engine.models.alignment import Alignment
+    from ak_engine.models.race import Race
+    from ak_engine.webapp.games import game_dir
+    from ak_engine.webapp.players import add_player
+    from ak_engine.webapp.world_creation import create_world
+
+    meta = create_game(tmp_path, "Debug Me")
+    directory = game_dir(tmp_path, meta.slug)
+    add_player(directory, "Vitello", Race.HUMAN, Alignment.NEUTRAL)
+    add_player(directory, "Fusky", Race.ELVEN, Alignment.NEUTRAL)
+    create_world(tmp_path, meta.slug, seed=1)
+    (directory / "moves").mkdir()
+    (directory / "moves" / "K1.txt").write_text("hello")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/export")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/zip"
+    assert f"{meta.slug}_debug_bundle.zip" in response.headers["Content-Disposition"]
+    archive = zipfile.ZipFile(io.BytesIO(response.data))
+    names = archive.namelist()
+    assert "DIAGNOSTICS.txt" in names
+    assert f"{meta.slug}/meta.json" in names
+    assert f"{meta.slug}/moves/K1.txt" in names
+    diagnostics = archive.read("DIAGNOSTICS.txt").decode()
+    assert "Kingdoms: 2" in diagnostics
+    assert "with no defending army" in diagnostics
+
+
+def test_games_export_unknown_game_redirects_with_an_error(tmp_path):
+    response = _client(tmp_path).get("/games/nope/export")
+
+    assert response.status_code == 302
+    assert "Game+not+found" in response.headers["Location"] or "Game%20not%20found" in response.headers["Location"]
+
+
+def test_games_list_offers_an_export_link(tmp_path):
+    create_game(tmp_path, "Debug Me")
+
+    html = _client(tmp_path).get("/").get_data(as_text=True)
+
+    assert "/games/debug-me/export" in html
