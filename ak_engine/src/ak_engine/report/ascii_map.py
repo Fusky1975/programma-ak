@@ -1211,6 +1211,28 @@ def _king_name_and_id(state: GameState, kingdom_id: int) -> str | None:
     return None
 
 
+def _independent_lord_name_and_id(state: GameState, province: ProvinceState) -> str | None:
+    """2026-11-21, user-requested: a neutral province shows the free Hero
+    commanding the armies standing there instead of "Unowned" (the same
+    ``Name(id)`` shape a King gets; with several such Heroes, the lowest
+    id)."""
+
+    lord_ids = sorted(
+        {
+            army.commanded_by
+            for army in state.armies_at(province.coord)
+            if army.commanded_by is not None
+            and army.commanded_by in state.leaders
+            and state.leaders[army.commanded_by].kingdom_id is None
+            and not state.leaders[army.commanded_by].is_king
+        }
+    )
+    if not lord_ids:
+        return None
+    lord = state.leaders[lord_ids[0]]
+    return f"{lord.name}({lord.leader_id})"
+
+
 def _status_word(tax: int) -> str:
     """The qualitative status word row 5 shows for a province owned by
     anyone other than the viewing Kingdom -- see module docstring for
@@ -1254,7 +1276,7 @@ def _middle_fields(state: GameState, province: ProvinceState, *, viewing_kingdom
     if province.owner_kingdom_id is not None:
         ruler_text = _king_name_and_id(state, province.owner_kingdom_id) or "Unowned"
     else:
-        ruler_text = "Unowned"
+        ruler_text = _independent_lord_name_and_id(state, province) or "Unowned"
 
     race_text = _race_name_plural(province.race)
 
