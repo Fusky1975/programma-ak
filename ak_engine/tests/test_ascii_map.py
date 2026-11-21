@@ -8,7 +8,8 @@ fragments transcribed directly during this session's own research
 from __future__ import annotations
 
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.turn.combat import Quality
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.report.ascii_map import (
@@ -1231,3 +1232,55 @@ def test_render_ascii_map_stride9_propagates_the_wraparound_anchor_across_rows()
 
     bizerte_row = next(line for line in lines if "Bizerte" in line)
     assert bizerte_row.startswith(" " * 18)
+
+
+# -- 2026-11-21: a neutral province shows the free Hero in command --
+
+
+def _neutral_province_with_garrison(state: GameState, commanded_by: int | None) -> ProvinceState:
+    province = _province(2, 3, "Quantara", Terrain.PLAINS, Race.HUMAN, owner=None, tax=5, t1=ArmyType.LEGION, t2=None, expl=1)
+    state.add_province(province)
+    state.add_army(ArmyState(10, None, ArmyType.LEGION, Quality.AVERAGE, province.coord, commanded_by=commanded_by))
+    return province
+
+
+def test_render_cell_shows_the_independent_lord_instead_of_unowned():
+    state = _state()
+    state.add_leader(LeaderState(68, kingdom_id=None, name="Marlon", location=HexCoord(2, 3)))
+    province = _neutral_province_with_garrison(state, commanded_by=68)
+
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+
+    assert "Marlon(68)" in cell[1]
+    assert "Unowned" not in cell[1]
+
+
+def test_render_cell_still_says_unowned_when_only_the_garrison_commander_is_present():
+    state = _state()
+    province = _neutral_province_with_garrison(state, commanded_by=None)
+
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+
+    assert "Unowned" in cell[1]
+
+
+def test_render_cell_picks_the_lowest_id_when_several_free_heroes_command_armies_there():
+    state = _state()
+    state.add_leader(LeaderState(70, kingdom_id=None, name="Zeno", location=HexCoord(2, 3)))
+    state.add_leader(LeaderState(12, kingdom_id=None, name="Alta", location=HexCoord(2, 3)))
+    province = _neutral_province_with_garrison(state, commanded_by=70)
+    state.add_army(ArmyState(11, None, ArmyType.LEGION, Quality.AVERAGE, province.coord, commanded_by=12))
+
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+
+    assert "Alta(12)" in cell[1]
+
+
+def test_render_cell_ignores_a_kings_army_in_a_neutral_province():
+    state = _state()
+    state.add_leader(LeaderState(1, kingdom_id=2, name="King", location=HexCoord(2, 3), is_king=True))
+    province = _neutral_province_with_garrison(state, commanded_by=1)
+
+    cell = render_cell(state, province, viewing_kingdom_id=2)
+
+    assert "Unowned" in cell[1]
