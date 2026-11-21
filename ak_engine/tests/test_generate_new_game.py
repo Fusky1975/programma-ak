@@ -671,7 +671,7 @@ def test_total_leader_count_matches_leader_count_exactly():
     # second, unrelated 250-slot game).
     game_state, kings = _setup()
     rng = PascalRandom(seed=1)
-    result = generate_new_game(rng, game_state, kings, gamevers=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1, leader_count=100)
 
     # Kings occupy the same id range heroes otherwise would, one-for-one,
     # so the *total* materialized leader count (Kings + Heroes) is simply
@@ -752,7 +752,7 @@ def test_reserved_roster_id_gets_its_real_valhalla_name_and_stats():
 
     game_state, kings = _setup()
     rng = PascalRandom(seed=1)
-    result = generate_new_game(rng, game_state, kings, gamevers=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1, leader_count=100)
 
     reserved = result.leaders[99]
     kitralus = VALHALLA_HERO_BY_NAME["Kitralus"]
@@ -967,3 +967,35 @@ def test_every_kings_home_features_are_already_detected_by_their_own_kingdom():
         features_here = [f for f in result.features.values() if f.coord == home_coord]
         for feature in features_here:
             assert feature.discovery_level(kingdom_id) == 1
+
+
+def test_every_neutral_humanoid_province_has_an_independent_lord_commanding_its_army():
+    # 2026-11-21, user-confirmed: every non-special-race neutral province has
+    # at least one free hero in command. With 10-12 Kings the fixed 100-hero
+    # roster used to leave ~14 of them without one, so the default now steps
+    # up to the next real roster tier (175) when 100 isn't enough.
+    for king_count in (2, 10, 12):
+        game_state, kings = _setup(king_count)
+        result = generate_new_game(PascalRandom(seed=5), game_state, kings, gamevers=1)
+
+        checked = 0
+        for coord, province in result.provinces.items():
+            if province.owner_kingdom_id is not None or province.race not in _HUMANOID_RACES:
+                continue
+            if province.terrain is Terrain.SEA:
+                continue
+            checked += 1
+            assert any(
+                army.commanded_by is not None
+                and result.leaders[army.commanded_by].kingdom_id is None
+                and not result.leaders[army.commanded_by].is_king
+                for army in result.armies_at(coord)
+            ), f"{king_count} Kings: {province.race} province {coord} has no independent lord"
+        assert checked > 0
+
+
+def test_a_pinned_leader_count_is_never_overridden():
+    game_state, kings = _setup(12)
+    result = generate_new_game(PascalRandom(seed=5), game_state, kings, gamevers=1, leader_count=100)
+
+    assert len(result.leaders) == 100

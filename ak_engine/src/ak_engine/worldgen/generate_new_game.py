@@ -459,6 +459,27 @@ _HUMANOID_RACES: frozenset[Race] = frozenset({Race.HUMAN, Race.ELVEN, Race.DWARV
 # applies here; a caller may still override it via leader_count=.
 _DEFAULT_LEADER_COUNT = LEADER_COUNT_BY_GAME_VERSION["game_version_3_or_earlier"]
 
+# 2026-11-21, user-confirmed ("ogni provincia deve avere almeno un eroe"):
+# every neutral humanoid province must have an independent lord. With a
+# fixed 100-hero roster that stops being possible as the number of Kings
+# grows (each King also takes 2 companions and shrinks the lord pool), so
+# a caller that doesn't pin `leader_count` gets the smallest real roster
+# tier that covers every one of them. 250 is deliberately not offered:
+# its id range would collide with VALHALLA_VISITOR_LEADER_ID (199).
+_AUTO_LEADER_COUNT_TIERS = (_DEFAULT_LEADER_COUNT, LEADER_COUNT_BY_GAME_VERSION["game_version_4_or_later_Arcanes_V"])
+
+
+def _leader_count_covering_every_lord(king_count: int, lord_province_count: int) -> int:
+    """Smallest tier with ``leader_count >= lord_province_count + 3*king_count + 1``
+    (``owner_leader_count()``'s own ``leader_count - (2*king_count + 1)``
+    cap, minus the Kings themselves), else the largest tier offered."""
+
+    needed = lord_province_count + 3 * king_count + 1
+    for tier in _AUTO_LEADER_COUNT_TIERS:
+        if tier >= needed:
+            return tier
+    return _AUTO_LEADER_COUNT_TIERS[-1]
+
 
 @dataclass(frozen=True, slots=True)
 class KingSetup:
@@ -575,7 +596,7 @@ def generate_new_game(
     height: int = DEFAULT_HEIGHT,
     gamevers: int = 1,
     new_rules: bool = True,
-    leader_count: int = _DEFAULT_LEADER_COUNT,
+    leader_count: int | None = None,
 ) -> GameState:
     """Runs the full sourced pipeline in-place against ``game_state``, returning it."""
 
@@ -714,6 +735,11 @@ def generate_new_game(
     # docstring's own Phase 426 addendum for exactly what's implemented
     # here versus still deferred (mercenaries, the reserved roster slot).
     king_leader_ids = frozenset(king.leader_id for king in kings)
+    humanoid_coords = [coord for coord in grid if race_grid[coord] in _HUMANOID_RACES]
+    if leader_count is None:
+        leader_count = _leader_count_covering_every_lord(
+            king_count, sum(1 for coord in humanoid_coords if coord not in king_home_set)
+        )
     reserved_roster_id = leader_count - 1
     hero_pool: dict[int, tuple[Alignment, SkillTable, Temper]] = {}
     for hero_id in range(leader_count):
@@ -728,7 +754,6 @@ def generate_new_game(
         hero_pool[hero_id] = (alignment, roll_skill_and_aptitude_table(hero_id, alignment, rng), roll_temper(rng))
     unused_hero_ids = iter(sorted(hero_pool))
 
-    humanoid_coords = [coord for coord in grid if race_grid[coord] in _HUMANOID_RACES]
     lord_count = max(0, owner_leader_count(len(humanoid_coords), leader_count, king_count) - king_count)
     lord_coords = [coord for coord in humanoid_coords if coord not in king_home_set][:lord_count]
     # 2026-11-19 bug fix, user-confirmed ("Tutti gli eroi indipendenti
