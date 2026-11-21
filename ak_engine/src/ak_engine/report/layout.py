@@ -118,7 +118,13 @@ def looks_like_prose(line: str) -> bool:
     return _PROSE_GAP.search(line.rstrip()) is None
 
 
-def flow_prose_in_lines(lines: list[str], *, units: Iterable[str] = (), width: int = REPORT_WIDTH) -> list[str]:
+def flow_prose_in_lines(
+    lines: list[str],
+    *,
+    units: Iterable[str] = (),
+    width: int = REPORT_WIDTH,
+    exempt: frozenset[str] = frozenset(),
+) -> list[str]:
     """Reflows every prose line of an already-composed section list the way
     the original writes its fixed introductions: two-space indent, wrapped at
     ``width``; every other line passes through unchanged."""
@@ -126,7 +132,7 @@ def flow_prose_in_lines(lines: list[str], *, units: Iterable[str] = (), width: i
     out: list[str] = []
     units = list(units)
     for line in lines:
-        if looks_like_prose(line):
+        if line not in exempt and looks_like_prose(line):
             out.extend(flow_sentences([line], units=units, width=width))
         else:
             out.append(line)

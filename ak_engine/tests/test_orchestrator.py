@@ -115,7 +115,7 @@ def test_process_turn_report_has_the_original_programs_title_page_and_closing():
     report = outcome.letter_reports[1]
     assert "ADVENTURER-KINGS:" in report[2]
     assert "  Quote of the Week:" in report
-    assert "ACTION REPORT" in report
+    assert "ACTION REPORT    " in report
     assert "Here's what happened to Your Majesty this turn:" in report
     assert "LETTER REPORTS" in report
     assert any(line.startswith("From: ") and "Cedric" in line for line in report)
