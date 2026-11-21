@@ -1312,6 +1312,7 @@ from __future__ import annotations
 
 import itertools
 import random
+import re
 import textwrap
 from typing import Sequence
 
@@ -1424,7 +1425,7 @@ from ak_engine.turn.emperor_election import (
 )
 from ak_engine.turn.final_standings import compose_final_standings_report
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
-from ak_engine.turn.encounter import CombatRange, FireArrowShot
+from ak_engine.turn.encounter import MONSTER_TALK_OFFER_TEXT, CombatRange, FireArrowShot, MonsterTalkReply
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
@@ -7425,7 +7426,30 @@ def describe_recruit(
         if unit.ally_fee_paid and province.owner_kingdom_id is not None:
             ally_king_name = _ally_fee_recipient_name(state, province.owner_kingdom_id)
             lines.append(render_recruit_ally_fee(recruiter_name, unit.ally_fee_paid, ally_king_name, rng))
+    # 2026-11-21, user-reported (a Recruit of a mercenary band that had
+    # already left produced no line at all, so the order looked ignored):
+    # project-original one-line reason per request that could not be
+    # carried out -- no sourced template exists for these rejections.
+    for blocked, reason in _recruit_blocked_reasons(result, province_name):
+        for army_type in blocked:
+            lines.append(f"{recruiter_name} could not recruit {ARMY_TYPE_DESIGNATION[army_type]} in {province_name}: {reason}.")
     return lines
+
+
+def _recruit_blocked_reasons(result: RecruitExecutionResult, province_name: str) -> list[tuple[list[ArmyType], str]]:
+    return [
+        (
+            result.non_native_type_not_owned,
+            "no mercenary of that type was there, and the province does not train that kind of unit",
+        ),
+        (result.territory_blocked, f"{province_name} is not theirs to levy from, and no mercenary of that type was there"),
+        (result.gold_blocked, "the treasury could not pay for it"),
+        (result.limit_blocked, "the limit on that unit type for this turn had already been reached"),
+        (result.incompatible, f"the people of {province_name} cannot field that kind of unit"),
+        (result.treat_blocked, f"the owner of {province_name} has not granted permission to recruit there"),
+        (result.province_locked, f"no further units could be recruited in {province_name} this turn"),
+        (result.elven_slot_required, "that unit can only take the place of an elven Elephants, Light or Heavy Cavalry slot"),
+    ]
 
 
 # HostAK/TP/PROSE/LEAVE.X -- one sentence per unit actually left behind
@@ -12483,6 +12507,61 @@ def render_hand_of_death_abort(
     return render_hand_of_death_channel(caster_name, target_name, squeeze_hits, interrupt_damage, ending, rng)
 
 
+# 2026-11-21, user-reported (a hero Talked to a Titan: no trace in the
+# report of what it said or that it offered a quest). The guardian's own
+# MTALK.X2 offer text is already transcribed for every reply
+# (`turn/encounter.py MONSTER_TALK_OFFER_TEXT`); only R_RIDDLE/R_VISIT were
+# ever surfaced. This narrates the other quest/agreement replies. Markers
+# the model has no value for (the item a monster wants brought back, a
+# revenge target, a King's title, a terrain) get generic placeholder
+# phrases -- project-original, never an invented specific fact, the same
+# stance render_guardian_proposes_quest_location() already takes for its
+# own unresolvable province.
+_TALK_OFFER_PLACEHOLDERS: dict[str, str] = {
+    "⟦CTRL-T:treasure-2⟧": "lost relic",
+    "⟦CTRL-C:quest-character⟧": "a hated rival",
+    "⟦CTRL-K:king-title⟧": "some distant King",
+    "⟦CTRL-H:terrain-2⟧": "rugged",
+}
+
+
+def render_guardian_talk_offer(
+    character_name: str,
+    monster_name: str,
+    reply: MonsterTalkReply,
+    *,
+    province_name: str,
+    treasure_name: str,
+    feature_name: str,
+    rng: random.Random,
+) -> list[str]:
+    """Two lines: that the character spoke with the guardian, then the
+    guardian's own offer (``MONSTER_TALK_OFFER_TEXT[reply]``), with the
+    sourced pronoun/place/item markers resolved from real data.
+    """
+
+    text = _resolve_ctrl_a_markers(MONSTER_TALK_OFFER_TEXT[reply])
+    for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
+        text = text.replace(marker, placeholder)
+    text = text.replace("FU-lfill", "Fulfill").replace("# gold", "a hefty sum in gold")
+    values = {
+        "[1": monster_name,
+        "[": monster_name,
+        "<2": character_name,
+        "<": character_name,
+        ">": "their",
+        "]": "its",
+        "@": province_name,
+        "\\": treasure_name,
+        "&": feature_name,
+    }
+    offer = render(text, values, rng=rng).strip()
+    # The sourced text runs sentences together ("...provinces.Explore").
+    offer = re.sub(r'([.!?]"?)(?=[A-Za-z(])', r"\1 ", offer)
+    offer = offer[0].upper() + offer[1:]
+    return [f"{character_name} spoke with {monster_name}.", offer]
+
+
 def describe_search(
     result: SearchExecutionResult,
     *,
@@ -12621,6 +12700,25 @@ def describe_search(
         lines.append(render_guardian_poses_riddle(monster_name, result.guardian_riddle))
     if result.guardian_quest_location is not None:
         lines.append(render_guardian_proposes_quest_location(monster_name, result.guardian_quest_location))
+    if (
+        result.guardian_talk_reply is not None
+        and result.guardian_riddle is None
+        and result.guardian_quest_location is None
+        and state is not None
+        and result.guardian_talk_coord is not None
+    ):
+        treasure = result.guardian_talk_treasure
+        lines.extend(
+            render_guardian_talk_offer(
+                character_name,
+                monster_name,
+                result.guardian_talk_reply,
+                province_name=_province_label(state, result.guardian_talk_coord),
+                treasure_name=TREASURE_NAME[treasure] if treasure is not None else "treasure",
+                feature_name=feature_name,
+                rng=rng,
+            )
+        )
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
     # PSYCHIC_MAGE's own "senses whether the monster intends to keep
     # its end of the bargain" perk -- see SearchExecutionResult.
@@ -14873,7 +14971,7 @@ def _render_army_row(
         designation = f"{ordinal} Skel {ARMY_TYPE_DESIGNATION[army.army_type]}"
     else:
         designation = f"{ordinal} {ARMY_TYPE_NAME[army.army_type]}"
-    race = MONSTROUS_ARMY_RACE.get(army.army_type, default_race)
+    race = army.race if army.race is not None else MONSTROUS_ARMY_RACE.get(army.army_type, default_race)
     race_name = RACE_NAME[race]
     quality_name = QUALITY_NAME[army.quality]
     row = f"{province_field}{leader_label[:15]:<15}{designation[:20]:<20}{race_name:>7}{quality_name:>9}"

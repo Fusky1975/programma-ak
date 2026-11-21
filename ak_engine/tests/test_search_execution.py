@@ -5179,6 +5179,24 @@ def test_execute_search_talk_derives_has_purchasable_treasure_from_feature_treas
     assert feature.pending_deal_leader_id == LEADER_ID
 
 
+def test_execute_search_talk_deal_carries_the_guardians_reply_and_offer_facts():
+    # 2026-11-21: the report needs the reply, treasure and place to narrate
+    # what the guardian said (a Titan's quest used to leave no trace).
+    raw = [0] * 30
+    raw[Ability.DRUID.value * 2] = 2
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    feature = Feature(
+        feature_id=39, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GW_WHALE, treasure=Treasure(48)
+    )
+    state.add_feature(feature)
+
+    result = execute_search(state, LEADER_ID, _talk_request(39), random.Random(0))
+
+    assert result.guardian_talk_reply is MonsterTalkReply.R_SELL
+    assert result.guardian_talk_treasure == Treasure(48)
+    assert result.guardian_talk_coord == LOCATION
+
+
 def test_execute_search_talk_reply_is_deterministic_regardless_of_the_live_rng_stream():
     # Same real (monster, feature_id) pair, two wildly different rng
     # seeds -- Phase 727's own point: the reply no longer depends on the

@@ -121,6 +121,7 @@ from ak_engine.report.turn_report import (
     describe_cargo_boarded,
     describe_sensed_magic_items,
     render_hand_of_death_abort,
+    render_guardian_talk_offer,
     render_hand_of_death_channel,
     describe_disband,
     describe_leave,
@@ -437,6 +438,7 @@ from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_decode import RecruitRequest
 from ak_engine.turn.recruit_execution import RecruitedUnit, RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
+from ak_engine.turn.encounter import MonsterTalkReply as _TalkReply
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
@@ -17936,3 +17938,95 @@ def test_describe_encounter_combat_narrates_every_hand_of_death_channel():
 
     assert any("Bob broke Alice's concentration with a counter-blow" in line for line in lines)
     assert any("Alice's Hand Of Death spell faded away." in line for line in lines)
+
+
+def test_render_guardian_talk_offer_narrates_the_titans_explore_quest():
+    lines = render_guardian_talk_offer(
+        "Gladstone", "Titan", _TalkReply.R_EXPALL, province_name="Santiago", treasure_name="Large Hoard of Gold",
+        feature_name="Tower", rng=ScriptedRandom([0.1] * 60, choice_indices=[0] * 60),
+    )
+
+    assert lines[0] == "Gladstone spoke with Titan."
+    assert "Explore 100% of Santiago" in lines[1]
+    assert "Titan" in lines[1]
+    assert ".Explore" not in lines[1]  # sentences are separated by a space
+    assert "FU-lfill" not in lines[1]
+    assert "⟦" not in lines[1]
+
+
+def test_render_guardian_talk_offer_uses_generic_placeholders_for_unknown_quest_parameters():
+    lines = render_guardian_talk_offer(
+        "Gladstone", "Dragon", _TalkReply.R_REGAIN, province_name="Santiago", treasure_name="Gem",
+        feature_name="Tower", rng=ScriptedRandom([0.1] * 60, choice_indices=[0] * 60),
+    )
+
+    assert "lost relic" in lines[1]
+    assert "⟦" not in lines[1]
+
+
+def test_describe_search_narrates_a_guardians_deal_offer():
+    state = GameState()
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, name="Santiago"))
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, reason="the guardian proposes a deal")
+    result.guardian_talk_reply = _TalkReply.R_EXPALL
+    result.guardian_talk_treasure = Treasure.GOLD_HOARD_LARGE
+    result.guardian_talk_coord = HexCoord(1, 1)
+
+    lines = describe_search(
+        result, state=state, character_name="Gladstone", feature_name="Tower",
+        rng=ScriptedRandom([0.1] * 80, choice_indices=[0] * 80),
+    )
+
+    assert any("Gladstone spoke with" in line for line in lines)
+    assert any("Explore 100% of" in line and "Santiago" in line for line in lines)
+
+
+def test_describe_search_does_not_double_narrate_a_riddle_as_a_generic_offer():
+    state = GameState()
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, name="Santiago"))
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, reason="the guardian proposes a deal")
+    result.guardian_talk_reply = _TalkReply.R_RIDDLE
+    result.guardian_riddle = Treasure.QUEST_RA_COFFIN
+    result.guardian_talk_coord = HexCoord(1, 1)
+
+    lines = describe_search(
+        result, state=state, character_name="Gladstone", feature_name="Tower",
+        rng=ScriptedRandom([0.1] * 80, choice_indices=[0] * 80),
+    )
+
+    assert not any("spoke with" in line for line in lines)
+
+
+def test_armies_report_shows_a_mercenary_bands_own_race_not_the_viewers():
+    # 2026-11-21: an Orc King's Axemen mercenaries are Dwarves.
+    state = GameState()
+    home = HexCoord(1, 1)
+    state.add_kingdom(KingdomState(1, "Orcia", Race.ORCISH, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.ORCISH, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="King", location=home, is_king=True))
+    state.add_army(
+        ArmyState(5, None, ArmyType.AXEMEN, Quality.AVERAGE, home, is_mercenary=True, race=Race.DWARVEN)
+    )
+
+    lines = describe_armies_report(state, 1)
+
+    row = next(line for line in lines if "Axemen" in line)
+    assert "Dwarf" in row
+    assert "Orc" not in row
+
+
+def test_describe_recruit_explains_a_request_that_could_not_be_carried_out():
+    # 2026-11-21: a Recruit that finds no mercenary and no native unit used
+    # to leave no trace in the report at all.
+    state = GameState()
+    coord = HexCoord(1, 1)
+    province = ProvinceState(coord, Terrain.PLAINS, Race.ORCISH, owner_kingdom_id=1, name="Santiago")
+    state.add_province(province)
+    result = RecruitExecutionResult(request=RecruitRequest(leader_id=None, army_types=[ArmyType.AXEMEN]))
+    result.non_native_type_not_owned.append(ArmyType.AXEMEN)
+    result.gold_blocked.append(ArmyType.PHALANX)
+
+    lines = describe_recruit(result, state, recruiter_name="Teleko", province=province, rng=ScriptedRandom([0.1] * 10))
+
+    assert any("Teleko could not recruit Axemen in Santiago" in line and "no mercenary" in line for line in lines)
+    assert any("Phalanx" in line and "treasury" in line for line in lines)

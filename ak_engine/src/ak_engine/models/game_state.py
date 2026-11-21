@@ -633,6 +633,12 @@ class ArmyState:
     # (combat, office eligibility, spying: "no Kingdom controls this at
     # all") is a separate, correct, unrelated concept and is left alone.
     is_mercenary: bool = False
+    # 2026-11-21, user rule: the race an army is composed of when that is a
+    # fact of the unit itself rather than of whoever owns it -- an initial
+    # mercenary band (Axemen are always Dwarves, Bowmen Elves, Legion and
+    # Camel Corps Humans). `None` (every other army) keeps the old
+    # derivation: the type's fixed monstrous race, else the owner's race.
+    race: Race | None = None
     # Bug fix, sourced directly from the user (2026-10-29), rulebook
     # [3.9]: "Non è invece possibile usare [Pick Up] nello stesso turno
     # in cui un'unità militare viene reclutata... ad eccezione delle
@@ -1796,6 +1802,14 @@ class GameState:
     # active promotion) applies every entry here and clears it, called
     # once at the very start of ``run_turn()``, before that same turn's
     # own fresh ``apply_treat_orders()`` call.
+    # 2026-11-21, user rule ("le unita' mercenarie se si spostano lo fanno
+    # alla fine del turno"): a mercenary army that follows a general out of
+    # its province ([3.6] Wandering Mercenaries, `turn/move_execution.py
+    # resolve_wandering_mercenary_following()`) decides to follow at the
+    # moment the general departs, but only actually relocates once the whole
+    # turn has been resolved (`apply_pending_mercenary_follows()`), so it
+    # stays recruitable/hireable where it stood for every later phase.
+    pending_mercenary_follows: list[tuple[int, HexCoord]] = field(default_factory=list)
     pending_break_treat_transitions: dict[frozenset[int], tuple[DiplomaticRelation, DiplomaticRelation]] = field(
         default_factory=dict
     )
