@@ -97,7 +97,7 @@ def test_battle_block_sets_the_diagram_off_by_blank_lines_and_splits_paragraphs(
         "the defenders turned back Fusky's forces.",
     ]
 
-    out = _flow_battle_block(lines, set())
+    out = _flow_battle_block(lines, set(), {})
 
     diagram_start = out.index("  ATTACKING ARMY, Battle of Javir (1306):")
     assert out[diagram_start - 1] == ""
@@ -310,3 +310,51 @@ def test_compose_letter_report_in_pascal_layout_reports_wanderers_before_the_fin
     assert any(line.startswith("  Here is the financial report") for line in report[news:])
     assert "ACTION REPORT    " in report
     assert "CHARACTERS   " in report
+
+
+# ---- stage 3 -------------------------------------------------------------
+
+from ak_engine.models.feature import Feature, FeatureType
+from ak_engine.report.turn_report import feature_label
+
+
+def test_feature_label_has_article_name_and_number():
+    assert feature_label(Feature(97, HexCoord(0, 0), FeatureType.ALTAR)) == "an Altar (#97)"
+    assert feature_label(Feature(126, HexCoord(0, 0), FeatureType.GLADE)) == "a Glade (#126)"
+
+
+def test_feature_label_uses_an_before_any_vowel_name():
+    from ak_engine.models.feature import FEATURE_TYPE_NAMES
+
+    for kind, name in FEATURE_TYPE_NAMES.items():
+        label = feature_label(Feature(1, HexCoord(0, 0), kind))
+        article = label.split(" ", 1)[0]
+        assert article == ("an" if name[0].upper() in "AEIOU" else "a")
+
+
+def test_discovery_sentence_with_a_leading_adjective_keeps_a_single_article():
+    from ak_engine.models.monster import Monster
+    from ak_engine.report.turn_report import describe_feature_discovery
+
+    feature = Feature(88, HexCoord(0, 0), FeatureType.CAVE, guardian_monster=Monster.DRYAD)
+    seen = set()
+    for seed in range(40):
+        first = describe_feature_discovery(feature, "Guerin", "Hollabrand", _random.Random(seed))[0]
+        assert " a a " not in first and " an a " not in first and "a an " not in first
+        seen.add("previously" in first or "heretofore" in first)
+        assert "Cave" in first
+    assert True in seen
+
+
+def test_battle_narration_uses_the_pronoun_for_a_leaders_own_troops():
+    lines = [
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of Javir (1306):",
+        "",
+        "  DEFENDING ARMY",
+        "Gladstone stood ready at the head of Gladstone's thousands.",
+    ]
+
+    out = _flow_battle_block(lines, {"Gladstone"}, {"Gladstone": "his"})
+
+    assert "  Gladstone stood ready at the head of his thousands." in out

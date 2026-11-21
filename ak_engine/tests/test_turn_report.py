@@ -6824,7 +6824,7 @@ def test_describe_rumor_renders_feature_and_monster_content():
 
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
-    assert line == "Aldric heard of a feature in  $99:  Dungeon inhabited by Renegade Archer."
+    assert line == "Aldric heard of a feature in  $99:  a Dungeon (#1) inhabited by the Renegade Archer."
 
 
 def test_describe_rumor_renders_item_content():
@@ -6845,7 +6845,7 @@ def test_describe_rumor_renders_item_content():
 
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
-    assert line == "Aldric heard of a feature in  $99:  Dungeon is said to hold the Standard of Command."
+    assert line == "Aldric heard of a feature in  $99:  a Dungeon (#1) is said to hold the Standard of Command."
 
 
 def test_describe_rumor_uses_the_described_coord_not_the_features_real_coord():
@@ -6901,7 +6901,7 @@ def test_describe_rumor_shows_the_real_name_for_a_province_this_kingdom_already_
 
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
-    assert line == "Aldric heard of a feature in  Thornwood:  Dungeon inhabited by Renegade Archer."
+    assert line == "Aldric heard of a feature in  Thornwood:  a Dungeon (#1) inhabited by the Renegade Archer."
     assert "$" not in line
 
 
@@ -6926,7 +6926,7 @@ def test_describe_rumor_shows_a_raw_hex_code_for_a_province_this_kingdom_does_no
 
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
-    assert line == "Aldric heard of a feature in  $99:  Dungeon inhabited by Renegade Archer."
+    assert line == "Aldric heard of a feature in  $99:  a Dungeon (#1) inhabited by the Renegade Archer."
     assert "Thornwood" not in line
 
 
@@ -6953,7 +6953,7 @@ def test_describe_rumor_shows_a_different_kingdoms_knowledge_does_not_leak():
 
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
-    assert line == "Aldric heard of a feature in  $99:  Dungeon inhabited by Renegade Archer."
+    assert line == "Aldric heard of a feature in  $99:  a Dungeon (#1) inhabited by the Renegade Archer."
 
 
 def test_describe_rumor_picks_the_selected_variant():
@@ -6974,7 +6974,7 @@ def test_describe_rumor_picks_the_selected_variant():
 
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
-    assert line == "Aldric heard a rumor telling of  feature in  $0,  Dungeon inhabited by Renegade Archer."
+    assert line == "Aldric heard a rumor telling of a feature in  $0,  a Dungeon (#1) inhabited by the Renegade Archer."
 
 
 # -- MONSTERS.X2 flavor text (Phase 613) -------------------------------------
@@ -7007,7 +7007,7 @@ def test_describe_feature_discovery_first_variant():
     # Phase 613: MONSTERS.X2's own flavor text now follows FINDFEAT.X's
     # own discovery sentence, as its own separate line.
     assert lines == [
-        "Aldric discovered a feature in Ancient Valley:  Dungeon  inhabited by Renegade Archer.",
+        "Aldric discovered a feature in Ancient Valley:  a Dungeon (#1)  inhabited by the Renegade Archer.",
         "Rangers describe the Renegade Archer as an accomplished archer who has taken to the "
         "wilderness in protest against the injustices of the world.",
     ]
@@ -7020,7 +7020,7 @@ def test_describe_feature_discovery_picks_the_selected_variant():
     lines = describe_feature_discovery(feature, "Aldric", "Ancient Valley", rng)
 
     assert lines == [
-        "Aldric found  Dungeon  in Ancient Valley, occupied by Renegade Archer.",
+        "Aldric found  a Dungeon (#1)  in Ancient Valley, occupied by the Renegade Archer.",
         "Rangers describe the Renegade Archer as an accomplished archer who has taken to the "
         "wilderness in protest against the injustices of the world.",
     ]

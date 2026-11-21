@@ -12255,23 +12255,23 @@ def describe_curator_research(
 # one, as a result -- FRUMOR.X's own 4 sentences, each split in two.
 _FRUMOR_MONSTER_TEMPLATES: list[str] = [
     "{While carousing/Rdrinking with fellow/Rother adventurers/Rtravellers in a bar/Rtavern, }< heard {mention/Rtell "
-    "}of a{n interesting} feature in  $#:  & inhabited/Roccupied by +.",
-    "{While }conversing/Rspeaking with {passing/Rfriendly }merchants/Radventurers, < heard/Rlearned a rumor about  "
-    "previously/Rheretofore unknown/Runheard_of & in  $#, held/Rinhabited by +.",
-    "< heard a rumor telling of  {perilous }feature in  $#{ previously unknown to us},  & inhabited_by/Rwhere_dwells +.",
+    "}of a{n interesting} feature in  $#:  & inhabited/Roccupied by the +.",
+    "{While }conversing/Rspeaking with {passing/Rfriendly }merchants/Radventurers, < heard/Rlearned a rumor about a "
+    "previously/Rheretofore unknown/Runheard_of § in  $#, held/Rinhabited by the +.",
+    "< heard a rumor telling of a{ perilous} feature in  $#{ previously unknown to us},  & inhabited_by/Rwhere_dwells the +.",
     "{while }talking/Rspeaking to some {friendly }locals/Rfarmers, < heard a rumor about  & in  $#, "
-    "occupied/Rinhabited by +.",
+    "occupied/Rinhabited by the +.",
 ]
 
 _FRUMOR_ITEM_TEMPLATES: list[str] = [
     "{While carousing/Rdrinking with fellow/Rother adventurers/Rtravellers in a bar/Rtavern, }< heard {mention/Rtell "
     "}of a{n interesting} feature in  $#:  & is said/Rrumored to hold the \\.",
-    "{While }conversing/Rspeaking with {passing/Rfriendly }merchants/Radventurers, < heard/Rlearned a rumor about  "
-    "previously/Rheretofore unknown/Runheard_of & in  $#, reputed/Rsaid to contain the \\.",
-    "< heard a rumor telling of  {perilous }feature in  $#{ previously unknown to us},  the & is reputed to "
+    "{While }conversing/Rspeaking with {passing/Rfriendly }merchants/Radventurers, < heard/Rlearned a rumor about a "
+    "previously/Rheretofore unknown/Runheard_of § in  $#, reputed/Rsaid to contain the \\.",
+    "< heard a rumor telling of a{ perilous} feature in  $#{ previously unknown to us},  the § is reputed to "
     "contain the \\.",
     "{while }talking/Rspeaking to some {friendly }locals/Rfarmers, < heard a rumor about  & in  $#. "
-    "They/Rsome say/Rmaintain that the & holds the \\.",
+    "They/Rsome say/Rmaintain that the § holds the \\.",
 ]
 
 
@@ -12321,7 +12321,7 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
 
     feature = state.features[rumor.feature_id]
     feature_name = FEATURE_TYPE_NAMES[feature.kind]
-    values = {"<": character_name, "&": feature_name}
+    values = {"<": character_name, "&": feature_label(feature)}
     if rumor.content is RumorContent.FEATURE_AND_MONSTER:
         values["+"] = MONSTER_NAMES[rumor.described_monster]
         variant = pick_variant(_FRUMOR_MONSTER_TEMPLATES, rng)
@@ -12339,7 +12339,7 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
         values["@"] = described_province.name
     else:
         values["#"] = str(encode_hex_number(rumor.described_coord, board_width))
-    return render(variant, values, rng=rng)
+    return render(variant.replace("§", feature_name), values, rng=rng)
 
 
 # HostAK/TP/PROSE/FINDFEAT.X -- the in-person discovery narrative
@@ -12355,12 +12355,21 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
 #   < was informed/Rtold by some peasants/Rsheepherders of  {perilous }feature in @{ previously unknown to us},  &  inhabited_by/Rwhere_dwells +.
 #   < {also }found/Rdiscovered  &  in @, occupied/Rinhabited by +.
 _FINDFEAT_TEMPLATES: list[str] = [
-    "< discovered/Rfound a{n interesting} feature in @:  &  inhabited/Roccupied by +.",
-    "< discovered/Rlocated  previously/Rheretofore unknown/Runheard_of &  in @, held/Rinhabited by +.",
-    "< was informed/Rtold by some peasants/Rsheepherders of  {perilous }feature in @{ previously unknown to us},  "
-    "&  inhabited_by/Rwhere_dwells +.",
-    "< {also }found/Rdiscovered  &  in @, occupied/Rinhabited by +.",
+    "< discovered/Rfound a{n interesting} feature in @:  &  inhabited/Roccupied by the +.",
+    "< discovered/Rlocated  a previously/Rheretofore unknown/Runheard_of §  in @, held/Rinhabited by the +.",
+    "< was informed/Rtold by some peasants/Rsheepherders of a{ perilous} feature in @{ previously unknown to us},  "
+    "&  inhabited_by/Rwhere_dwells the +.",
+    "< {also }found/Rdiscovered  &  in @, occupied/Rinhabited by the +.",
 ]
+
+
+def feature_label(feature: Feature) -> str:
+    """How the original's reports name a feature: article, name and number --
+    "an Altar (#97)", "a Glade (#126)"."""
+
+    name = FEATURE_TYPE_NAMES[feature.kind]
+    article = "an" if name[:1].upper() in "AEIOU" else "a"
+    return f"{article} {name} (#{feature.feature_id})"
 
 
 def render_monster_description(monster: Monster) -> str:
@@ -12414,8 +12423,8 @@ def describe_feature_discovery(feature: Feature, character_name: str, province_n
 
     feature_name = FEATURE_TYPE_NAMES[feature.kind]
     monster_name = MONSTER_NAMES[feature.guardian_monster]
-    values = {"<": character_name, "@": province_name, "&": feature_name, "+": monster_name}
-    variant = pick_variant(_FINDFEAT_TEMPLATES, rng)
+    values = {"<": character_name, "@": province_name, "&": feature_label(feature), "+": monster_name}
+    variant = pick_variant(_FINDFEAT_TEMPLATES, rng).replace("§", feature_name)
     return [render(variant, values, rng=rng), render_monster_description(feature.guardian_monster)]
 
 
@@ -18034,7 +18043,23 @@ def _flow_prose_lines(lines: list[str], units: set[str]) -> list[str]:
 _BATTLE_CLASH_PATTERN = re.compile(r"(?:the )?\d+(?:st|nd|rd|th)\b", re.IGNORECASE)
 
 
-def _flow_battle_block(lines: list[str], units: set[str]) -> list[str]:
+def _leader_possessives(state: GameState) -> dict[str, str]:
+    """Leader name -> "his"/"her", for the sentences that name a leader and
+    then something of theirs."""
+
+    return {
+        leader.name: _possessive_for(state, leader.leader_id)
+        for leader in (*state.leaders.values(), *state.dead_leaders.values())
+    }
+
+
+def _reflexive_for_all(sentence: str, possessives: dict[str, str]) -> str:
+    for name in sorted((n for n in possessives if n in sentence), key=len, reverse=True):
+        sentence = _reflexive_possessive(sentence, name, possessives[name])
+    return sentence
+
+
+def _flow_battle_block(lines: list[str], units: set[str], possessives: dict[str, str]) -> list[str]:
     """One battle's narrative in the original's shape: the lead-in prose
     and the diagram set off by a blank line either side, then paragraphs --
     the leaders, each column's clash, the outcome."""
@@ -18046,7 +18071,7 @@ def _flow_battle_block(lines: list[str], units: set[str]) -> list[str]:
         lead.append(lines[index])
         index += 1
     if lead:
-        out.extend(flow_sentences(lead, units=units))
+        out.extend(flow_sentences([_reflexive_for_all(line, possessives) for line in lead], units=units))
     end = index
     while end < len(lines) and not lines[end].lstrip().startswith("DEFENDING ARMY"):
         end += 1
@@ -18064,13 +18089,13 @@ def _flow_battle_block(lines: list[str], units: set[str]) -> list[str]:
             out.extend(flow_sentences(group, units=units))
             group = []
         group_is_clash = is_clash
-        group.append(sentence)
+        group.append(_reflexive_for_all(sentence, possessives))
     if group:
         out.extend(flow_sentences(group, units=units))
     return out
 
 
-def _flow_story_lines(lines: list[str], units: set[str]) -> list[str]:
+def _flow_story_lines(lines: list[str], units: set[str], possessives: dict[str, str] | None = None) -> list[str]:
     """Battle blocks (recognised by their lead-in sentence) get
     ``_flow_battle_block``; any other prose is flowed paragraph by paragraph."""
 
@@ -18081,7 +18106,7 @@ def _flow_story_lines(lines: list[str], units: set[str]) -> list[str]:
     if starts[0] > 0:
         out.extend(_flow_prose_lines(lines[: starts[0]], units))
     for begin, finish in zip(starts, [*starts[1:], len(lines)]):
-        out.extend(_flow_battle_block(lines[begin:finish], units))
+        out.extend(_flow_battle_block(lines[begin:finish], units, possessives or {}))
     return out
 
 
@@ -18493,7 +18518,7 @@ def _pascal_action_report_body(
     if valhalla_lines:
         body.extend(flow_sentences(valhalla_lines, units=units))
     if extra_story_lines:
-        body.extend(_flow_story_lines(extra_story_lines, units))
+        body.extend(_flow_story_lines(extra_story_lines, units, _leader_possessives(state)))
 
     body.append("")
     body.extend(flow_sentences([render(THUS_ENDETH_TEMPLATE, {"<": king_name}, rng=layout_rng)], units=units))
