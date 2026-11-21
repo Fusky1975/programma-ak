@@ -999,3 +999,21 @@ def test_a_pinned_leader_count_is_never_overridden():
     result = generate_new_game(PascalRandom(seed=5), game_state, kings, gamevers=1, leader_count=100)
 
     assert len(result.leaders) == 100
+
+
+def test_initial_mercenary_bands_are_composed_of_the_race_their_unit_type_belongs_to():
+    # 2026-11-21, user rule: Axemen are always Dwarves, Bowmen Elves, Legion
+    # and Camel Corps Humans -- whoever the King is.
+    from ak_engine.worldgen.mercenary_band import MERCENARY_BAND_RACE_BY_TYPE
+
+    checked = 0
+    for seed in (1, 2, 3, 4, 5, 6):
+        game_state, kings = _setup()
+        result = generate_new_game(PascalRandom(seed=seed), game_state, kings, gamevers=1)
+        for army in result.armies.values():
+            if not army.is_mercenary:
+                continue
+            expected = MERCENARY_BAND_RACE_BY_TYPE.get(army.army_type)
+            assert army.race is expected, f"seed {seed}: {army.army_type} band has race {army.race}"
+            checked += expected is not None
+    assert checked > 0

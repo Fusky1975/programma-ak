@@ -306,6 +306,7 @@ from ak_engine.turn.missed_deadline import build_missed_deadline_plan
 from ak_engine.turn.move_execution import (
     MoveExecutionResult,
     TransportIllegalMoveError,
+    apply_pending_mercenary_follows,
     find_transport_illegality,
     record_kingdom_exploration,
     reveal_adjacent_provinces,
@@ -929,6 +930,7 @@ def run_turn(
     # position, matching the confirmed real call-site timing (section
     # 12.1: "phase counter already at 5"). The King-orders-flag gate is
     # resolved once here and threaded into every eligibility check.
+    apply_pending_mercenary_follows(state)
     orders_flag = _kingdom_submitted_real_orders(turn_leaders, state)
     for relocation in resolve_wandering(state, orders_flag, rng):
         results.append(

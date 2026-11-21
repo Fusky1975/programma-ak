@@ -415,7 +415,7 @@ from ak_engine.worldgen.magic_item_placement import (
     initial_item_cursor,
     next_item_cursor,
 )
-from ak_engine.worldgen.mercenary_band import find_mercenary_recruit_type
+from ak_engine.worldgen.mercenary_band import MERCENARY_BAND_RACE_BY_TYPE, find_mercenary_recruit_type
 from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH, generate_map
 from ak_engine.worldgen.province_races import draw_base_race
@@ -1156,6 +1156,7 @@ def generate_new_game(
                 # native garrison) is deliberately left at the default
                 # `is_mercenary=False`.
                 is_mercenary=True,
+                race=MERCENARY_BAND_RACE_BY_TYPE.get(band_type),
             )
         )
 

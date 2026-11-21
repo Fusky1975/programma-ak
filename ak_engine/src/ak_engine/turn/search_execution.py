@@ -531,6 +531,7 @@ from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.magic_feature import MagicFeature
+from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import (
     DUEL_MERIT_MONSTERS,
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
@@ -1126,6 +1127,14 @@ class SearchExecutionResult:
     # including Riddle's own and the other 18 `QUEST_OR_AGREEMENT`
     # replies this project still doesn't narrate.
     guardian_quest_location: Treasure | None = None
+    # 2026-11-21, user-reported (a hero Talked to a Titan and the report had
+    # no trace of what the Titan said or that it offered a quest): the
+    # guardian's own MTALK.X2 reply for any deal/quest outcome, plus the
+    # facts its offer text names (the feature's treasure and province), so
+    # `report/turn_report.py describe_search()` can narrate the offer.
+    guardian_talk_reply: MonsterTalkReply | None = None
+    guardian_talk_treasure: Treasure | None = None
+    guardian_talk_coord: HexCoord | None = None
 
 
 def execute_search(
@@ -3622,6 +3631,9 @@ def _resolve_search_encounter(
             guardian_quest_location=guardian_quest_location,
             guardian_monster=feature.guardian_monster,
             sensed_fulfill_honor=sensed_fulfill_honor,
+            guardian_talk_reply=reply,
+            guardian_talk_treasure=feature.treasure,
+            guardian_talk_coord=feature.coord,
         )
 
     def _resolve_fulfill() -> SearchExecutionResult | None:

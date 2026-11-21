@@ -824,7 +824,7 @@ def test_run_turn_pools_armies_for_co_located_tactical_practicers():
     leader_b = _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.TACTICAL))
 
     results = run_turn(
-        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0])
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0] + [0.99] * 40)
     )
 
     by_leader = {r.leader_id: r for r in results}

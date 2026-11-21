@@ -432,15 +432,32 @@ def test_execute_practice_tactical_still_works_while_comatose():
     assert result.trained_army_ids == (101,)
 
 
-def test_execute_practice_tactical_does_not_touch_personal_skill():
+def test_execute_practice_tactical_also_attempts_personal_skill_advancement():
+    # 2026-11-21, user-confirmed (superseding [6.1]-only Phase 167/644): like
+    # every other Talent, Practicing Tactical is also a [3.13] skill attempt
+    # -- on top of training the leader's armies.
     state = _state_with_leader(skills=None)
 
-    result = execute_practice(state, leader_id=1, ability=Ability.TACTICAL, rng=ScriptedRandom([]))
+    result = execute_practice(state, leader_id=1, ability=Ability.TACTICAL, rng=random.Random(0))
 
     assert result.not_implemented_for_ability is False
-    assert result.skill_rose is False
     assert result.trained_army_ids == ()
-    assert state.leaders[1].skills is None  # [6.1] never touches personal skill at all
+    assert result.new_skill is not None  # a real skill attempt was resolved
+    assert state.leaders[1].skills is not None
+
+
+def test_execute_practice_tactical_with_a_more_skilled_partner_raises_the_lower_leaders_skill():
+    # The reported case: a King at Tactics 0 practicing with Gladstone (2).
+    state = _state_with_leaders(1, 2)
+    state.leaders[1].skills = SkillTable([0] * 30)
+    state.leaders[2].skills = SkillTable([0] * 30)
+    state.leaders[1].skills.set_pair_for_ability(Ability.TACTICAL, 0, 2)
+    state.leaders[2].skills.set_pair_for_ability(Ability.TACTICAL, 2, 5)
+
+    execute_practice_group(state, [1, 2], Ability.TACTICAL, rng=random.Random(0))
+
+    # [3.13]: effective from the next phase, via the pending-advancement queue.
+    assert state.leaders[1].pending_skill_advancement[Ability.TACTICAL][0] == 1
 
 
 # -- Phase 822: a leader who already died earlier this same turn can't
@@ -896,25 +913,22 @@ def test_execute_practice_dispatches_naval_to_army_training():
     state.add_army(_army(1, Quality.GREEN))
     state.add_army(_army(2, Quality.VETERAN))
 
-    result = execute_practice(state, leader_id=1, ability=Ability.NAVAL, rng=ScriptedRandom([0.0]))
+    result = execute_practice(state, leader_id=1, ability=Ability.NAVAL, rng=ScriptedRandom([0.0] + [0.99] * 20))
 
     assert result.trained_army_ids == (1,)
     assert state.armies[1].quality is Quality.AVERAGE
 
 
-def test_execute_practice_naval_leaves_personal_skill_completely_untouched():
-    # The real behavior change (Phase 644): before, Practicing Naval
-    # raised the leader's own personal Naval skill via the ordinary
-    # [3.13] path; now, like Tactical, it never does -- even with no
-    # armies at all to train, LeaderState.skills stays exactly as given.
+def test_execute_practice_naval_also_attempts_personal_skill_advancement():
+    # 2026-11-21, user-confirmed: supersedes Phase 644's "never raises the
+    # personal skill" -- Naval, like Tactical, is also a [3.13] skill attempt.
     state = _state_with_leader(skills=None)
 
-    result = execute_practice(state, leader_id=1, ability=Ability.NAVAL, rng=ScriptedRandom([]))
+    result = execute_practice(state, leader_id=1, ability=Ability.NAVAL, rng=random.Random(0))
 
     assert result.trained_army_ids == ()
-    assert result.skill_rose is False
-    assert result.new_skill is None  # same shape as the Tactical path -- no skill-rise result at all
-    assert state.leaders[1].skills is None  # never even created a fresh SkillTable
+    assert result.new_skill is not None
+    assert state.leaders[1].skills is not None
 
 
 def test_execute_practice_group_dispatches_naval_to_army_training_pooling():
@@ -925,7 +939,7 @@ def test_execute_practice_group_dispatches_naval_to_army_training_pooling():
     state.add_army(_army(1, Quality.GREEN, commanded_by=1))
     state.add_army(_army(2, Quality.VETERAN, commanded_by=2))
 
-    results = execute_practice_group(state, [1, 2], Ability.NAVAL, rng=ScriptedRandom([0.0]))
+    results = execute_practice_group(state, [1, 2], Ability.NAVAL, rng=ScriptedRandom([0.0] + [0.99] * 40))
 
     assert results[0].trained_army_ids == (1,)
     assert results[1].trained_army_ids == ()
@@ -1315,20 +1329,18 @@ def test_execute_practice_group_attaches_fresh_skill_tables_when_none_recorded()
     assert len(results) == 2
 
 
-def test_execute_practice_group_tactical_resolves_via_army_pooling_not_skill_rise():
-    # Phase 304 fix: TACTICAL used to be a blanket not_implemented for
-    # the whole group (worse than the solo case, which does train) --
-    # it now resolves through execute_practice_tactical_group() instead
-    # of the ordinary skill-rise mechanic, and never touches
-    # LeaderState.skills at all (TACTICAL trains armies, not skill).
+def test_execute_practice_group_tactical_pools_armies_and_also_attempts_skill_advancement():
+    # Phase 304: TACTICAL resolves army pooling through
+    # execute_practice_tactical_group(); 2026-11-21 (user-confirmed) it then
+    # also runs the ordinary [3.13] skill attempt for every co-practicer.
     state = _state_with_leaders(1, 2)
 
-    results = execute_practice_group(state, [1, 2], Ability.TACTICAL, rng=ScriptedRandom([]))
+    results = execute_practice_group(state, [1, 2], Ability.TACTICAL, rng=random.Random(0))
 
     assert all(not r.not_implemented_for_ability for r in results)
     assert all(r.trained_army_ids == () for r in results)  # no armies commanded -- nothing to pool or train
-    assert state.leaders[1].skills is None
-    assert state.leaders[2].skills is None
+    assert state.leaders[1].skills is not None
+    assert state.leaders[2].skills is not None
 
 
 def test_execute_practice_group_raw_out_of_range_ability_is_not_implemented():

@@ -944,18 +944,51 @@ def resolve_wandering_mercenary_following(
     sorted) order -- no `rng` needed. Returns the ids of every army that
     actually followed this call -- `[]` when none are present or none
     are eligible.
+
+    **2026-11-21, user rule: a following mercenary moves at the END of the
+    turn.** The decision (and the movement-point cost) is made here, at
+    the moment the general departs, but the relocation itself is only
+    queued on ``GameState.pending_mercenary_follows`` and carried out by
+    ``apply_pending_mercenary_follows()`` once every phase has resolved --
+    so the mercenary is still where the player saw it for every later
+    phase of the same turn (e.g. a later Recruit/Hire of it still works).
+    A mercenary already queued by an earlier mover this turn is not queued
+    a second time.
     """
 
     followed: list[int] = []
+    already_queued = {army_id for army_id, _ in state.pending_mercenary_follows}
     for army in sorted(state.mercenaries_at(origin), key=lambda a: a.army_id):
+        if army.army_id in already_queued:
+            continue
         if army.movement_points <= 0:
             continue
         if find_transport_illegality([army], [army.army_id], origin_province, target_province) is not None:
             continue
-        army.location = target
+        state.pending_mercenary_follows.append((army.army_id, target))
         army.movement_points -= WANDERING_MERCENARY_FOLLOW_MOVEMENT_COST
         followed.append(army.army_id)
     return followed
+
+
+def apply_pending_mercenary_follows(state: GameState) -> list[tuple[int, HexCoord, HexCoord]]:
+    """Carries out every queued mercenary follow (see
+    ``resolve_wandering_mercenary_following()``) at the end of the turn.
+    An army that was hired (no longer a mercenary) or destroyed in the
+    meantime stays put / is skipped. Returns ``(army_id, origin,
+    destination)`` for every army actually relocated; clears the queue.
+    """
+
+    moved: list[tuple[int, HexCoord, HexCoord]] = []
+    for army_id, destination in state.pending_mercenary_follows:
+        army = state.armies.get(army_id)
+        if army is None or not army.is_mercenary or army.kingdom_id is not None:
+            continue
+        origin = army.location
+        army.location = destination
+        moved.append((army_id, origin, destination))
+    state.pending_mercenary_follows = []
+    return moved
 
 
 # Phase 715 -- the one real, sourced allocation-priority order found for

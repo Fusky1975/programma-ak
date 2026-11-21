@@ -61,11 +61,21 @@ from collections.abc import Callable
 
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.map import HexCoord
+from ak_engine.models.race import Race
 from ak_engine.turn.movement import MapBounds, hex_distance
 from ak_engine.worldgen.pascal_random import PascalRandom
 
 ARMY_STATE_HIRED = 1
 ARMY_STATE_MERCENARY = 2
+
+# 2026-11-21, user rule: whenever the program creates one of these
+# mercenary bands it is always composed of the race that unit belongs to.
+MERCENARY_BAND_RACE_BY_TYPE: dict[ArmyType, Race] = {
+    ArmyType.AXEMEN: Race.DWARVEN,
+    ArmyType.BOWMEN: Race.ELVEN,
+    ArmyType.LEGION: Race.HUMAN,
+    ArmyType.CAMEL_CORPS: Race.HUMAN,
+}
 
 MAX_RADIUS = 6
 MAX_RETRIES = 100

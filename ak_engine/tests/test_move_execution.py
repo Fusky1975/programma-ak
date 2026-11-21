@@ -34,6 +34,7 @@ from ak_engine.turn.move_execution import (
     march_table_extra_movement,
     naval_movement_point_bonus,
     record_kingdom_exploration,
+    apply_pending_mercenary_follows,
     resolve_wandering_mercenary_following,
     reveal_adjacent_provinces,
 )
@@ -597,7 +598,10 @@ def test_resolve_wandering_mercenary_following_success():
     )
 
     assert followed == [301]
-    assert state.armies[301].location == TARGET
+    # 2026-11-21: the relocation is queued, not applied, until the end of
+    # the turn -- the decision and the movement-point cost are immediate.
+    assert state.armies[301].location == ORIGIN
+    assert state.pending_mercenary_follows == [(301, TARGET)]
     assert state.armies[301].movement_points == 1
     assert state.armies[301].kingdom_id is None
     assert state.armies[301].commanded_by is None
@@ -640,6 +644,7 @@ def test_resolve_wandering_mercenary_following_processes_every_eligible_army_in_
     )
 
     assert followed == [301, 302]
+    apply_pending_mercenary_follows(state)
     assert state.armies[301].location == TARGET
     assert state.armies[302].location == TARGET
 
@@ -674,6 +679,9 @@ def test_execute_move_a_mercenary_left_at_the_origin_follows_the_general():
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10)
 
     assert result.followed_mercenary_army_ids == [301]
+    # Queued, not moved: it relocates only at the end of the turn.
+    assert state.armies[301].location == ORIGIN
+    apply_pending_mercenary_follows(state)
     assert state.armies[301].location == TARGET
     assert state.armies[301].kingdom_id is None
     assert state.armies[301].commanded_by is None
@@ -2870,3 +2878,37 @@ def test_triangle_guest_army_on_allied_host_territory_is_not_attacked():
     assert result.moved is True
     assert result.battle_report is None
     assert state.armies[201].location == TARGET  # Y's army untouched
+
+
+def test_apply_pending_mercenary_follows_relocates_at_the_end_and_clears_the_queue():
+    state = base_state()
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
+    resolve_wandering_mercenary_following(state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET])
+
+    moved = apply_pending_mercenary_follows(state)
+
+    assert moved == [(301, ORIGIN, TARGET)]
+    assert state.armies[301].location == TARGET
+    assert state.pending_mercenary_follows == []
+
+
+def test_apply_pending_mercenary_follows_skips_a_mercenary_hired_in_the_meantime():
+    state = base_state()
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
+    resolve_wandering_mercenary_following(state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET])
+    state.armies[301].is_mercenary = False
+    state.armies[301].kingdom_id = 1
+
+    assert apply_pending_mercenary_follows(state) == []
+    assert state.armies[301].location == ORIGIN
+
+
+def test_a_second_general_departing_does_not_queue_the_same_mercenary_again():
+    state = base_state()
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=3, is_mercenary=True))
+    first = resolve_wandering_mercenary_following(state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET])
+    second = resolve_wandering_mercenary_following(state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET])
+
+    assert first == [301]
+    assert second == []
+    assert state.pending_mercenary_follows == [(301, TARGET)]

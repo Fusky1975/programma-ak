@@ -1323,9 +1323,12 @@ def execute_practice(
     if leader is None:
         return PracticeExecutionResult(ability=ability)
 
+    # 2026-11-21, user-confirmed: Practicing Tactical/Naval trains the
+    # leader's armies ([6.1]) AND, like every other Talent, is a [3.13]
+    # skill-advancement attempt -- it used to stop after the army training.
+    trained_army_ids: tuple[int, ...] = ()
     if ability in _ARMY_TRAINING_ABILITIES:
         trained_army_ids = execute_practice_tactical(state, leader_id, rng)
-        return PracticeExecutionResult(ability=ability, trained_army_ids=trained_army_ids)
 
     if leader.is_comatose:
         # Phase 310: Kill_Enemy's own coma variant ([4.25.2]) -- "non
@@ -1337,7 +1340,7 @@ def execute_practice(
         # own docstring. Ability.TACTICAL/NAVAL never reach this branch
         # (they return above), and rightly so -- training the leader's
         # own *armies* doesn't depend on the leader's own ability.
-        return PracticeExecutionResult(ability=ability)
+        return PracticeExecutionResult(ability=ability, trained_army_ids=trained_army_ids)
 
     skills = _get_or_create_skills(leader)
 
@@ -1391,6 +1394,7 @@ def execute_practice(
         society_maps_revealed=society_maps_revealed,
         gems_gold_gained=gems_gold_gained,
         gold_looted_as_bandit=gold_looted_as_bandit,
+        trained_army_ids=trained_army_ids,
     )
 
 
@@ -1503,18 +1507,6 @@ def execute_practice_group(
     if not isinstance(ability, Ability):
         return [PracticeExecutionResult(ability=ability, not_implemented_for_ability=True) for _ in leader_ids]
 
-    if ability in _ARMY_TRAINING_ABILITIES:
-        # Phase 304: army pooling, via execute_practice_tactical_group() --
-        # see that function's own docstring. Phase 644: Naval reaches
-        # this same branch too, per [6.1]'s own "same effect" text.
-        if len(leader_ids) < 2:
-            raise ValueError("execute_practice_group needs at least 2 leaders; use execute_practice for 1")
-        trained_by_leader = execute_practice_tactical_group(state, leader_ids, rng)
-        return [
-            PracticeExecutionResult(ability=ability, trained_army_ids=trained_by_leader[leader_id])
-            for leader_id in leader_ids
-        ]
-
     if len(leader_ids) < 2:
         raise ValueError("execute_practice_group needs at least 2 leaders; use execute_practice for 1")
 
@@ -1538,6 +1530,15 @@ def execute_practice_group(
             live_results = []
         live_results_by_id = dict(zip(live_leader_ids, live_results))
         return [live_results_by_id.get(leader_id, PracticeExecutionResult(ability=ability)) for leader_id in leader_ids]
+
+    # Phase 304: army pooling, via execute_practice_tactical_group() -- see
+    # that function's own docstring. Phase 644: Naval reaches this same
+    # branch too, per [6.1]'s own "same effect" text. 2026-11-21,
+    # user-confirmed: this no longer stops here -- every co-practicer also
+    # gets the ordinary [3.13] skill-advancement attempt below.
+    trained_by_leader: dict[int, tuple[int, ...]] = {}
+    if ability in _ARMY_TRAINING_ABILITIES:
+        trained_by_leader = execute_practice_tactical_group(state, leader_ids, rng)
 
     skills_tables = [_get_or_create_skills(state.leaders[leader_id]) for leader_id in leader_ids]
     pairs = [table.pair_for_ability(ability) for table in skills_tables]
@@ -1568,7 +1569,7 @@ def execute_practice_group(
             # experience should suffer for it). No Sage device roll
             # either, matching execute_practice()'s own comatose short-
             # circuit (it returns before ever reaching that roll).
-            results.append(PracticeExecutionResult(ability=ability))
+            results.append(PracticeExecutionResult(ability=ability, trained_army_ids=trained_by_leader.get(leader_id, ())))
             continue
         if outcome.skill_rose or outcome.aptitude_rose:
             # [3.13] "effetto fin dalla fase successiva" -- same deferral
@@ -1621,6 +1622,7 @@ def execute_practice_group(
                 society_maps_revealed=society_maps_revealed,
                 gems_gold_gained=gems_gold_gained,
                 teacher_leader_id=teacher_id,
+                trained_army_ids=trained_by_leader.get(leader_id, ()),
             )
         )
     return results
