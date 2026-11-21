@@ -1327,7 +1327,7 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
-from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbility
+from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, ADVANCED_ABILITY_TAGLINE, AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.turn.army_naming import make_army_ordinal
@@ -1343,7 +1343,13 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster
-from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, OFFICE_TITLE_DESCRIPTION, Office
+from ak_engine.models.office import (
+    OFFICE_MIN_POINTS,
+    OFFICE_NAME,
+    OFFICE_PERK_DESCRIPTION,
+    OFFICE_TITLE_DESCRIPTION,
+    Office,
+)
 from ak_engine.models.power import (
     MCOND_TEMPLATE,
     PCOND_TEMPLATE,
@@ -1391,7 +1397,7 @@ from ak_engine.report.ascii_map import (
     paginate_known_columns,
     select_layout_tier,
 )
-from ak_engine.report.layout import flow_prose_in_lines, flow_sentences
+from ak_engine.report.layout import flow_paragraph, flow_prose_in_lines, flow_sentences
 from ak_engine.report.prose import render
 from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
@@ -14427,7 +14433,7 @@ def _clairvoyance_watch_targets(owned: list[LeaderState]) -> set[int]:
     }
 
 
-def _characters_report_display_name(state: GameState, leader: LeaderState) -> str:
+def _characters_report_display_name(state: GameState, leader: LeaderState, *, with_id: bool = False) -> str:
     """``Get_HName(ldr,14,s)`` (Phase 555/639): substitutes "Royal Heir"
     for the stored name whenever this leader is still an unfinalized
     Royal Heir (`turn/cast_execution.py is_unfinalized_royal_heir()`)
@@ -14436,9 +14442,15 @@ def _characters_report_display_name(state: GameState, leader: LeaderState) -> st
     1's own full table and impulse 2/3's `Desc_Stranger` rows alike.
     """
 
-    if state.turn_number > 0 and is_unfinalized_royal_heir(leader):
-        return "Royal Heir"
-    return leader.name
+    name = "Royal Heir" if state.turn_number > 0 and is_unfinalized_royal_heir(leader) else leader.name
+    if not with_id:
+        return name
+    # ``Get_HName`` in the original: "Name (id)", the name cut short when
+    # name and number would not fit in the 14-column field.
+    ident = f"({leader.leader_id})"
+    if len(name) + 1 + len(ident) <= 14:
+        return f"{name} {ident}"
+    return name[: 14 - len(ident)] + ident
 
 
 def _resolve_viewer_priest(state: GameState, kingdom_id: int) -> LeaderState | None:
@@ -14513,6 +14525,7 @@ def _render_stranger_row(
     tell_align_distance: int | None,
     viewer_kingdom_id: int,
     king: LeaderState | None = None,
+    pascal_layout: bool = False,
 ) -> list[str]:
     """``Desc_Stranger`` (`REPORTS.PAS` lines 690-754, Phase 639): the
     impulse-2/3 row. Impulse 2 (`show_location=True`): name, Loc,
@@ -14572,7 +14585,7 @@ def _render_stranger_row(
     condition right above.
     """
 
-    name = _characters_report_display_name(state, leader)
+    name = _characters_report_display_name(state, leader, with_id=pascal_layout)
     loc = province_code(leader.location) if show_location else ""
     descriptor = f"{_stranger_descriptor(state, leader, viewer_kingdom_id=viewer_kingdom_id):<26}"
     is_masquerading_double_agent = (
@@ -14607,7 +14620,40 @@ def _render_stranger_row(
     return lines
 
 
-def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
+def _offices_by_leader(state: GameState) -> dict[int, list[Office]]:
+    held: dict[int, list[Office]] = {}
+    for office in ALL_OFFICES:
+        if office is Office.NO_OFFICE:
+            continue
+        holder = resolve_office_holder(state, office)
+        if holder is not None:
+            held.setdefault(holder.leader_id, []).append(office)
+    return held
+
+
+def _special_abilities_lines(leader: LeaderState, offices: list[Office]) -> list[str]:
+    """The ``Special Abilities:`` block of a CHARACTERS row (``REPORTS.PAS
+    Rep_Leaders``): one wrapped line per office perk and per Advanced Ability,
+    then a line of spaces separating it from the next character."""
+
+    entries: list[str] = []
+    for office in offices:
+        perk = OFFICE_PERK_DESCRIPTION.get(office, "")
+        if perk:
+            title = OFFICE_NAME[office].removesuffix(" Palatine").upper()
+            entries.append(f"{title}: {perk}")
+    for ability in sorted(leader.advanced_abilities, key=lambda a: a.value):
+        entries.append(f"{ADVANCED_ABILITY_NAME[ability].upper()}: {ADVANCED_ABILITY_TAGLINE.get(ability, '')}".rstrip(": "))
+    if not entries:
+        return []
+    lines = ["Special Abilities:  "]
+    for entry in entries:
+        lines.extend(flow_paragraph(entry))
+    lines.append(" " * 77)
+    return lines
+
+
+def describe_characters_report(state: GameState, kingdom_id: int, *, pascal_layout: bool = False) -> list[str]:
     """Assembles the "CHARACTERS" section (Phase 221) -- a deliberately
     much narrower slice of `REPORTS.PAS Rep_Leaders`, one of the largest
     procedures in the available Pascal archive (`compose_letter_report()`'s
@@ -14852,6 +14898,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         lines.append(_CHARACTERS_NONE_AT_PRESENT)
         return lines
 
+    offices_by_leader = _offices_by_leader(state) if pascal_layout else {}
     for leader in displayed:
         loc = province_code(leader.location)
         alignment_label = ALIGNMENT_ABBREVIATION[leader.alignment] if leader.alignment is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
@@ -14871,7 +14918,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         pay = leader_pay(state, leader, king)
 
         skill_row = _skill_row_with_item_ticks(state, leader)
-        display_name = _characters_report_display_name(state, leader)
+        display_name = _characters_report_display_name(state, leader, with_id=pascal_layout)
         lines.append(
             f"{display_name:<14}{loc:>4}{alignment_label:>6}{temper_label:>6}{sex_label:>3}{race_label:>7}{pay:>3} {skill_row}"
         )
@@ -14884,6 +14931,9 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
             f"{_CHARACTERS_APTITUDE_ROW_INDENT}{total_skill_and_march:>{_CHARACTERS_APTITUDE_ROW_NUMBER_WIDTH}} {aptitude_row}"
         )
 
+        if pascal_layout:
+            lines.extend(_special_abilities_lines(leader, offices_by_leader.get(leader.leader_id, [])))
+
         held_items = state.items_held_by(leader.leader_id)
         if held_items:
             item_names = ", ".join(TREASURE_NAME[item.treasure] for item in held_items)
@@ -14893,14 +14943,14 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         lines.extend(
             _render_stranger_row(
                 state, leader, show_location=True, priest=priest, tell_align_distance=2,
-                viewer_kingdom_id=kingdom_id, king=king,
+                viewer_kingdom_id=kingdom_id, king=king, pascal_layout=pascal_layout,
             )
         )
     for leader in impulse3:
         lines.extend(
             _render_stranger_row(
                 state, leader, show_location=False, priest=priest, tell_align_distance=None,
-                viewer_kingdom_id=kingdom_id,
+                viewer_kingdom_id=kingdom_id, pascal_layout=pascal_layout,
             )
         )
 
@@ -17696,7 +17746,7 @@ def record_wandering_world_events(state: GameState, results: list[PhaseDispatchR
             leader = state.leaders.get(relocation.entity_id)
             if leader is None:
                 continue
-            entity_name = leader.name
+            entity_name = f"{leader.name} (#{leader.leader_id})"
             away_fn, in_fn = render_character_wanders_away, render_character_wanders_in
         else:
             army = state.armies.get(relocation.entity_id)
@@ -17714,7 +17764,7 @@ def record_wandering_world_events(state: GameState, results: list[PhaseDispatchR
         if origin_owner is not None and _king_leader_id(state, origin_owner) is not None:
             is_sea = origin_province is not None and origin_province.effective_terrain() is Terrain.SEA
             line = away_fn(entity_name, origin_name, destination_name, rng, is_sea=is_sea)
-            state.record_world_event(relocation.origin, [line])
+            state.record_world_event(relocation.origin, [line], kind="wander")
 
         if (
             destination_owner is not None
@@ -17723,7 +17773,7 @@ def record_wandering_world_events(state: GameState, results: list[PhaseDispatchR
         ):
             is_sea = destination_province is not None and destination_province.effective_terrain() is Terrain.SEA
             line = in_fn(entity_name, origin_name, destination_name, rng, is_sea=is_sea)
-            state.record_world_event(relocation.destination, [line])
+            state.record_world_event(relocation.destination, [line], kind="wander")
 
 
 _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
@@ -18182,8 +18232,171 @@ def _pascal_letter_reports(
     return lines
 
 
+# The fixed introduction paragraphs of the report sections are not flowed by
+# the engine: the original's text files carry their own line breaks (and
+# trailing spaces), copied here from the real SE3__T3.K1 report.
+_FIXED_PARAGRAPHS: tuple[tuple[str, ...], ...] = (
+    (
+        "  My lord and sovereign, greatest of Kings, I humbly beg thy leave to make",
+        "report of matters of this Kingdom that may concern thy divine majesty.",
+    ),
+    ("  My lord, the following Kings have wisely allied with thy ever-", "victorious majesty:                    "),
+    ("  My lord, the following Kings are foolishly at war with thy ever-", "victorious majesty:                    "),
+    (
+        "  My lord, the following Kings are cautiously neutral with thy ever-",
+        "victorious majesty:                    ",
+    ),
+    (
+        "  O Great One, I submit for thy examination the following figures",
+        "concerning the finances of our great nation:                     ",
+    ),
+    (
+        "  O superfluous one, I have kept well a list of all provinces which have had",
+        "the wisdom to submit to thy yoke.  Here, then, are the lands of thy Empire:",
+    ),
+    (
+        "  My Lord, Great indeed are the leaders of our proud kingdom.  Though thee",
+        "knows them well, I list them here for thy consideration (the first line    ",
+        "shows pay and abilities; line 2 shows move precedence and aptitude.)       ",
+    ),
+    (
+        "  Excellence, thy armies have trained hard and honed their weapons to a fine",
+        "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
+    ),
+    (
+        "  Into thy heroic dreams cometh an apparition heaven-sent, to speak to thee of",
+        "thy progress in thy ambitions for Imperial Office.  It is not for mortal Kings",
+        "to know who rivals them for high offices, but the Divine One will allow you to",
+        "know thy place in the standings, and how thee compares to thy fiercest foreign",
+        'rival for each office (shown under "Riv%" as a percentage: your points divided',
+        "by your rival's points, times 100.)",
+    ),
+    (
+        "  O Luminous One, adventure awaits thee and thy companions at every corner of",
+        "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and",
+        "terrorize the populace by night.  Here are these lairs:                      ",
+    ),
+)
+
+
+def _fixed_paragraph_key(text: str) -> str:
+    return re.sub(r"[\s-]+", "", text)
+
+
+_FIXED_PARAGRAPH_BY_KEY = {_fixed_paragraph_key(" ".join(lines)): lines for lines in _FIXED_PARAGRAPHS}
+
+
+def _apply_fixed_paragraphs(lines: list[str]) -> list[str]:
+    """Replaces each one-line fixed introduction with the original's own
+    line breaks."""
+
+    out: list[str] = []
+    for line in lines:
+        fixed = _FIXED_PARAGRAPH_BY_KEY.get(_fixed_paragraph_key(line)) if len(line) > 40 and not line.startswith(" ") else None
+        if fixed is not None:
+            out.extend(fixed)
+        else:
+            out.append(line)
+    return out
+
+
+_PASCAL_HEADING_PADDING = {"ACTION REPORT": "ACTION REPORT    ", "CHARACTERS": "CHARACTERS   ", "DIPLOMACY": "DIPLOMACY "}
 _STATE_LIST_ITEM = re.compile(r"^[^\s(][^()]* \(#\d+\)$")
 _FIGURE_PREFIXES = ("Expected Revenues:", "Expected Expenses:", "+Invention Bonus:", "(Including +")
+
+
+_IMPERIAL_OFFICE_TABLE_HEADER = "Imperial Office           Best Hope     Rank  Riv%   Second Hope   Rank  Riv%"
+_OFFICE_ROW = re.compile(r"^(.{26})(.+?) \((\d+) points, rank (\d+), ([^)]*)\)$")
+_OFFICE_NONE_ROW = re.compile(r"^(.{26})None at present$")
+_MANDATORY_OFFICE_NAMES = frozenset(OFFICE_NAME[office] for office in Office if office.value <= Office.MAGE.value)
+
+
+def _riv_column(riv: str) -> str:
+    digits = riv.rstrip("%")
+    return digits if digits.isdigit() else "0"
+
+
+def _office_table_row(office: str, best: tuple[str, str, str] | None, second: tuple[str, str, str] | None) -> str:
+    """One ``REPORTS.PAS Rep_Office`` row: the office, its best hope with rank
+    and rival percentage, then the second hope the same way (column positions
+    measured on the real SE3 reports)."""
+
+    row = office.ljust(26)
+    if best is None:
+        return row + "None"
+    name, rank, riv = best
+    row += f"{name:<{max(17, len(name) + 1)}}{rank}{riv:>6}"
+    if second is None:
+        return row + "   None"
+    name, rank, riv = second
+    rank_end = max(18, len(name) + 4)
+    return row + "   " + name + " " * (rank_end - len(name) - len(rank)) + rank + f"{riv:>6}"
+
+
+def _pascal_office_table(lines: list[str]) -> list[str]:
+    """Turns the Imperial Office rows ("Name (N points, rank R, P%)") into the
+    original's Best Hope / Second Hope table."""
+
+    out: list[str] = []
+    header_done = False
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        match = _OFFICE_ROW.match(line)
+        none_match = _OFFICE_NONE_ROW.match(line)
+        if match is None and none_match is None:
+            out.append(line)
+            index += 1
+            continue
+        if not header_done:
+            if out and out[-1] != "":
+                out.append("")
+            out.append(_IMPERIAL_OFFICE_TABLE_HEADER)
+            header_done = True
+        if none_match is not None:
+            # An unheld optional title simply has no row in the original.
+            if none_match.group(1).strip() in _MANDATORY_OFFICE_NAMES:
+                out.append(_office_table_row(none_match.group(1).strip(), None, None))
+            index += 1
+            continue
+        office = match.group(1).strip()
+        best = (match.group(2), match.group(4), _riv_column(match.group(5)))
+        second = None
+        index += 1
+        if index < len(lines):
+            follow = _OFFICE_ROW.match(lines[index])
+            if follow is not None and not follow.group(1).strip():
+                second = (follow.group(2), follow.group(4), _riv_column(follow.group(5)))
+                index += 1
+        out.append(_office_table_row(office, best, second))
+    return out
+
+
+_ARMIES_QUALITY_NOTE = (
+    '  Note: "Modified Quality" includes the modifiers for your home-province    ',
+    "bonus, desert terrain, special magic items, race and druidic ability.       ",
+)
+_MERCENARY_LIST_INTRO = "The following unit(s) are independent mercenaries"
+
+
+def _pascal_armies_lines(lines: list[str]) -> list[str]:
+    """ARMIES as the original ends it: two blank lines before the
+    independent-mercenary list, and the "Modified Quality" note closing the
+    section."""
+
+    out: list[str] = []
+    for line in lines:
+        if line.startswith(_MERCENARY_LIST_INTRO):
+            while out and out[-1] == "":
+                out.pop()
+            out.extend(["", ""])
+        out.append(line)
+    while out and out[-1] == "":
+        out.pop()
+    has_mercenaries = any(line.startswith(_MERCENARY_LIST_INTRO) for line in out)
+    out.extend([""] if has_mercenaries else ["", ""])
+    out.extend(_ARMIES_QUALITY_NOTE)
+    return out
 
 
 def _polish_state_sections(lines: list[str], units: set[str]) -> list[str]:
@@ -18192,7 +18405,8 @@ def _polish_state_sections(lines: list[str], units: set[str]) -> list[str]:
     blank lines between the DIPLOMACY groups."""
 
     out: list[str] = []
-    for line in flow_prose_in_lines(lines, units=units):
+    exempt = frozenset(_ARMIES_QUALITY_NOTE) | {line for lines_ in _FIXED_PARAGRAPHS for line in lines_}
+    for line in flow_prose_in_lines(_apply_fixed_paragraphs(_pascal_office_table(lines)), units=units, exempt=exempt):
         if line.startswith("Gold in treasury:"):
             line = "  " + line.replace("Gold in treasury: ", "Gold in treasury:  ", 1)
         elif line == "None at present" or _STATE_LIST_ITEM.match(line) or line.startswith(_FIGURE_PREFIXES):
@@ -18202,6 +18416,23 @@ def _polish_state_sections(lines: list[str], units: set[str]) -> list[str]:
                 out.append("")
         out.append(line)
     return out
+
+
+WANDERERS_NEWS_INTRO = "  Your Majesty, I have news to report of wanderers in our kingdom:  "
+
+
+def _wanderer_news_lines(state: GameState, kingdom_id: int) -> list[str]:
+    """Heroes and mercenary armies that wandered in or out of this
+    Kingdom's own provinces this turn."""
+
+    lines: list[str] = []
+    for event in state.world_events:
+        if getattr(event, "kind", "") != "wander":
+            continue
+        province = state.provinces.get(event.coord)
+        if province is not None and province.owner_kingdom_id == kingdom_id:
+            lines.extend(event.lines)
+    return lines
 
 
 def _layout_rng(state: GameState, kingdom_id: int, leader_id: int | None) -> random.Random:
@@ -18269,8 +18500,13 @@ def _pascal_action_report_body(
     body.extend(["", ""])
     if trailing_notice_lines:
         body.extend(_flow_prose_lines(trailing_notice_lines, units))
+    wanderer_lines = _wanderer_news_lines(state, kingdom_id)
+    if wanderer_lines:
+        body.append(WANDERERS_NEWS_INTRO)
+        for line in wanderer_lines:
+            body.extend(flow_sentences([line], units=units))
     if finance_sentences:
-        if trailing_notice_lines:
+        if trailing_notice_lines or wanderer_lines:
             body.extend(["", ""])
         body.extend(flow_sentences(finance_sentences, units=units))
     return body
@@ -18835,11 +19071,13 @@ def compose_letter_report(
     if lines:
         lines.extend(describe_map_report(state, kingdom_id))
 
-    characters_lines = describe_characters_report(state, kingdom_id)
+    characters_lines = describe_characters_report(state, kingdom_id, pascal_layout=pascal_layout)
     if characters_lines:
         _emit_section(characters_lines[0], characters_lines[1:])
 
     armies_lines = describe_armies_report(state, kingdom_id)
+    if armies_lines and pascal_layout:
+        armies_lines = _pascal_armies_lines(armies_lines)
     if armies_lines:
         _emit_section(armies_lines[0], armies_lines[1:])
 
@@ -18884,6 +19122,8 @@ def compose_letter_report(
     # _emit_section(), which requires one) -- a bare trailing header.
     if pascal_layout:
         lines[state_sections_start:] = _polish_state_sections(lines[state_sections_start:], _layout_units(state))
+        # Three headings of the original carry trailing spaces.
+        lines[:] = [_PASCAL_HEADING_PADDING.get(line, line) for line in lines]
     if lines:
         lines.append("")
         lines.append("")

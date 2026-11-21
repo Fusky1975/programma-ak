@@ -1577,6 +1577,10 @@ class WorldEvent:
 
     coord: HexCoord
     lines: list[str]
+    # "wander" for a hero/army wandering in or out of a province (reported as
+    # news of wanderers in the owner's own ACTION REPORT); "" for the rest.
+    # Read with ``getattr(event, "kind", "")``: saved games predate it.
+    kind: str = ""
 
 
 @dataclass(slots=True)
@@ -2590,10 +2594,10 @@ class GameState:
             if province.owner_kingdom_id is not None and self.is_allied(province.owner_kingdom_id, kingdom_id)
         }
 
-    def record_world_event(self, coord: HexCoord, lines: list[str]) -> None:
+    def record_world_event(self, coord: HexCoord, lines: list[str], *, kind: str = "") -> None:
         """Appends one ``WorldEvent`` at ``coord`` -- see that class's own
         docstring for GENERAL INTELLIGENCE REPORT's own real raw material
         (Phase 231).
         """
 
-        self.world_events.append(WorldEvent(coord, lines))
+        self.world_events.append(WorldEvent(coord, lines, kind))
