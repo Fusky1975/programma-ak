@@ -103,6 +103,26 @@ def test_process_turn_syncs_bridges_dispatches_and_narrates():
     assert outcome.bridge_reports[1].not_found_leader_ids == []
 
 
+def test_process_turn_report_has_the_original_programs_title_page_and_closing():
+    state = _base_state()
+    state.kingdoms[1].treasury = 1000
+    state.leaders[20].skills = SkillTable(raw_values=[0] * 31)
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _practice_leader(20, "Cedric", Ability.MELEE)])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    report = outcome.letter_reports[1]
+    assert "ADVENTURER-KINGS:" in report[2]
+    assert "  Quote of the Week:" in report
+    assert "ACTION REPORT" in report
+    assert "Here's what happened to Your Majesty this turn:" in report
+    assert "LETTER REPORTS" in report
+    assert any(line.startswith("From: ") and "Cedric" in line for line in report)
+    assert "  Honored Sovereign, " in report
+    assert any(line.startswith("  Thy humble servant,   ") for line in report)
+
+
 def test_process_turn_narrates_a_real_practice_order():
     # 2026-11-20 bug fix, user-confirmed (live AK0 playtest): this is the
     # one real production compose_letter_report() call every played
@@ -280,7 +300,7 @@ def test_process_turn_bridges_a_real_mutual_treat_order_into_a_real_alliance():
     assert state.is_allied(1, 2)
     # DIPLOMACY's own "wisely allied" list now really names the other
     # King -- not just an internal is_allied() flip with no report trace.
-    assert "Baldric (#2)" in outcome.letter_reports[1]
+    assert "  Baldric (#2)" in outcome.letter_reports[1]
 
 
 def test_process_turn_resolves_a_queued_guild_assassination_after_battles():

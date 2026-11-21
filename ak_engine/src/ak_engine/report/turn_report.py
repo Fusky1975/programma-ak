@@ -1391,6 +1391,7 @@ from ak_engine.report.ascii_map import (
     paginate_known_columns,
     select_layout_tier,
 )
+from ak_engine.report.layout import flow_prose_in_lines, flow_sentences
 from ak_engine.report.prose import render
 from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
@@ -13233,7 +13234,12 @@ def _discovery_exchange_line(prefix: str, partners: list[int]) -> str:
     return f"({prefix} player(s) {names} by scientific treaty)"
 
 
-def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Random | None = None) -> list[str]:
+def describe_finances_report(
+    state: GameState,
+    kingdom_id: int,
+    rng: random.Random | None = None,
+    narrative_out: list[str] | None = None,
+) -> list[str]:
     """Assembles the "FINANCES" section (Phase 219) -- a deliberately
     narrow slice of `REPORTS.PAS Rep_Econ`, rendering only the figures
     this project's `GameState` actually has real data for.
@@ -13383,18 +13389,26 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
     kingdom = state.kingdoms[kingdom_id]
     rng = rng if rng is not None else random.Random()
     king_name = _leader_name(state, _king_leader_id(state, kingdom_id)) or kingdom.name
+    # 2026-11-21: in the original the narrative sentences ("Here is the
+    # financial report for X's kingdom: this turn, the Kingdom collected ...
+    # X was left with N gold in the treasury.") are one paragraph of the
+    # ACTION REPORT, not part of the FINANCES section -- a caller passing
+    # ``narrative_out`` receives them there, in order, and the section keeps
+    # only the figures.
+    narrative = narrative_out if narrative_out is not None else None
 
     # Cosmetic fix (2026-11-14, user-requested): blank lines now separate
     # the opening paragraph, the figures block, the Discoveries intro,
     # the Discoveries list/"None at present", and the closing treasury
     # sentence -- purely for readability, no wording changed.
-    lines = [
-        "FINANCES",
-        _FINANCES_OPENING,
-        render_finance_report_opening(king_name, rng),
-        "",
-        f"Gold in treasury: {kingdom.treasury:>3}",
-    ]
+    lines = ["FINANCES", _FINANCES_OPENING]
+    opening_sentence = render_finance_report_opening(king_name, rng)
+    if narrative is not None:
+        narrative.append(opening_sentence)
+        lines.append("")
+    else:
+        lines.extend([opening_sentence, ""])
+    lines.append(f"Gold in treasury: {kingdom.treasury:>3}")
     evilking_holder = resolve_office_holder(state, Office.EVIL_KING)
     if evilking_holder is not None and state.leaders[evilking_holder.leader_id].kingdom_id == kingdom_id:
         lines.append("(Including +5 Black Knights)")
@@ -13405,6 +13419,7 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
     invention_bonus_percent = compute_invention_bonus_percent(kingdom)
     if invention_bonus_percent > 0:
         lines.append(f"+Invention Bonus: {invention_bonus_percent}%")
+    story_sink = narrative if narrative is not None else lines
     for raid_event in state.turn_raid_events:
         province = state.provinces.get(raid_event.province_coord)
         if province is None or province.owner_kingdom_id != kingdom_id:
@@ -13413,21 +13428,21 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
         monster_name = MONSTER_NAMES[raid_event.monster]
         is_sea = province.effective_terrain() is Terrain.SEA
         if raid_event.kind == "thunderbird":
-            lines.append(render_thunderbird_intervention(province_name, monster_name, rng))
+            story_sink.append(render_thunderbird_intervention(province_name, monster_name, rng))
         else:
-            lines.append(render_monster_raid(province_name, monster_name, raid_event.damage, rng, is_sea=is_sea))
+            story_sink.append(render_monster_raid(province_name, monster_name, raid_event.damage, rng, is_sea=is_sea))
     for penalty in state.turn_blackmail_penalties:
         if penalty.kingdom_id != kingdom_id:
             continue
-        lines.append(render_blackmail_penalty(penalty.amount, penalty.blackmailer_kingdom_id, rng))
+        story_sink.append(render_blackmail_penalty(penalty.amount, penalty.blackmailer_kingdom_id, rng))
     if kingdom_id in state.turn_revenue_credited:
-        lines.append(render_finance_revenue(state.turn_revenue_credited[kingdom_id], rng))
+        story_sink.append(render_finance_revenue(state.turn_revenue_credited[kingdom_id], rng))
     maintenance = state.turn_maintenance_by_kingdom.get(kingdom_id)
     if maintenance is not None:
         army_cost = compute_army_maintenance(state, kingdom_id)
-        lines.append(render_finance_leader_costs(maintenance.debited - army_cost, rng))
-        lines.append(render_finance_army_costs(army_cost, rng))
-        lines.extend(describe_desertions(maintenance, state, king_name=king_name, rng=rng))
+        story_sink.append(render_finance_leader_costs(maintenance.debited - army_cost, rng))
+        story_sink.append(render_finance_army_costs(army_cost, rng))
+        story_sink.extend(describe_desertions(maintenance, state, king_name=king_name, rng=rng))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
     lines.append("")
     lines.append(_FINANCES_DISCOVERIES_INTRO)
@@ -13443,8 +13458,12 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
                 lines.append(_discovery_exchange_line("Sent to", sent_to))
     else:
         lines.append(_FINANCES_NONE_AT_PRESENT)
-    lines.append("")
-    lines.append(render_finance_treasury(king_name, kingdom.treasury, rng))
+    treasury_sentence = render_finance_treasury(king_name, kingdom.treasury, rng)
+    if narrative is not None:
+        narrative.append(treasury_sentence)
+    else:
+        lines.append("")
+        lines.append(treasury_sentence)
     return lines
 
 
@@ -15960,6 +15979,7 @@ def describe_letter_reports(
     *,
     ability_names: dict[Ability, str] | None = None,
     board_width: int | None = None,
+    pascal_layout: bool = False,
 ) -> list[str]:
     """Assembles the "LETTER REPORTS" section (Phase 217) -- every other
     leader in this kingdom's own turn narrated as a letter addressed to
@@ -16030,6 +16050,18 @@ def describe_letter_reports(
             if leader.kingdom_id == kingdom_id and leader.leader_id != king_leader_id
         }
     )
+
+    if pascal_layout:
+        return _pascal_letter_reports(
+            results,
+            state,
+            kingdom_id,
+            rng,
+            other_leader_ids,
+            king_name,
+            ability_names=ability_names,
+            board_width=board_width,
+        )
 
     lines = ["LETTER REPORTS"]
     letter_lines: list[str] = []
@@ -17835,6 +17867,415 @@ def describe_general_intelligence_report(
     return lines
 
 
+# 2026-11-21, user-requested ("report piu' simili possibile a quelli delle
+# vecchie partite create col programma in Pascal"): the Pascal engine's own
+# ACTION REPORT shape. `REPORTS.PAS Basic_Report` writes the Quote, then
+# "ACTION REPORT", then "Here's what happened to Your Majesty this turn:",
+# then `Tell_Story`; `SAY.PAS Assign_Phase` opens every phase with one of the
+# three SPRING.X/ESUMMER.X/... season variants and `YAK.PAS Spread` flows the
+# phase's sentences into one paragraph (see report/layout.py); `SAY.PAS
+# _LThEnd` closes the narrative with "Thus endeth the adventures of <3 for
+# this year.".
+ACTION_REPORT_INTRO = "Here's what happened to Your Majesty this turn:"
+THUS_ENDETH_TEMPLATE = "Thus endeth the adventures of < for this year."
+
+_PHASE_LABEL_PATTERN = re.compile(r"^P([0-4])$")
+_LOWERCASE_AFTER_PREFIX = frozenset(
+    {
+        "The", "A", "An", "His", "Her", "Their", "Its", "It", "He", "She", "They", "Some", "There", "Nothing",
+        "This", "That", "These", "Those", "With", "During", "After", "As", "When", "While", "Then", "On", "In", "At",
+    }
+)
+
+
+def _phase_index(phase_label: str) -> int | None:
+    match = _PHASE_LABEL_PATTERN.match(phase_label)
+    return int(match.group(1)) if match else None
+
+
+def _layout_units(state: GameState) -> set[str]:
+    """Every multi-word name the flowed text must keep on one line."""
+
+    units: set[str] = set()
+    for leader in (*state.leaders.values(), *state.dead_leaders.values()):
+        units.add(leader.name)
+    for province in state.provinces.values():
+        if province.name:
+            units.add(province.name)
+    for kingdom in state.kingdoms.values():
+        units.add(kingdom.name)
+    units.update(ARMY_TYPE_NAME.values())
+    units.update(ARMY_TYPE_DESIGNATION.values())
+    units.update(MONSTER_NAMES.values())
+    units.update(SPELL_NAME.values())
+    units.update(TREASURE_NAME.values())
+    return units
+
+
+def render_season_intro(phase_index: int, character_name: str, pronoun: str, rng: random.Random) -> tuple[str, bool]:
+    """One of the three real season-opening variants for a phase (random,
+    like the original's own file-dispatch choice): a full sentence (the
+    season turning), or a connector such as "In fall, " that the phase's
+    first sentence continues. Returns ``(text, is_connector)``."""
+
+    catalog = rng.choice((SEASON_TRANSITION_TEMPLATE, SEASON_PREFIX_TEMPLATE, SEASON_ADVENT_TEMPLATE))
+    text = render(catalog[phase_index], {"<": character_name, ">": pronoun}, rng=rng)
+    text = text[0].upper() + text[1:]
+    return text, text.endswith(" ")
+
+
+def _lower_first_after_connector(sentence: str, units: set[str]) -> str:
+    first_word = sentence.split(" ", 1)[0]
+    if first_word in _LOWERCASE_AFTER_PREFIX and not any(sentence.startswith(unit) for unit in units if " " not in unit):
+        return first_word.lower() + sentence[len(first_word) :]
+    return sentence
+
+
+def _possessive_for(state: GameState, leader_id: int | None) -> str:
+    leader = state.leaders.get(leader_id) if leader_id is not None else None
+    if leader is not None and leader.sex is not None and leader.sex.name.upper().startswith("F"):
+        return "her"
+    return "his"
+
+
+def _phase_paragraph(
+    phase_index: int, sentences: list[str], character_name: str, pronoun: str, units: set[str], rng: random.Random
+) -> list[str]:
+    """One phase's paragraph: the season opening, then the phase's own
+    sentences, flowed the way the Pascal engine flows them."""
+
+    intro, is_connector = render_season_intro(phase_index, character_name, pronoun, rng)
+    if is_connector:
+        merged = [intro + _lower_first_after_connector(sentences[0], units)] + sentences[1:]
+    else:
+        merged = [intro, *sentences]
+    return flow_sentences(merged, units=units)
+
+
+def _is_preformatted(line: str) -> bool:
+    """Lines that are not running prose (blank, indented, battle diagrams)
+    and so must not be flowed."""
+
+    return line == "" or line.startswith(" ") or "----" in line or "\n" in line
+
+
+def _flow_prose_lines(lines: list[str], units: set[str]) -> list[str]:
+    """Flows each run of consecutive prose lines into one paragraph and
+    passes preformatted lines through unchanged."""
+
+    out: list[str] = []
+    run: list[str] = []
+
+    def flush() -> None:
+        if run:
+            out.extend(flow_sentences(run, units=units))
+            run.clear()
+
+    for line in lines:
+        if _is_preformatted(line):
+            flush()
+            out.append(line)
+        else:
+            run.append(line)
+    flush()
+    return out
+
+
+_BATTLE_CLASH_PATTERN = re.compile(r"(?:the )?\d+(?:st|nd|rd|th)\b", re.IGNORECASE)
+
+
+def _flow_battle_block(lines: list[str], units: set[str]) -> list[str]:
+    """One battle's narrative in the original's shape: the lead-in prose
+    and the diagram set off by a blank line either side, then paragraphs --
+    the leaders, each column's clash, the outcome."""
+
+    out: list[str] = []
+    lead: list[str] = []
+    index = 0
+    while index < len(lines) and not lines[index].lstrip().startswith("ATTACKING ARMY"):
+        lead.append(lines[index])
+        index += 1
+    if lead:
+        out.extend(flow_sentences(lead, units=units))
+    end = index
+    while end < len(lines) and not lines[end].lstrip().startswith("DEFENDING ARMY"):
+        end += 1
+    if index < len(lines):
+        out.append("")
+        out.extend(lines[index : end + 1])
+        out.append("")
+    group: list[str] = []
+    group_is_clash: bool | None = None
+    for sentence in lines[end + 1 :]:
+        if _is_preformatted(sentence):
+            continue
+        is_clash = bool(_BATTLE_CLASH_PATTERN.match(sentence.strip()))
+        if group and is_clash != group_is_clash:
+            out.extend(flow_sentences(group, units=units))
+            group = []
+        group_is_clash = is_clash
+        group.append(sentence)
+    if group:
+        out.extend(flow_sentences(group, units=units))
+    return out
+
+
+def _flow_story_lines(lines: list[str], units: set[str]) -> list[str]:
+    """Battle blocks (recognised by their lead-in sentence) get
+    ``_flow_battle_block``; any other prose is flowed paragraph by paragraph."""
+
+    starts = [i for i, line in enumerate(lines) if line.startswith("The armies were drawn up")]
+    if not starts:
+        return _flow_prose_lines(lines, units)
+    out: list[str] = []
+    if starts[0] > 0:
+        out.extend(_flow_prose_lines(lines[: starts[0]], units))
+    for begin, finish in zip(starts, [*starts[1:], len(lines)]):
+        out.extend(_flow_battle_block(lines[begin:finish], units))
+    return out
+
+
+# Squire names seen in the real SE3 reports ("From: Gunga Din, Squire to
+# Teleko"), and the share of letters the original signs that way (51 of 141).
+LETTER_SQUIRE_NAMES = ("Gunga Din", "Gridley", "Watson", "Montgomery", "Tattoo", "Mortimer")
+SQUIRE_LETTER_PROBABILITY = 0.36
+_PASCAL_LETTER_OPENING_LINES = (
+    "  O King of Kings, thy heroes have travelled around the globe in",
+    "search of adventure and conquest.  I have faithfully kept their",
+    "correspondence, and now I present it to thee:",
+)
+
+
+def _reflexive_possessive(sentence: str, name: str, pronoun: str) -> str:
+    """``"Fusky practiced Fusky's Tactics"`` -> ``"Fusky practiced his
+    Tactics"``: the original writes the pronoun (``>``) for the acting
+    character's own possessions; the name-plus-'s form a template resolves
+    to is kept only when it opens the sentence or follows another subject."""
+
+    marker = f"{name}'s"
+    first = sentence.find(name)
+    if first == -1:
+        return sentence
+    head_end = first + len(name)
+    tail = sentence[head_end:]
+    # Only a name mentioned earlier in the same sentence makes a later
+    # "<name>'s" reflexive; a sentence that opens with "<name>'s ..." keeps it.
+    if sentence.startswith(marker):
+        return sentence
+    return sentence[:head_end] + tail.replace(marker, pronoun)
+
+
+def _to_first_person(sentence: str, name: str) -> str:
+    """Rewrites a third-person narrative sentence about ``name`` the way the
+    heroes' own letters tell it: ``"Tao-Li recruited X"`` -> ``"I recruited
+    X"``, ``"Tao-Li's skill"`` -> ``"my skill"``, any other mention of the
+    writer -> ``"me"``."""
+
+    escaped = re.escape(name)
+    sentence = re.sub(rf"{escaped}'s\b", "my", sentence)
+    sentence = re.sub(rf"(^|[.!?]  |, ){escaped}\b", lambda m: m.group(1) + "I", sentence)
+    sentence = re.sub(rf"\b{escaped}\b", "me", sentence)
+    sentence = re.sub(r"\bhimself\b|\bherself\b", "myself", sentence)
+    return sentence
+
+
+def _letter_paragraphs(
+    leader_results: list[PhaseDispatchResult],
+    state: GameState,
+    rng: random.Random,
+    layout_rng: random.Random,
+    leader_name: str,
+    pronoun: str,
+    first_person: bool,
+    units: set[str],
+    *,
+    ability_names: dict[Ability, str] | None,
+    board_width: int | None,
+) -> list[str]:
+    by_phase: dict[int, list[PhaseDispatchResult]] = {}
+    unphased: list[PhaseDispatchResult] = []
+    for entry in leader_results:
+        index = _phase_index(entry.phase_label)
+        if index is None:
+            unphased.append(entry)
+        else:
+            by_phase.setdefault(index, []).append(entry)
+
+    def narrate(entries: list[PhaseDispatchResult]) -> list[str]:
+        sentences = describe_turn_results(entries, state, rng, ability_names=ability_names, board_width=board_width)
+        if first_person:
+            return [_to_first_person(sentence, leader_name) for sentence in sentences]
+        return [_reflexive_possessive(sentence, leader_name, pronoun) for sentence in sentences]
+
+    paragraphs: list[str] = []
+    for index in sorted(by_phase):
+        sentences = narrate(by_phase[index])
+        if sentences:
+            paragraphs.extend(
+                _phase_paragraph(
+                    index,
+                    sentences,
+                    "I" if first_person else leader_name,
+                    "my" if first_person else pronoun,
+                    units,
+                    layout_rng,
+                )
+            )
+    if unphased:
+        sentences = narrate(unphased)
+        if sentences:
+            paragraphs.extend(flow_sentences(sentences, units=units))
+    return paragraphs
+
+
+def _pascal_letter_reports(
+    results: list[PhaseDispatchResult],
+    state: GameState,
+    kingdom_id: int,
+    rng: random.Random,
+    other_leader_ids: list[int],
+    king_name: str | None,
+    *,
+    ability_names: dict[Ability, str] | None,
+    board_width: int | None,
+) -> list[str]:
+    """The LETTER REPORTS section in the original's shape: each letter is
+    ``From:``/``To:`` lines, the salutation, the phase paragraphs (in the
+    hero's own first person, or a squire's third person) and the closing
+    line, set apart by blank lines."""
+
+    units = _layout_units(state)
+    lines = ["LETTER REPORTS"]
+    first_letter = True
+    for leader_id in other_leader_ids:
+        leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+        leader_results = [entry for entry in results if entry.leader_id == leader_id]
+        if leader is None or not leader_results:
+            continue
+        layout_rng = _layout_rng(state, kingdom_id, leader_id)
+        squire = layout_rng.random() < SQUIRE_LETTER_PROBABILITY
+        paragraphs = _letter_paragraphs(
+            leader_results,
+            state,
+            rng,
+            layout_rng,
+            leader.name,
+            _possessive_for(state, leader_id),
+            not squire,
+            units,
+            ability_names=ability_names,
+            board_width=board_width,
+        )
+        if not paragraphs:
+            continue
+        signature = f"{layout_rng.choice(LETTER_SQUIRE_NAMES)}, Squire to {leader.name}" if squire else leader.name
+        if first_letter:
+            lines.extend([*_PASCAL_LETTER_OPENING_LINES, "", ""])
+            first_letter = False
+        lines.append(f"From: {signature}")
+        lines.append(f"To: {king_name}" if king_name is not None else "To:")
+        lines.extend(["", f"  {_LETTER_SALUTATION} ", ""])
+        lines.extend(paragraphs)
+        lines.extend(["", f"  Thy humble servant,   {signature}", "", ""])
+    if first_letter:
+        lines.append(_LETTER_REPORTS_NONE)
+    return lines
+
+
+_STATE_LIST_ITEM = re.compile(r"^[^\s(][^()]* \(#\d+\)$")
+_FIGURE_PREFIXES = ("Expected Revenues:", "Expected Expenses:", "+Invention Bonus:", "(Including +")
+
+
+def _polish_state_sections(lines: list[str], units: set[str]) -> list[str]:
+    """STATE OF THE NATION onward, as the original lays it out: prose
+    introductions flowed, list entries and figures indented two spaces, two
+    blank lines between the DIPLOMACY groups."""
+
+    out: list[str] = []
+    for line in flow_prose_in_lines(lines, units=units):
+        if line.startswith("Gold in treasury:"):
+            line = "  " + line.replace("Gold in treasury: ", "Gold in treasury:  ", 1)
+        elif line == "None at present" or _STATE_LIST_ITEM.match(line) or line.startswith(_FIGURE_PREFIXES):
+            line = "  " + line
+        elif line.startswith("  My lord, the following Kings") and len(out) >= 2 and out[-1] == "" and out[-2] != "":
+            if any(earlier.startswith("  My lord, the following Kings") for earlier in out):
+                out.append("")
+        out.append(line)
+    return out
+
+
+def _layout_rng(state: GameState, kingdom_id: int, leader_id: int | None) -> random.Random:
+    return random.Random(f"layout:{state.game_number}:{state.turn_number}:{kingdom_id}:{leader_id}")
+
+
+def _pascal_action_report_body(
+    king_results: list[PhaseDispatchResult],
+    state: GameState,
+    kingdom_id: int,
+    king_leader_id: int | None,
+    rng: random.Random,
+    *,
+    ability_names: dict[Ability, str] | None,
+    board_width: int | None,
+    valhalla_lines: list[str],
+    extra_story_lines: list[str],
+    trailing_notice_lines: list[str],
+    finance_sentences: list[str],
+) -> list[str]:
+    """The ACTION REPORT body in the original program's shape (see the
+    comment block above ``ACTION_REPORT_INTRO``)."""
+
+    units = _layout_units(state)
+    king_name = _leader_name(state, king_leader_id) or state.kingdoms[kingdom_id].name
+    pronoun = _possessive_for(state, king_leader_id)
+    # Layout choices (season wording, closing line) draw from their own
+    # deterministic stream so they never shift the narrative's random draws.
+    layout_rng = _layout_rng(state, kingdom_id, king_leader_id)
+
+    by_phase: dict[int, list[PhaseDispatchResult]] = {}
+    unphased: list[PhaseDispatchResult] = []
+    for entry in king_results:
+        index = _phase_index(entry.phase_label)
+        if index is None:
+            unphased.append(entry)
+        else:
+            by_phase.setdefault(index, []).append(entry)
+
+    def narrate(entries: list[PhaseDispatchResult]) -> list[str]:
+        return [
+            _reflexive_possessive(sentence, king_name, pronoun)
+            for sentence in describe_turn_results(
+                entries, state, rng, ability_names=ability_names, board_width=board_width
+            )
+        ]
+
+    body: list[str] = [ACTION_REPORT_INTRO, "", ""]
+    for index in sorted(by_phase):
+        sentences = narrate(by_phase[index])
+        if sentences:
+            body.extend(_phase_paragraph(index, sentences, king_name, pronoun, units, layout_rng))
+    if unphased:
+        sentences = narrate(unphased)
+        if sentences:
+            body.extend(flow_sentences(sentences, units=units))
+
+    if valhalla_lines:
+        body.extend(flow_sentences(valhalla_lines, units=units))
+    if extra_story_lines:
+        body.extend(_flow_story_lines(extra_story_lines, units))
+
+    body.append("")
+    body.extend(flow_sentences([render(THUS_ENDETH_TEMPLATE, {"<": king_name}, rng=layout_rng)], units=units))
+    body.extend(["", ""])
+    if trailing_notice_lines:
+        body.extend(_flow_prose_lines(trailing_notice_lines, units))
+    if finance_sentences:
+        if trailing_notice_lines:
+            body.extend(["", ""])
+        body.extend(flow_sentences(finance_sentences, units=units))
+    return body
+
+
 def compose_letter_report(
     results: list[PhaseDispatchResult],
     state: GameState,
@@ -17846,6 +18287,7 @@ def compose_letter_report(
     election_outcome: "ElectionResult | ElectionCallOutcome | None" = None,
     include_home_province_narrative: bool = False,
     king_cache: dict[int, int | None] | None = None,
+    pascal_layout: bool = False,
 ) -> list[str]:
     """Assembles a single King's own end-of-turn letter report (Phase 215) by
     stitching together this project's already-built section composers, in
@@ -18248,9 +18690,15 @@ def compose_letter_report(
     # REPORT addition below: a Break Treat relation change must read
     # first, ahead of the ordinary turn narrative -- see `describe_
     # diplomacy_change_notices()`'s own docstring for why.
-    action_lines = describe_diplomacy_change_notices(state, kingdom_id) + describe_turn_results(
-        king_results, state, rng, ability_names=ability_names, board_width=board_width
-    )
+    diplomacy_notices = describe_diplomacy_change_notices(state, kingdom_id)
+    if pascal_layout:
+        story_lines: list[str] = []
+        turn_story_lines: list[str] = []
+    else:
+        turn_story_lines = describe_turn_results(
+            king_results, state, rng, ability_names=ability_names, board_width=board_width
+        )
+        story_lines = []
     # Phase 678: the "gate-angel-visit" sentinel's own leader_id is the
     # visitor's, not the King's -- it would otherwise route into the
     # visitor's own LETTER REPORTS entry (backwards from the rulebook's
@@ -18261,7 +18709,8 @@ def compose_letter_report(
     # any confirmed real source -- see describe_valhalla_visit_
     # announcement()'s own docstring for why this is a documented,
     # reasonable placement choice, not a guess.
-    action_lines = action_lines + describe_valhalla_visit_announcement(results, state, kingdom_id, rng)
+    if not pascal_layout:
+        story_lines = story_lines + describe_valhalla_visit_announcement(results, state, kingdom_id, rng)
     # Phase 711 -- record_battle_narratives()'s own real, sourced per-
     # battle narrative, already fully rendered at record time (no read-
     # time composition needed, unlike the Valhalla announcement above --
@@ -18270,32 +18719,63 @@ def compose_letter_report(
     # ACTION REPORT section, mirroring the Valhalla precedent's own
     # placement reasoning: no separate section header exists for this
     # in any confirmed real source.
-    action_lines = action_lines + state.battle_narratives_by_kingdom.get(kingdom_id, [])
+    story_lines = story_lines + state.battle_narratives_by_kingdom.get(kingdom_id, [])
     # Phase 886 -- Discovery.ULTRAVIOLET_LENSES/Crystal of True Seeing's
     # own targeted, unconditional Illusory-Terrain reveal (`record_
     # spell_world_events()`'s own new branch), already fully rendered at
     # record time -- same "no separate section header exists" placement
     # reasoning as the Valhalla/battle-narrative lines just above.
-    action_lines = action_lines + state.illusory_terrain_reveals_by_kingdom.get(kingdom_id, [])
+    story_lines = story_lines + state.illusory_terrain_reveals_by_kingdom.get(kingdom_id, [])
     # Phase 713: AdvancedAbility.SPY_BLACKMAIL's own demand-delivery
     # notice -- same "both sides carry the identical, already-rendered
     # lines here" shape as the battle narrative right above.
-    action_lines = action_lines + state.blackmail_narratives_by_kingdom.get(kingdom_id, [])
+    story_lines = story_lines + state.blackmail_narratives_by_kingdom.get(kingdom_id, [])
     # Phase 939: Tornado's own real S_AA bystander notice for a Kingdom
     # whose own army was destroyed by someone else's Tornado cast --
     # already fully rendered at record time, same placement reasoning as
     # every other per-kingdom notice list above.
-    action_lines = action_lines + state.tornado_victim_notices_by_kingdom.get(kingdom_id, [])
+    story_lines = story_lines + state.tornado_victim_notices_by_kingdom.get(kingdom_id, [])
     # Phase 947: Plague's own real S_AA victim-kingdom notice, the same
     # placement reasoning as Tornado's own sibling list right above.
-    action_lines = action_lines + state.plague_victim_notices_by_kingdom.get(kingdom_id, [])
+    story_lines = story_lines + state.plague_victim_notices_by_kingdom.get(kingdom_id, [])
+    finance_sentences: list[str] = []
+    finances_lines: list[str] = []
+    if pascal_layout:
+        finances_lines = describe_finances_report(state, kingdom_id, rng, narrative_out=finance_sentences)
+        valhalla_lines = describe_valhalla_visit_announcement(results, state, kingdom_id, rng)
+        action_lines = _pascal_action_report_body(
+            king_results,
+            state,
+            kingdom_id,
+            king_leader_id,
+            rng,
+            ability_names=ability_names,
+            board_width=board_width,
+            valhalla_lines=valhalla_lines,
+            extra_story_lines=story_lines,
+            trailing_notice_lines=diplomacy_notices,
+            finance_sentences=finance_sentences,
+        )
+    else:
+        # 2026-11-03 -- the diplomacy notices are prepended, not appended
+        # like every other ACTION REPORT addition: a Break Treat relation
+        # change must read first, ahead of the ordinary turn narrative --
+        # see `describe_diplomacy_change_notices()`'s own docstring.
+        action_lines = diplomacy_notices + turn_story_lines + story_lines
     _emit_section("ACTION REPORT", action_lines)
 
     letter_lines = describe_letter_reports(
-        kingdom_results, state, kingdom_id, rng, ability_names=ability_names, board_width=board_width
+        kingdom_results,
+        state,
+        kingdom_id,
+        rng,
+        ability_names=ability_names,
+        board_width=board_width,
+        pascal_layout=pascal_layout,
     )
     if letter_lines:
         _emit_section(letter_lines[0], letter_lines[1:])
+    state_sections_start = len(lines)
 
     # Phase 561: IMPERIAL OFFICE REPORT moves to print here, before
     # STATE OF THE NATION, once an Emperor is elected -- the real
@@ -18326,7 +18806,8 @@ def compose_letter_report(
     if diplomacy_lines:
         _emit_section(diplomacy_lines[0], diplomacy_lines[1:])
 
-    finances_lines = describe_finances_report(state, kingdom_id, rng)
+    if not pascal_layout:
+        finances_lines = describe_finances_report(state, kingdom_id, rng)
     if finances_lines:
         _emit_section(finances_lines[0], finances_lines[1:])
 
@@ -18401,6 +18882,8 @@ def compose_letter_report(
     # fulfillment paperwork, not game content, and deliberately out of
     # scope here. No body of its own (hence not routed through
     # _emit_section(), which requires one) -- a bare trailing header.
+    if pascal_layout:
+        lines[state_sections_start:] = _polish_state_sections(lines[state_sections_start:], _layout_units(state))
     if lines:
         lines.append("")
         lines.append("")

@@ -52,6 +52,7 @@ from ak_engine.models.enums import ABILITY_NAME
 from ak_engine.models.game_state import GameState
 from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.parser.k1_moves import parse_k1_moves_file
+from ak_engine.report.title_page import processed_turn_title_lines
 from ak_engine.report.turn_report import (
     compose_letter_report,
     record_battle_narratives,
@@ -108,6 +109,17 @@ class TurnOutcome:
     # function's own docstring for why no report prose is composed for it
     # here (same split `election_outcome` above already established).
     final_standings: FinalStandingsReport | None = None
+
+
+
+def _processed_turn_title_lines(state: GameState, kingdom_id: int) -> list[str]:
+    """Title page + quote of the turn just processed (``run_turn()`` has
+    already advanced ``state.turn_number`` by the time reports are composed)."""
+
+    king_name = next(
+        (leader.name for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king), None
+    )
+    return processed_turn_title_lines(state.game_number, state.turn_number - 1, king_name)
 
 
 def process_turn(
@@ -337,7 +349,7 @@ def process_turn(
     # compose_letter_report()'s own Phase 1193 docstring addendum.
     king_cache: dict[int, int | None] = {}
     letter_reports = {
-        kingdom_id: compose_letter_report(
+        kingdom_id: _processed_turn_title_lines(state, kingdom_id) + compose_letter_report(
             results,
             state,
             kingdom_id,
@@ -355,6 +367,7 @@ def process_turn(
             # aptitude rise, Sage discovery, army training, ...) has
             # never once appeared in any real played turn's own report.
             ability_names=ABILITY_NAME,
+            pascal_layout=True,
         )
         for kingdom_id in state.kingdoms
     }
