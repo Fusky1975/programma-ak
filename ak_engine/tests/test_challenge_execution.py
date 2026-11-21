@@ -1792,6 +1792,52 @@ def test_execute_challenge_cast_hand_of_death_victims_lethal_counter_attack_wins
     assert result.loser_leader_id == 1
 
 
+def _run_hand_of_death_challenge(channel_result, *, target_alignment=None, melee_winner="a"):
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    target_kwargs = {} if target_alignment is None else {"alignment": target_alignment}
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, **target_kwargs))
+    request = _cast_request(2, Spell.HAND_OF_DEATH, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_channel.return_value = channel_result
+        mock_melee.return_value = EncounterCombatResult(winner=melee_winner, rounds=1)
+        return execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+
+def test_execute_challenge_hand_of_death_records_a_winning_channel():
+    # 2026-11-21: no Hand of Death channel used to reach the encounter report.
+    result = _run_hand_of_death_challenge(EncounterCombatResult(winner="a", rounds=2, squeeze_hits=(2, 3)))
+
+    assert result.hand_of_death_channels == (("A", "B", (2, 3), 0, "won"),)
+
+
+def test_execute_challenge_hand_of_death_records_an_interrupted_channel():
+    result = _run_hand_of_death_challenge(
+        EncounterCombatResult(winner=None, rounds=2, squeeze_hits=(2,), interrupt_damage=4)
+    )
+
+    assert result.hand_of_death_channels == (("A", "B", (2,), 4, "interrupted"),)
+
+
+def test_execute_challenge_hand_of_death_records_a_lethal_counter_attack():
+    result = _run_hand_of_death_challenge(
+        EncounterCombatResult(winner="b", rounds=2, squeeze_hits=(2,)), melee_winner="b"
+    )
+
+    assert result.hand_of_death_channels == (("A", "B", (2,), 0, "caster_killed"),)
+
+
+def test_execute_challenge_hand_of_death_records_an_immune_target():
+    result = _run_hand_of_death_challenge(
+        EncounterCombatResult(winner=None, rounds=0), target_alignment=Alignment.UNDEAD
+    )
+
+    assert result.hand_of_death_channels == (("A", "B", (), None, "immune"),)
+
+
 def test_execute_challenge_cast_hand_of_death_enhanced_ability_overrides_the_immune_flag():
     # Phase 500: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS -- "'Hand of
     # Death' now works against all creatures." Without the ability, an

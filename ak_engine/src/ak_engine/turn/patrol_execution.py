@@ -379,6 +379,13 @@ class PatrolExecutionResult:
     gold_raided: int = 0
     stolen_item_ids: list[int] = field(default_factory=list)
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    # 2026-11-21: every Hand of Death channel this encounter ran, one
+    # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
+    # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
+    # "immune" (the spell never engaged). Previously none of it reached the
+    # report -- not even a winning channel -- so a real cast looked like it
+    # was never carried out.
+    hand_of_death_channels: tuple[tuple[str, str, tuple[int, ...], int | None, str], ...] = ()
 
 
 def execute_patrol(
@@ -486,6 +493,7 @@ def execute_patrol(
             gold_raided=combat_result.gold_raided,
             stolen_item_ids=combat_result.stolen_item_ids,
             fizzled_spells=combat_result.fizzled_spells,
+            hand_of_death_channels=combat_result.hand_of_death_channels,
         )
 
     if combat_result.winner is None:
@@ -500,6 +508,7 @@ def execute_patrol(
             gold_raided=combat_result.gold_raided,
             stolen_item_ids=combat_result.stolen_item_ids,
             fizzled_spells=combat_result.fizzled_spells,
+            hand_of_death_channels=combat_result.hand_of_death_channels,
         )
 
     winner_id, loser_id = (
@@ -525,4 +534,5 @@ def execute_patrol(
         gold_raided=combat_result.gold_raided,
         stolen_item_ids=combat_result.stolen_item_ids,
         fizzled_spells=combat_result.fizzled_spells,
+        hand_of_death_channels=combat_result.hand_of_death_channels,
     )
