@@ -63,7 +63,8 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.game_state import GameState
-from ak_engine.report.turn_report import compose_letter_report, render_quote_of_the_week
+from ak_engine.report.title_page import quote_block
+from ak_engine.report.turn_report import compose_letter_report
 
 _BIRTHRIGHT_TITLE_LINE = "THE ADVENTURER-KINGS BIRTHRIGHT REPORT"
 _BIRTHRIGHT_TITLE_WIDTH = 39
@@ -88,7 +89,7 @@ def _birthright_title_lines(state: GameState, kingdom_id: int, rng: random.Rando
     if king_name:
         lines.extend(["", _centered(king_name.upper())])
     lines.extend(["", ""])
-    lines.extend(render_quote_of_the_week(rng.randrange(_QUOTE_OF_THE_WEEK_COUNT)))
+    lines.extend(quote_block(rng.randrange(_QUOTE_OF_THE_WEEK_COUNT)))
     lines.extend(["", ""])
     return lines
 
