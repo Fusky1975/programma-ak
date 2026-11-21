@@ -121,6 +121,7 @@ from ak_engine.report.turn_report import (
     describe_cargo_boarded,
     describe_sensed_magic_items,
     render_hand_of_death_abort,
+    render_hand_of_death_channel,
     describe_disband,
     describe_leave,
     describe_move,
@@ -17909,3 +17910,29 @@ def test_describe_search_narrates_an_interrupted_hand_of_death():
 
     assert any("broke Bagmore's concentration" in line for line in lines)
     assert any("Hand Of Death spell faded away" in line for line in lines)
+
+
+def test_render_hand_of_death_channel_won_is_only_the_squeezes():
+    lines = render_hand_of_death_channel("A", "B", (2, 3), 0, "won", ScriptedRandom([0.1] * 20, choice_indices=[0] * 20))
+
+    assert len(lines) == 2
+
+
+def test_render_hand_of_death_channel_caster_killed_has_the_counter_blow_but_no_fade():
+    lines = render_hand_of_death_channel("A", "B", (2,), 5, "caster_killed", ScriptedRandom([0.1] * 20, choice_indices=[0] * 20))
+
+    assert len(lines) == 2
+    assert "B broke A's concentration with a counter-blow" in lines[1]
+    assert not any("faded away" in line for line in lines)
+
+
+def test_describe_encounter_combat_narrates_every_hand_of_death_channel():
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=True, winner_leader_id=1, loser_leader_id=2, loser_killed=True)
+    result.hand_of_death_channels = (("Alice", "Bob", (2,), 3, "interrupted"),)
+
+    lines = describe_encounter_combat(
+        result, a_leader_id=1, a_name="Alice", b_name="Bob", rng=ScriptedRandom([0.1] * 60, choice_indices=[0] * 60)
+    )
+
+    assert any("Bob broke Alice's concentration with a counter-blow" in line for line in lines)
+    assert any("Alice's Hand Of Death spell faded away." in line for line in lines)

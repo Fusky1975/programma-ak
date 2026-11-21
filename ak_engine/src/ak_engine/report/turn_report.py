@@ -8398,6 +8398,13 @@ def describe_encounter_combat(
     for caster_name, spell in result.fizzled_spells:
         lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
 
+    # 2026-11-21: every Hand of Death channel (won, interrupted, killed the
+    # caster, or immune target) -- see `ChallengeCombatOutcome.hand_of_death_
+    # channels`. Names come from the Combatants themselves, like the fizzled
+    # spell loop above.
+    for channel_caster, channel_target, hits, interrupt_damage, ending in result.hand_of_death_channels:
+        lines.extend(render_hand_of_death_channel(channel_caster, channel_target, hits, interrupt_damage, ending, rng))
+
     for shot in result.fire_arrow_shots:
         attacker_name, defender_name = (a_name, b_name) if shot.shooter == "a" else (b_name, a_name)
         attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
@@ -12435,6 +12442,32 @@ HAND_OF_DEATH_FADED_TEMPLATE = "<'s Hand Of Death spell faded away."
 HAND_OF_DEATH_NO_EFFECT_TEMPLATE = "< squeezed <'s fist in vain, for [ is beyond the reach of the Hand Of Death spell."
 
 
+def render_hand_of_death_channel(
+    caster_name: str,
+    target_name: str,
+    squeeze_hits: tuple[int, ...],
+    interrupt_damage: int | None,
+    ending: str,
+    rng: random.Random,
+) -> list[str]:
+    """One line per squeeze that landed, then the closing line for how the
+    channel ended: ``"won"`` (squeezes only -- the kill follows from the
+    caller's own death narration), ``"interrupted"`` (the victim's
+    counter-blow, then the spell fading), ``"caster_killed"`` (the
+    counter-blow was lethal) or ``"immune"`` (the spell never engaged).
+    """
+
+    values = {"<": caster_name, "[": target_name}
+    if ending == "immune":
+        return [render(HAND_OF_DEATH_NO_EFFECT_TEMPLATE, values, rng=rng)]
+    lines = [render_squeeze_attack(caster_name, target_name, rng) + render_attack_hit(target_name, damage, rng) for damage in squeeze_hits]
+    if ending in ("interrupted", "caster_killed") and interrupt_damage is not None:
+        lines.append(render(HAND_OF_DEATH_INTERRUPTED_TEMPLATE, values, rng=rng) + render_attack_hit(caster_name, interrupt_damage, rng))
+    if ending == "interrupted":
+        lines.append(render(HAND_OF_DEATH_FADED_TEMPLATE, values, rng=rng))
+    return lines
+
+
 def render_hand_of_death_abort(
     caster_name: str,
     target_name: str,
@@ -12442,18 +12475,12 @@ def render_hand_of_death_abort(
     interrupt_damage: int | None,
     rng: random.Random,
 ) -> list[str]:
-    """One line per squeeze that landed before the channel broke, then the
-    closing line: the interruption (with the victim's own hit) or, when
-    ``interrupt_damage`` is ``None``, the spell never engaging at all.
+    """``render_hand_of_death_channel()`` for a Search channel that did not
+    end the fight: ``interrupt_damage`` ``None`` means an immune target.
     """
 
-    values = {"<": caster_name, "[": target_name}
-    if interrupt_damage is None:
-        return [render(HAND_OF_DEATH_NO_EFFECT_TEMPLATE, values, rng=rng)]
-    lines = [render_squeeze_attack(caster_name, target_name, rng) + render_attack_hit(target_name, damage, rng) for damage in squeeze_hits]
-    lines.append(render(HAND_OF_DEATH_INTERRUPTED_TEMPLATE, values, rng=rng) + render_attack_hit(caster_name, interrupt_damage, rng))
-    lines.append(render(HAND_OF_DEATH_FADED_TEMPLATE, values, rng=rng))
-    return lines
+    ending = "immune" if interrupt_damage is None else "interrupted"
+    return render_hand_of_death_channel(caster_name, target_name, squeeze_hits, interrupt_damage, ending, rng)
 
 
 def describe_search(

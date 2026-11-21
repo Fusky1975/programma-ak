@@ -366,6 +366,13 @@ class PursueExecutionResult:
     # straight through, set for the armyless-combat branch only, which
     # shares that module's combat core directly.
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    # 2026-11-21: every Hand of Death channel this encounter ran, one
+    # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
+    # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
+    # "immune" (the spell never engaged). Previously none of it reached the
+    # report -- not even a winning channel -- so a real cast looked like it
+    # was never carried out.
+    hand_of_death_channels: tuple[tuple[str, str, tuple[int, ...], int | None, str], ...] = ()
     # Phase 695: `AdvancedAbility.SPY_SUPER_SLEUTH`'s own real text --
     # "the Spy can also guess how far away the target is (the guess may
     # be off by one province)." Set only when the pursuer holds the
@@ -580,6 +587,7 @@ def execute_pursue(
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
+            hand_of_death_channels=combat_result.hand_of_death_channels,
             guessed_distance=guessed_distance,
         )
     if combat_result.winner is None:
@@ -593,6 +601,7 @@ def execute_pursue(
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
+            hand_of_death_channels=combat_result.hand_of_death_channels,
             guessed_distance=guessed_distance,
         )
 
@@ -618,6 +627,7 @@ def execute_pursue(
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
         fizzled_spells=combat_result.fizzled_spells,
+        hand_of_death_channels=combat_result.hand_of_death_channels,
         guessed_distance=guessed_distance,
     )
 

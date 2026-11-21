@@ -818,6 +818,7 @@ def _resolve_personal_combat_cast(
     cast_slots_used: dict[Ability, int],
     cast_spells_attempted: set[Spell],
     fizzled_spells: list[tuple[str, Spell]] | None = None,
+    hand_of_death_channels: list[tuple[str, str, tuple[int, ...], int | None, str]] | None = None,
     is_defensive: bool = False,
     melee_setup_done: list[bool] | None = None,
     melee_swings: list[MeleeSwing] | None = None,
@@ -1291,6 +1292,24 @@ def _resolve_personal_combat_cast(
         channel_result = resolve_hand_of_death_channel(
             caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
         )
+        if hand_of_death_channels is not None:
+            if target_is_immune:
+                channel_ending = "immune"
+            elif channel_result.winner == "a":
+                channel_ending = "won"
+            elif channel_result.winner == "b":
+                channel_ending = "caster_killed"
+            else:
+                channel_ending = "interrupted"
+            hand_of_death_channels.append(
+                (
+                    caster.name,
+                    target.name,
+                    channel_result.squeeze_hits,
+                    None if target_is_immune else channel_result.interrupt_damage,
+                    channel_ending,
+                )
+            )
         if channel_result.winner == "a":
             # "a" in resolve_hand_of_death_channel's own convention always means the caster.
             return "a"
@@ -1700,6 +1719,13 @@ class ChallengeCombatOutcome:
     # branch *before* the generic `if not succeeded: return None` this
     # list is populated from).
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    # 2026-11-21: every Hand of Death channel this encounter ran, one
+    # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
+    # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
+    # "immune" (the spell never engaged). Previously none of it reached the
+    # report -- not even a winning channel -- so a real cast looked like it
+    # was never carried out.
+    hand_of_death_channels: tuple[tuple[str, str, tuple[int, ...], int | None, str], ...] = ()
 
 
 def _close_to(target_range: CombatRange, current_range: CombatRange) -> CombatRange:
@@ -2077,6 +2103,7 @@ def resolve_challenge_combat(
     melee_swings: list[MeleeSwing] = []
     # Phase 858: see `ChallengeCombatOutcome.fizzled_spells`'s own docstring.
     fizzled_spells: list[tuple[str, Spell]] = []
+    hand_of_death_channels: list[tuple[str, str, tuple[int, ...], int | None, str]] = []
 
     def _outcome(
         *, winner: str | None = None, fled: bool = False
@@ -2091,6 +2118,7 @@ def resolve_challenge_combat(
             fire_arrow_shots=tuple(fire_arrow_shots),
             melee_swings=tuple(melee_swings),
             fizzled_spells=tuple(fizzled_spells),
+            hand_of_death_channels=tuple(hand_of_death_channels),
         )
 
     def _peek_target_cast() -> SearchTactic | None:
@@ -2157,6 +2185,7 @@ def resolve_challenge_combat(
             cast_slots_used=target_cast_slots_used,
             cast_spells_attempted=target_cast_spells_attempted,
             fizzled_spells=fizzled_spells,
+            hand_of_death_channels=hand_of_death_channels,
             is_defensive=True,
             melee_setup_done=setup_box,
             melee_swings=melee_swings,
@@ -2466,6 +2495,7 @@ def resolve_challenge_combat(
                 cast_slots_used=caster_cast_slots_used,
                 cast_spells_attempted=caster_cast_spells_attempted,
                 fizzled_spells=fizzled_spells,
+                hand_of_death_channels=hand_of_death_channels,
                 melee_setup_done=setup_box,
                 melee_swings=melee_swings,
             )
@@ -2653,6 +2683,13 @@ class ChallengeExecutionResult:
     # Phase 858: copied straight from `ChallengeCombatOutcome` -- see that
     # dataclass's own `fizzled_spells` docstring.
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    # 2026-11-21: every Hand of Death channel this encounter ran, one
+    # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
+    # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
+    # "immune" (the spell never engaged). Previously none of it reached the
+    # report -- not even a winning channel -- so a real cast looked like it
+    # was never carried out.
+    hand_of_death_channels: tuple[tuple[str, str, tuple[int, ...], int | None, str], ...] = ()
 
 
 def _apply_bravest_talk_inspiration(state: GameState, challenger: LeaderState, target: LeaderState) -> None:
@@ -2992,6 +3029,7 @@ def execute_challenge(
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
+            hand_of_death_channels=combat_result.hand_of_death_channels,
             used_spy_assassinate=used_spy_assassinate,
         )
     if combat_result.winner is None:
@@ -3005,6 +3043,7 @@ def execute_challenge(
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
+            hand_of_death_channels=combat_result.hand_of_death_channels,
             used_spy_assassinate=used_spy_assassinate,
         )
 
@@ -3040,5 +3079,6 @@ def execute_challenge(
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
         fizzled_spells=combat_result.fizzled_spells,
+        hand_of_death_channels=combat_result.hand_of_death_channels,
         used_spy_assassinate=used_spy_assassinate,
     )
