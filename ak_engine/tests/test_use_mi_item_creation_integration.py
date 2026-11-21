@@ -178,7 +178,11 @@ def _generate_game(king_count: int = 10) -> GameState:
             leader_id=i, kingdom_id=i, name=f"King{i}", location=HexCoord(0, 0), is_king=True, race=race
         )
         kings.append(KingSetup(leader_id=i, race=race, home_coord=home))
-    return generate_new_game(PascalRandom(seed=1), game_state, kings, gamevers=1)
+    # Pinned to the 100-hero tier: the scanned seed/feature constants below
+    # assume this exact RNG sequence, which the default's automatic step up to
+    # 175 heroes (2026-11-21, every neutral humanoid province gets a lord)
+    # would shift for a 10-King world.
+    return generate_new_game(PascalRandom(seed=1), game_state, kings, gamevers=1, leader_count=100)
 
 
 def test_world_generated_treasure_reaches_state_items_via_a_search_win():
