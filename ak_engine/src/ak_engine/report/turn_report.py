@@ -12424,6 +12424,38 @@ def render_search_feature_already_sacked(character_name: str, feature_name: str,
     return render(SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE, values, rng=rng)
 
 
+# 2026-11-21, project-original text (no sourced template exists -- the
+# original only ever narrated a winning channel, see `render_squeeze_
+# attack()`): a Hand of Death whose channel was broken by the victim's
+# counter-hit, or that never engaged because the target is immune, used to
+# leave no trace at all, so a real, slot-consuming cast looked like the
+# order had never been carried out. `<` = caster, `[` = target.
+HAND_OF_DEATH_INTERRUPTED_TEMPLATE = "[ broke <'s concentration with a counter-blow"
+HAND_OF_DEATH_FADED_TEMPLATE = "<'s Hand Of Death spell faded away."
+HAND_OF_DEATH_NO_EFFECT_TEMPLATE = "< squeezed <'s fist in vain, for [ is beyond the reach of the Hand Of Death spell."
+
+
+def render_hand_of_death_abort(
+    caster_name: str,
+    target_name: str,
+    squeeze_hits: tuple[int, ...],
+    interrupt_damage: int | None,
+    rng: random.Random,
+) -> list[str]:
+    """One line per squeeze that landed before the channel broke, then the
+    closing line: the interruption (with the victim's own hit) or, when
+    ``interrupt_damage`` is ``None``, the spell never engaging at all.
+    """
+
+    values = {"<": caster_name, "[": target_name}
+    if interrupt_damage is None:
+        return [render(HAND_OF_DEATH_NO_EFFECT_TEMPLATE, values, rng=rng)]
+    lines = [render_squeeze_attack(caster_name, target_name, rng) + render_attack_hit(target_name, damage, rng) for damage in squeeze_hits]
+    lines.append(render(HAND_OF_DEATH_INTERRUPTED_TEMPLATE, values, rng=rng) + render_attack_hit(caster_name, interrupt_damage, rng))
+    lines.append(render(HAND_OF_DEATH_FADED_TEMPLATE, values, rng=rng))
+    return lines
+
+
 def describe_search(
     result: SearchExecutionResult,
     *,
@@ -12588,6 +12620,10 @@ def describe_search(
     for side, spell in result.fizzled_spells:
         caster_name = character_name if side == "leader" else monster_name
         lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
+
+    for side, hits, interrupt_damage in result.hand_of_death_aborts:
+        caster_name, target_name = (character_name, monster_name) if side == "leader" else (monster_name, character_name)
+        lines.extend(render_hand_of_death_abort(caster_name, target_name, hits, interrupt_damage, rng))
 
     for shot in result.fire_arrow_shots:
         if shot.shooter == "b" and flavor == "breath_weapon":
@@ -16411,6 +16447,23 @@ def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[tup
     return reports
 
 
+def _battle_defender_display_name(state: GameState, defender_kingdom_id: int | None, coord: HexCoord) -> str:
+    """2026-11-21 bug fix, user-confirmed (live "PROVA" playtest): a battle
+    against independent defenders (``BattleReport.defender_kingdom_id is
+    None`` -- a neutral province's native garrison or an independent
+    Hero's army) was skipped outright by ``record_battle_world_events()``/
+    ``record_battle_narratives()``, so a real fight (the defenders even
+    show up in ``state.battle_graveyard``) was reported as the attacker
+    simply "boldly marching in" -- exactly the "conquered without
+    fighting" the player kept seeing. Project-original label for a side
+    with no Kingdom to name.
+    """
+
+    if defender_kingdom_id is not None:
+        return _kingdom_display_name(state, defender_kingdom_id)
+    return f"the natives of {_province_label(state, coord)}"
+
+
 def record_battle_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
     """Populates ``state.world_events`` (Phase 231) from every battle
     found in ``results`` (``turn/turn_processor.py run_turn()``'s own
@@ -16443,12 +16496,10 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
     mechanisms coexist deliberately, one broadcast-and-thin, one
     personal-and-detailed.
 
-    A battle with no ``BattleReport.defender_kingdom_id`` (an unowned
-    province defended by some kingdom's stray garrison -- a real
-    possibility ``fight_battle()``'s own exploration-advantage comment
-    already allows for, see that module's docstring) is skipped: there
-    is no "Kingdom of X:" owner to attribute the event to, and inventing
-    one isn't warranted for what should be a rare edge case.
+    A battle with no ``BattleReport.defender_kingdom_id`` (independent
+    defenders: a neutral province's native garrison or an independent
+    Hero's army) is no longer skipped as of 2026-11-21 -- see
+    ``_battle_defender_display_name()``.
 
     **Phase 257**: every recorded line is now prefixed with its own "In
     <season>, " (``_season_phrase_for_phase_label()``) -- see that
@@ -16458,14 +16509,14 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
 
     for phase_label, battle_report in _battle_reports_from_results(results):
         coord = battle_report.province_coord
-        if coord is None or battle_report.attacker_kingdom_id is None or battle_report.defender_kingdom_id is None:
+        if coord is None or battle_report.attacker_kingdom_id is None:
             continue
         province = state.provinces.get(coord)
         is_sea = province is not None and province.effective_terrain() == Terrain.SEA
         winner_sentence = render_battle_winner(
             battle_report.battle_result,
             _kingdom_display_name(state, battle_report.attacker_kingdom_id),
-            _kingdom_display_name(state, battle_report.defender_kingdom_id),
+            _battle_defender_display_name(state, battle_report.defender_kingdom_id, coord),
             _province_label(state, coord),
             rng,
             is_sea=is_sea,
@@ -16499,15 +16550,15 @@ def record_battle_narratives(state: GameState, results: list[PhaseDispatchResult
     composition, so it can stash the same rendered lines onto both
     sides' own `state.battle_narratives_by_kingdom` entries.
 
-    Skipped for a battle missing `province_coord`/either kingdom id --
-    same guard as `record_battle_world_events()`, and for the same
-    reason (no real "Kingdom of X" owner to attribute the narrative to
-    on the missing side).
+    Skipped only for a battle missing `province_coord` or the attacking
+    kingdom id. A battle against independent defenders (no defender
+    kingdom id) IS narrated as of 2026-11-21 -- only the attacker's own
+    report receives it (see `_battle_defender_display_name()`).
     """
 
     for phase_label, battle_report in _battle_reports_from_results(results):
         coord = battle_report.province_coord
-        if coord is None or battle_report.attacker_kingdom_id is None or battle_report.defender_kingdom_id is None:
+        if coord is None or battle_report.attacker_kingdom_id is None:
             continue
         province = state.provinces.get(coord)
         is_sea = province is not None and province.effective_terrain() == Terrain.SEA
@@ -16518,7 +16569,7 @@ def record_battle_narratives(state: GameState, results: list[PhaseDispatchResult
         lines = describe_battle(
             battle_report,
             attacker_name=_kingdom_display_name(state, battle_report.attacker_kingdom_id),
-            defender_name=_kingdom_display_name(state, battle_report.defender_kingdom_id),
+            defender_name=_battle_defender_display_name(state, battle_report.defender_kingdom_id, coord),
             province_name=_province_label(state, coord),
             state=state,
             destination_names=destination_names,
@@ -16529,7 +16580,8 @@ def record_battle_narratives(state: GameState, results: list[PhaseDispatchResult
         if not lines:
             continue
         state.battle_narratives_by_kingdom.setdefault(battle_report.attacker_kingdom_id, []).extend(lines)
-        state.battle_narratives_by_kingdom.setdefault(battle_report.defender_kingdom_id, []).extend(lines)
+        if battle_report.defender_kingdom_id is not None:
+            state.battle_narratives_by_kingdom.setdefault(battle_report.defender_kingdom_id, []).extend(lines)
 
 
 def record_blackmail_narratives(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
