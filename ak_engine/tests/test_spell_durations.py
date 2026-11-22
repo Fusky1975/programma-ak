@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import random
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Spell
@@ -142,3 +143,158 @@ def test_clairvoyance_watches_are_cleared_when_the_next_turn_starts_not_before()
     state.reset_turn_spell_effects()
     assert state.leaders[1].clairvoyance_cast_target is None
     assert state.leaders[2].clairvoyance_watchers == set()
+
+
+# ---- Mystic Winds ----------------------------------------------------------
+
+
+def _mystic_winds(state: GameState) -> None:
+    class Always(random.Random):
+        def random(self):
+            return 0.0
+
+    state.leaders[1].skills = None  # a caster with no skill data casts without the success roll
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.MYSTIC_WINDS_SPELL)
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=1, request=CastRequest(spell=Spell.MYSTIC_WINDS, target=2), rng=Always()
+    )
+    assert result.applied is True
+
+
+def test_mystic_winds_sets_movement_to_five_and_remembers_the_normal_movement():
+    state = _state()
+    state.add_army(ArmyState(10, 1, ArmyType.LEGION, Quality.AVERAGE, PLACE, commanded_by=2, movement_points=2))
+
+    _mystic_winds(state)
+
+    assert state.armies[10].movement_points == 5
+    assert state.armies[10].mystic_winds_prior_movement == 2
+    assert state.leaders[2].mystic_winds_active is True
+
+
+def test_a_second_mystic_winds_cast_does_not_give_back_movement_already_spent():
+    state = _state()
+    state.add_army(ArmyState(10, 1, ArmyType.LEGION, Quality.AVERAGE, PLACE, commanded_by=2, movement_points=2))
+    _mystic_winds(state)
+    state.armies[10].movement_points = 3  # two provinces walked under the spell
+
+    _mystic_winds(state)
+
+    assert state.armies[10].movement_points == 3
+
+
+def test_when_the_spell_ends_the_army_has_only_the_movement_it_would_normally_have_left():
+    from ak_engine.turn.cast_execution import end_mystic_winds_movement
+
+    state = _state()
+    state.add_army(ArmyState(10, 1, ArmyType.LEGION, Quality.AVERAGE, PLACE, commanded_by=2, movement_points=2))
+    _mystic_winds(state)
+    state.armies[10].movement_points = 3  # 2 points spent under the spell
+
+    end_mystic_winds_movement([state.armies[10]])
+
+    assert state.armies[10].movement_points == 0  # speed 2, two provinces already walked
+    assert state.armies[10].mystic_winds_prior_movement is None
+
+
+def test_the_spell_ends_before_a_battle_and_takes_the_extra_movement_with_it():
+    from ak_engine.turn.battle_orchestrator import _clear_mystic_winds_before_battle
+
+    state = _state()
+    state.add_army(ArmyState(10, 1, ArmyType.LEGION, Quality.AVERAGE, PLACE, commanded_by=2, movement_points=2))
+    state.add_army(ArmyState(11, 1, ArmyType.BOWMEN, Quality.AVERAGE, PLACE, commanded_by=2, movement_points=2))
+    _mystic_winds(state)
+
+    _clear_mystic_winds_before_battle([state.armies[10]], state)
+
+    assert state.leaders[2].mystic_winds_active is False
+    # Every army the leader commands is back to its normal movement, not just
+    # the one in the battle.
+    assert state.armies[10].movement_points == 2
+    assert state.armies[11].movement_points == 2
+
+
+def test_mystic_winds_does_not_outlive_the_turn():
+    state = _state()
+    state.add_army(ArmyState(10, 1, ArmyType.LEGION, Quality.AVERAGE, PLACE, commanded_by=2, movement_points=2))
+    _mystic_winds(state)
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.leaders[2].mystic_winds_active is False
+    assert state.armies[10].mystic_winds_prior_movement is None
+    assert state.armies[10].movement_points == 2  # the army's normal speed again
+
+
+# ---- Illusory Terrain and Hide Feature: they last until they dissolve -------
+
+
+def test_illusory_terrain_survives_the_turn_boundary_and_dissolves_on_a_15_percent_roll():
+    from ak_engine.turn.cast_execution import ILLUSORY_TERRAIN_DISSOLVE_CHANCE, maybe_dissolve_illusory_terrain
+
+    assert ILLUSORY_TERRAIN_DISSOLVE_CHANCE == 0.15
+    state = _state()
+    province = state.provinces[PLACE]
+    province.illusory_terrain = Terrain.SEA
+    _replenish_turn_scoped_state(state)
+    assert province.illusory_terrain is Terrain.SEA  # a new turn does not end it
+
+    class Roll(random.Random):
+        def __init__(self, value):
+            super().__init__()
+            self.value = value
+
+        def random(self):
+            return self.value
+
+    maybe_dissolve_illusory_terrain(province, Roll(0.15))  # not below 15%
+    assert province.illusory_terrain is Terrain.SEA
+    maybe_dissolve_illusory_terrain(province, Roll(0.14))
+    assert province.illusory_terrain is None
+
+
+def test_hide_feature_survives_the_turn_boundary_and_dissipates_on_a_10_percent_roll():
+    from ak_engine.models.feature import Feature, FeatureType
+    from ak_engine.turn.monster_raids import MONSTER_HIDE_DISSIPATION_CHANCE, maybe_dissipate_hidden_feature
+
+    assert MONSTER_HIDE_DISSIPATION_CHANCE == 0.10
+    state = _state()
+    feature = Feature(1, PLACE, FeatureType.CAVE)
+    feature.magically_hidden = True
+    state.features[1] = feature
+    _replenish_turn_scoped_state(state)
+    assert feature.magically_hidden is True
+
+    class Roll(random.Random):
+        def __init__(self, value):
+            super().__init__()
+            self.value = value
+
+        def random(self):
+            return self.value
+
+    maybe_dissipate_hidden_feature(feature, Roll(0.10))
+    assert feature.magically_hidden is True
+    maybe_dissipate_hidden_feature(feature, Roll(0.09))
+    assert feature.magically_hidden is False
+
+
+def test_run_turn_rolls_the_two_dissolves_once_per_turn():
+    from ak_engine.models.feature import Feature, FeatureType
+
+    state = _state()
+    state.provinces[PLACE].illusory_terrain = Terrain.SEA
+    feature = Feature(1, PLACE, FeatureType.CAVE)
+    feature.magically_hidden = True
+    state.features[1] = feature
+    draws = {"count": 0}
+
+    class Counting(random.Random):
+        def random(self):
+            draws["count"] += 1
+            return 0.99  # never dissolves
+
+    run_turn([], state, board_width=10, rng=Counting(1))
+
+    assert state.provinces[PLACE].illusory_terrain is Terrain.SEA
+    assert feature.magically_hidden is True

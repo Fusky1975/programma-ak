@@ -201,7 +201,11 @@ from ak_engine.models.treasure import MONSTER_SUMMONING_TREASURE, RACE_LEADERSHI
 from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, Column, estimate_win_probability, line_length_for_battle, roll_terrain_line_length_cap
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
-from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
+from ak_engine.turn.cast_execution import (
+    end_mystic_winds_movement,
+    is_illusory_fog_affected_air_unit,
+    quality_one_level_down,
+)
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
 from ak_engine.turn.combat import Quality, direct_destruction_probability
 from ak_engine.turn.diplomacy import is_attackable_at
@@ -1148,16 +1152,10 @@ def _clear_mystic_winds_before_battle(armies: list[ArmyState], state: GameState)
     Mystic-Winds-affected treatment for it, even though the flag was true
     a moment ago.
 
-    Deliberately does **not** touch ``ArmyState.movement_points`` --
-    "re-deriving each affected army's movement" (the Phase 204 addendum's
-    own words) describes recomputing a movement *rate*, not resetting a
-    remaining-this-turn *pool*: Mystic Winds affects Illusory Fog's own
-    battle-strength penalty, not how far an army can still move this
-    turn, so there is nothing about that pool this function needs to
-    touch either way (unaffected by whether ``ArmyState.movement_points``
-    has a real per-``ArmyType`` base rate, which it now does -- Phase
-    573's own ``ARMY_TABLE[army_type].speed`` -- this paragraph predates
-    that fix and was about a different concern).
+    The spell's own "movement set at 5 while the spell lasts" ends with it:
+    every army the commander leads goes back to the movement it would
+    normally have (``turn/cast_execution.py end_mystic_winds_movement()``);
+    it used to keep the spell's points for the rest of the turn.
     """
 
     seen_leader_ids: set[int] = set()
@@ -1167,6 +1165,8 @@ def _clear_mystic_winds_before_battle(armies: list[ArmyState], state: GameState)
         seen_leader_ids.add(army.commanded_by)
         commander = state.leaders.get(army.commanded_by)
         if commander is not None:
+            if commander.mystic_winds_active:
+                end_mystic_winds_movement(state.armies_commanded_by(army.commanded_by))
             commander.mystic_winds_active = False
 
 
