@@ -2209,6 +2209,28 @@ def test_build_battle_units_druidic_shortfall_penalizes_a_foreign_race_led_army(
     # Phase 298: the same shortfall also flags this unit for aftermath.py's
     # own led_by_insufficient_druid quality-improve-chance penalty.
     assert units[0].led_by_insufficient_druid is True
+    assert units[0].druid_fought_as == Quality.GREEN  # ELITE(5) - 4
+
+
+def test_build_battle_units_records_the_rank_a_druid_led_army_fought_as():
+    # An Average Human army led by a Dwarf companion with no Druidism fights as
+    # Green (shortfall 1); a unit without a shortfall records nothing.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Companion", location=FIELD, race=Race.DWARVEN))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Native", location=FIELD))
+    led = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    native = ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD, commanded_by=2)
+    state.add_army(led)
+    state.add_army(native)
+
+    units = _build_battle_units(
+        [led, native], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    by_id = {unit.source_id: unit for unit in units}
+    assert by_id[101].druid_fought_as == Quality.GREEN
+    assert by_id[102].druid_fought_as is None
 
 
 def test_build_battle_units_race_item_bonus_boosts_a_matching_led_army():
@@ -4936,7 +4958,8 @@ def test_fight_battle_winning_army_led_by_insufficient_druid_passes_the_penalty_
     # from Dragonia's own home province, no race-matching item), so
     # score = -4, threaded alongside formation_divisor as before.
     mock_roll.assert_called_once_with(
-        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1, score=-4,
+        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, druid_fought_as=Quality.GREEN,
+        formation_divisor=1, score=-4,
     )
 
 

@@ -106,7 +106,7 @@ def compute_army_modified_quality(state: GameState, army: ArmyState) -> Quality:
         )
     )
 
-    army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
+    army_race = army.race if army.race is not None else MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
     druidic_shortfall = druidic_shortfall_for(army, state, army_race, army.location)
 
     race_item_bonus = race_item_bonus_for(state, army_race, army.commanded_by)
@@ -163,7 +163,7 @@ def army_peacetime_strength(state: GameState, army: ArmyState, ability: Ability)
     is_island = province.is_island if province is not None else False
     illusory_terrain = province.illusory_terrain if province is not None else None
     illusory_terrain_enhanced = province.illusory_terrain_enhanced if province is not None else False
-    army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
+    army_race = army.race if army.race is not None else MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
     quality = compute_army_modified_quality(state, army)
 
     ability_level = 0

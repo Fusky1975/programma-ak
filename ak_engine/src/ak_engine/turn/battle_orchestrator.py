@@ -249,6 +249,7 @@ from ak_engine.turn.strength import (
     PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
     compute_druidic_shortfall,
     compute_effective_strength,
+    modified_quality,
     quality_modifier_delta,
     roll_dinosaurs_strength,
     roll_elephants_strength,
@@ -867,7 +868,7 @@ def _build_battle_units(
         # already safe with `None`) only for an unowned, non-monstrous
         # army type, where no source says what race it should fight as.
         kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
-        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
+        army_race = army.race if army.race is not None else MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         is_home = kingdom is not None and province_coord == kingdom.home_province
         if army.army_type is ArmyType.ELEPHANTS:
             override = roll_elephants_strength(rng)
@@ -984,6 +985,18 @@ def _build_battle_units(
             if alignment_king_eligible:
                 alignment_king_bonus_if_selected = bonus
         rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
+        druid_fought_as = (
+            modified_quality(
+                battle_quality,
+                desert_without_camels=desert_without_camels,
+                is_home_province=is_home,
+                is_fanatical=is_fanatical,
+                druidic_shortfall=druidic_shortfall,
+                race_item_bonus=race_item_bonus,
+            )
+            if druidic_shortfall > 0
+            else None
+        )
         units.append(
             BattleUnit(
                 army.army_type,
@@ -991,6 +1004,7 @@ def _build_battle_units(
                 source_id=army.army_id,
                 druidic_rear_targeting_blocked=rear_targeting_blocked,
                 led_by_insufficient_druid=druidic_shortfall > 0,
+                druid_fought_as=druid_fought_as,
                 is_humanoid_race=army_race in HUMANOID_RACES,
                 duellist_bonus_if_selected=duellist_bonus_if_selected,
                 alignment_king_bonus_if_selected=alignment_king_bonus_if_selected,
@@ -1028,7 +1042,10 @@ def druidic_shortfall_for(
         leader = state.leaders.get(army.commanded_by)
         if leader is None or leader.kingdom_id is None:
             return 0
-        leader_race = state.kingdoms[leader.kingdom_id].race
+        # The commander's own race, when recorded (a King's companion of another
+        # race, a Valhalla visitor, a hero changed by a magic feature), else the
+        # race of the kingdom served.
+        leader_race = leader.race if leader.race is not None else state.kingdoms[leader.kingdom_id].race
         leader_druidic_skill = effective_skill_level(state, leader, Ability.DRUID)
         return compute_druidic_shortfall(leader_race, army_race, leader_druidic_skill)
 
@@ -1077,7 +1094,7 @@ def king_druidic_shortfall_for(
         if cache is not None:
             cache[key] = 0
         return 0
-    king_race = state.kingdoms[king.kingdom_id].race
+    king_race = king.race if king.race is not None else state.kingdoms[king.kingdom_id].race
     king_druidic_skill = effective_skill_level(state, king, Ability.DRUID)
     shortfall = compute_druidic_shortfall(king_race, army_race, king_druidic_skill)
     if cache is not None:
@@ -1179,6 +1196,7 @@ def _retreat_or_disband(
     destination: HexCoord | None,
     avoid_elimination: bool = False,
     led_by_insufficient_druid: bool = False,
+    druid_fought_as: Quality | None = None,
     formation_divisor: int = FORMATION_DIVISOR["front"],
 ) -> None:
     """``avoid_elimination`` (Phase 38): the caller's way of saying this army must not be
@@ -2034,7 +2052,7 @@ def _apply_pursuit(
         # for an army type with a fixed, intrinsic race, else `None` (no
         # sourced race, no race-based strength bonus -- not a guess).
         kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
-        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
+        army_race = army.race if army.race is not None else MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         pursued_quality = Quality(max(int(Quality.DEPLETED), int(army.quality) - 1))
         # 2026-11-21 bug fix (crash): Elephants/Dinosaurs have no fixed base
         # strength, so a fleeing one reaching this step used to raise
@@ -2349,7 +2367,7 @@ def _qual_modfr_score_by_army_id(
         # fixed, intrinsic race else `None` (no sourced race -- not a
         # guess).
         kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
-        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
+        army_race = army.race if army.race is not None else MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         is_home = kingdom is not None and province_coord == kingdom.home_province
         desert_without_camels = terrain is Terrain.DESERT and not explorer_find_water and not camel_corps_present
         druidic_shortfall = druidic_shortfall_for(
@@ -3163,6 +3181,9 @@ def fight_battle(
     led_by_insufficient_druid_by_army_id = {
         unit.source_id: unit.led_by_insufficient_druid for unit in (*attacker_units, *defender_units)
     }
+    druid_fought_as_by_army_id = {
+        unit.source_id: unit.druid_fought_as for unit in (*attacker_units, *defender_units)
+    }
 
     # Phase 770: `wargames_mastery_by_army_id` (Phase 513) removed from
     # here -- AdvancedAbility.TACTICAL_WARGAMES_MASTERY was mis-wired to
@@ -3224,12 +3245,13 @@ def fight_battle(
         if army.army_id in attacker_pursuit_destroyed:
             continue
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
+        druid_fought_as = druid_fought_as_by_army_id.get(army.army_id)
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         score = score_by_army_id.get(army.army_id, 0)
         if battle_result.winner == "attacker":
             old_quality = army.quality
             army.quality = roll_quality_change(
-                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
+                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as,
                 formation_divisor=formation_divisor, score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
@@ -3238,7 +3260,7 @@ def fight_battle(
             destination = _whale_sea_retreat_destination(army, state, bounds)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
-                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
+                led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif attacker_clean_swept and loser_retreats:
             bounds = MapBounds(state.board_width, state.board_height)
@@ -3259,7 +3281,7 @@ def fight_battle(
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 avoid_elimination=_fleet_avoids_elimination(army, terrain),
-                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
+                led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif attacker_clean_swept and _fleet_avoids_elimination(army, terrain):
             old_quality = army.quality
@@ -3277,7 +3299,7 @@ def fight_battle(
             old_quality = army.quality
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
-                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
+                led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
                 score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
@@ -3286,12 +3308,13 @@ def fight_battle(
         if army.army_id in defender_pursuit_destroyed:
             continue
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
+        druid_fought_as = druid_fought_as_by_army_id.get(army.army_id)
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         score = score_by_army_id.get(army.army_id, 0)
         if battle_result.winner == "defender":
             old_quality = army.quality
             army.quality = roll_quality_change(
-                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
+                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as,
                 formation_divisor=formation_divisor, score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
@@ -3300,7 +3323,7 @@ def fight_battle(
             destination = _whale_sea_retreat_destination(army, state, bounds)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
-                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
+                led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif defender_clean_swept and loser_retreats:
             bounds = MapBounds(state.board_width, state.board_height)
@@ -3309,7 +3332,7 @@ def fight_battle(
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 avoid_elimination=_fleet_avoids_elimination(army, terrain),
-                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
+                led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif defender_clean_swept and _fleet_avoids_elimination(army, terrain):
             old_quality = army.quality
@@ -3327,7 +3350,7 @@ def fight_battle(
             old_quality = army.quality
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
-                led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
+                led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
                 score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)

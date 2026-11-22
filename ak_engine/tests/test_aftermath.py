@@ -58,6 +58,47 @@ def test_druid_led_green_unit_has_reduced_improve_chance():
     assert druid_led == Quality.GREEN
 
 
+def test_druid_penalty_follows_the_rank_fought_as_not_the_base_rank():
+    # Rulebook [7.5]: "If it fought as a Green or Depleted unit because of
+    # insufficient Druidic ability, it has 60% and 20% of the normal chance".
+    # An Average unit that fought as Green gets the Green 60%: its normal
+    # chance is 60 >> 1 = 0.30, so 0.18. A roll of 0.25 clears the plain 0.30
+    # but not 0.18.
+    rng = random.Random()
+    rng.random = lambda: 0.25
+
+    plain = roll_quality_change(Quality.AVERAGE, rng, is_winner=True)
+    penalized = roll_quality_change(
+        Quality.AVERAGE, rng, is_winner=True, led_by_insufficient_druid=True, druid_fought_as=Quality.GREEN
+    )
+
+    assert plain == Quality.VETERAN
+    assert penalized == Quality.AVERAGE
+
+
+def test_druid_penalty_for_a_unit_that_fought_as_depleted_is_twenty_percent():
+    # A Green unit (normal chance 0.60) that fought as Depleted: 0.60 * 0.20 = 0.12.
+    rng = random.Random()
+    rng.random = lambda: 0.2
+
+    assert roll_quality_change(Quality.GREEN, rng, is_winner=True) == Quality.AVERAGE
+    assert (
+        roll_quality_change(Quality.GREEN, rng, is_winner=True, led_by_insufficient_druid=True, druid_fought_as=Quality.DEPLETED)
+        == Quality.GREEN
+    )
+
+
+def test_druid_penalty_does_not_apply_when_the_unit_still_fought_above_green():
+    # An Elite unit with a shortfall of 1 still fought as Crack: no 60%/20% rule.
+    rng = random.Random()
+    rng.random = lambda: 0.0
+
+    assert (
+        roll_quality_change(Quality.AVERAGE, rng, is_winner=True, led_by_insufficient_druid=True, druid_fought_as=Quality.AVERAGE)
+        == Quality.VETERAN
+    )
+
+
 def test_loser_that_retreated_may_decline():
     rng = random.Random()
     rng.random = lambda: 0.0

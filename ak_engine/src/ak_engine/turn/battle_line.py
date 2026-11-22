@@ -93,6 +93,9 @@ class BattleUnit:
     # druidic_rear_targeting_blocked above, this isn't limited to
     # overflight units.
     led_by_insufficient_druid: bool = False
+    # The quality the unit actually fought as when led with a Druidic
+    # shortfall (all modifiers applied); None when there was no shortfall.
+    druid_fought_as: Quality | None = None
     # Phase 392: this unit's own owning Kingdom's race is one of the four
     # rulebook-defined humanoids (Human/Elven/Dwarven/Orcish, ``models/
     # race.py HUMANOID_RACES``) -- set once at ``turn/battle_orchestrator.py

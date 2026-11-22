@@ -6,6 +6,8 @@
     Comandante Supremo in battaglia       15%  Tattica o Navale
     Comandare unità in battaglia          10%  Tattica o Navale
     Esplorare                             10%  Esplorazione
+    Reclutare o Assoldare                  5%  Druidismo
+    Parlare all'avversario                10%  Druidismo
 
 Sage has no row in that table; on the user's decision (2026-11-22) every
 Practice Sageness attempt also earns 10 points of Sage experience.
@@ -41,6 +43,8 @@ COMMANDER_BASE_POINTS = 10
 PICK_UP_LEAVE_BASE_POINTS = 5
 EXPLORE_BASE_POINTS = 10
 SAGE_PRACTICE_BASE_POINTS = 10
+RECRUIT_HIRE_BASE_POINTS = 5
+TALK_BASE_POINTS = 10
 
 
 def _stream(state: GameState, *key: object) -> random.Random:
@@ -127,3 +131,20 @@ def award_sage_practice_experience(state: GameState, leader_id: int, phase_label
     if leader is None:
         return None
     return _award(state, leader, Ability.SAGE, SAGE_PRACTICE_BASE_POINTS, "sage-practice", phase_label)
+
+
+def award_recruit_hire_experience(state: GameState, leader_id: int, *key: object) -> ExperienceOutcome | None:
+    """Credits Druidism to the leader whose Recruit or Hire order actually
+    produced something (a unit levied, a hero taken into service)."""
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return None
+    return _award(state, leader, Ability.DRUID, RECRUIT_HIRE_BASE_POINTS, "recruit-hire", *key)
+
+
+def award_talk_experience(state: GameState, leader: LeaderState, *key: object) -> ExperienceOutcome:
+    """Credits Druidism for a Talk that got through to a monster; a rise
+    grants the real Druid Advanced Ability of the new level."""
+
+    return _award(state, leader, Ability.DRUID, TALK_BASE_POINTS, "talk", *key)

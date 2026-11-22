@@ -645,6 +645,7 @@ from ak_engine.turn.encounter import (
     words_of_healing_heal,
 )
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, Treasure, TreasureCategory
+from ak_engine.turn.command_experience import award_talk_experience
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.feature_power_execution import (
     SA_ARGUMENT_POWERS,
@@ -3580,7 +3581,7 @@ def _resolve_search_encounter(
         # the leader's own Druid skill was what let them communicate
         # with this guardian at all -- so this fires regardless of which
         # reply follows.
-        add_experience(leader, Ability.DRUID, 10, rng)
+        award_talk_experience(state, leader, feature.feature_id)
 
         if feature.guardian_talk_reply_id is None:
             reply = resolve_monster_raid_reply(feature.guardian_monster, feature.feature_id, feature.treasure)

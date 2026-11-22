@@ -394,6 +394,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.turn.command_experience import (
     award_explore_experience,
     award_pick_up_leave_experience,
+    award_recruit_hire_experience,
     award_sage_practice_experience,
 )
 from ak_engine.models.enums import Ability, ActionCode, Spell
@@ -757,7 +758,10 @@ def dispatch_phase(
         return _dispatch_search(phase, state, leader_id, rng)
 
     if action is ActionCode.RECRUIT:
-        return _dispatch_recruit(phase, state, kingdom_id, leader_id)
+        recruit_result = _dispatch_recruit(phase, state, kingdom_id, leader_id)
+        if recruit_result.recruited:
+            award_recruit_hire_experience(state, leader_id, "recruit", len(recruit_result.recruited))
+        return recruit_result
 
     if action is ActionCode.LEAVE:
         leave_result = _dispatch_leave(phase, state, leader_id)
@@ -773,7 +777,10 @@ def dispatch_phase(
         return _dispatch_disband(phase, state, leader_id)
 
     if action is ActionCode.HIRE:
-        return _dispatch_hire(phase, state, kingdom_id, leader_id, rng)
+        hire_result = _dispatch_hire(phase, state, kingdom_id, leader_id, rng)
+        if hire_result.hired:
+            award_recruit_hire_experience(state, leader_id, "hire", hire_result.request.hero_id)
+        return hire_result
 
     if action is ActionCode.FIRE:
         return _dispatch_fire(phase, state, leader_id)

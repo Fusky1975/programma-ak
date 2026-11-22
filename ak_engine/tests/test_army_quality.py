@@ -226,3 +226,53 @@ def test_race_leadership_treasure_covers_the_four_humanoid_races():
         Race.DWARVEN: Treasure.LEADERSHIP_DWARVEN,
         Race.ORCISH: Treasure.LEADERSHIP_ORCISH,
     }
+
+
+def test_druidic_shortfall_uses_the_commanders_own_race_not_the_kingdoms():
+    # A King's companion can be of another race than the kingdom they serve
+    # (a Dwarf under a Human King): leading the Human army is leading a race
+    # other than their own, so the Druid Table applies to them.
+    state = _state()
+    state.add_leader(LeaderState(1, 1, "Companion", FIELD, skills=_skills_with_druid(0), race=Race.DWARVEN))
+    army = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=1)
+    state.add_army(army)
+
+    assert compute_army_modified_quality(state, army) == Quality.GREEN  # AVERAGE(2) - 1
+
+
+def test_druidic_shortfall_a_companion_leading_his_own_race_has_none():
+    state = _state()
+    state.add_leader(LeaderState(1, 1, "Companion", FIELD, skills=_skills_with_druid(0), race=Race.HUMAN))
+    army = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=1)
+    state.add_army(army)
+
+    assert compute_army_modified_quality(state, army) == Quality.AVERAGE
+
+
+def test_druidic_shortfall_with_one_druid_level_covers_a_human_army():
+    state = _state()
+    state.add_leader(LeaderState(1, 1, "Companion", FIELD, skills=_skills_with_druid(1), race=Race.DWARVEN))
+    army = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, commanded_by=1)
+    state.add_army(army)
+
+    assert compute_army_modified_quality(state, army) == Quality.AVERAGE
+
+
+def test_druidic_shortfall_uses_the_race_an_army_is_composed_of():
+    # A mercenary band of Dwarves (ArmyState.race) picked up by a Human
+    # commander with no Druidism: the Human leads a race other than his own.
+    state = _state()
+    state.add_leader(LeaderState(1, 1, "Hero", FIELD, skills=_skills_with_druid(0)))
+    army = ArmyState(1, 1, ArmyType.AXEMEN, Quality.AVERAGE, FIELD, commanded_by=1, race=Race.DWARVEN)
+    state.add_army(army)
+
+    assert compute_army_modified_quality(state, army) == Quality.GREEN  # AVERAGE(2) - 1
+
+
+def test_druidic_shortfall_a_dwarf_leading_a_dwarven_band_has_none():
+    state = _state()
+    state.add_leader(LeaderState(1, 1, "Dwarf", FIELD, skills=_skills_with_druid(0), race=Race.DWARVEN))
+    army = ArmyState(1, 1, ArmyType.AXEMEN, Quality.AVERAGE, FIELD, commanded_by=1, race=Race.DWARVEN)
+    state.add_army(army)
+
+    assert compute_army_modified_quality(state, army) == Quality.AVERAGE

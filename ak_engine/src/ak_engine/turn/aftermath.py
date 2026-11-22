@@ -190,6 +190,7 @@ def roll_quality_change(
     is_winner: bool,
     retreated: bool = False,
     led_by_insufficient_druid: bool = False,
+    druid_fought_as: Quality | None = None,
     formation_divisor: int = FORMATION_DIVISOR["front"],
     score: int = 0,
 ) -> Quality:
@@ -231,7 +232,9 @@ def roll_quality_change(
     if is_winner:
         chance = improve_chance(quality, formation_divisor, score=score)
         if led_by_insufficient_druid:
-            chance *= DRUID_LED_IMPROVE_MULTIPLIER.get(quality, 1.0)
+            # The rule is about the rank the unit *fought as*, not its base rank.
+            fought_as = druid_fought_as if druid_fought_as is not None else quality
+            chance *= DRUID_LED_IMPROVE_MULTIPLIER.get(fought_as, 1.0)
         return _step(quality, 1) if rng.random() < chance else quality
 
     if retreated:
