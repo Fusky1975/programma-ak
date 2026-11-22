@@ -2824,11 +2824,15 @@ def _execute_oratory(
     """Rulebook [4.22.2]: "cast on yourself or a co-located character: every unit he
     commands is heartened and its rank rises one level for the rest of
     the turn (Green becomes Average, Average becomes Veteran, and so
-    on). Repeated casts aren't cumulative." Applied as a direct,
-    persistent ``ArmyState.quality`` bump (capped at Elite) rather than a
+    on). Repeated casts aren't cumulative." Applied as a direct
+    ``ArmyState.quality`` bump (capped at Elite) rather than a
     strength-pipeline multiplier -- see ``turn/strength.py``'s own module
     docstring for why that's the more faithful reading of "becomes"
-    Average/Veteran/etc.
+    Average/Veteran/etc. -- **but only for the rest of the turn**:
+    ``ArmyState.oratory_boost_levels`` records the level added, and
+    ``turn/turn_processor.py _revert_oratory_boosts()`` takes it back at
+    the end of the turn (it used to stay for good, so every cast promoted
+    the army permanently).
 
     **Propaganda Megaphones** (Phase 391, corrected Phase 1046): "used at
     a battle to reduce the effects of any Oratory spell cast by enemy
@@ -2882,7 +2886,10 @@ def _execute_oratory(
                 defended = True
                 if rng.random() >= PROPAGANDA_MEGAPHONES_AFFECTED_CHANCE:
                     continue
-            army.quality = Quality(min(int(army.quality) + 1, Quality.ELITE))
+            boosted = Quality(min(int(army.quality) + 1, Quality.ELITE))
+            if boosted != army.quality:
+                army.quality = boosted
+                army.oratory_boost_levels = 1  # taken back at the end of the turn
         target.oratory_boosted_this_turn = True
     return CastExecutionResult(
         request, applied=True, discovery_defended=Discovery.PROPAGANDA_MEGAPHONES if defended else None

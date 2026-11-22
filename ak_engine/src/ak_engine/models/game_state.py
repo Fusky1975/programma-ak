@@ -651,6 +651,11 @@ class ArmyState:
     # _dispatch_pick_up()`'s own 2026-10-29 docstring addendum for the
     # real consumer.
     recruited_this_turn: bool = False
+    # Quality levels an Oratory cast added to this army for the rest of the
+    # turn ([4.22.2]: "its rank rises one level for the rest of the turn");
+    # taken back by ``turn/turn_processor.py _revert_oratory_boosts()`` before
+    # the end-of-turn pay/upgrade step.
+    oratory_boost_levels: int = 0
     # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers)
     # -- rulebook [6.2]: "The increased army-movement allowed by the March
     # and Naval abilities is always calculated at the moment an army
@@ -1437,11 +1442,10 @@ class ProvinceState:
     # spread, and it can spread further each phase after that." Set by
     # a successful Plague cast (`turn/cast_execution.py _execute_plague()`)
     # or by `turn/plague_spread.py resolve_plague_spread()` itself
-    # reaching this province from a neighbor; never cleared automatically
-    # -- the rulebook describes no "the plague dies out" end condition,
-    # so an afflicted province stays a spread source for the rest of the
-    # game, the same "no consuming cleanup pass exists" convention
-    # `illusory_terrain`/`scar_terrain_gold_reduction` above already use.
+    # reaching this province from a neighbor. Cleared at the end of the turn
+    # (`turn/turn_processor.py _replenish_turn_scoped_state()`): like every
+    # Action spell it lasts for the turn it was cast in, and the real
+    # reports show no spread in the following turn (SE3__T10 -> SE3__T11).
     # Also doubles as the "casting more than one Plague spell does not
     # have a cumulative effect" guard: a recast on an already-`True`
     # province is a no-op beyond confirming `applied=True`.
@@ -2593,6 +2597,16 @@ class GameState:
             for province in self.provinces.values()
             if province.owner_kingdom_id is not None and self.is_allied(province.owner_kingdom_id, kingdom_id)
         }
+
+    def reset_turn_spell_effects(self) -> None:
+        """Clears the "for the rest of the turn" effects that must still be
+        readable while the finished turn's reports are composed -- so it runs
+        when the *next* turn starts (``orchestrator.process_turn()``):
+        Clairvoyance watches ([4.22.3], "for the rest of the turn")."""
+
+        for leader in self.leaders.values():
+            leader.clairvoyance_cast_target = None
+            leader.clairvoyance_watchers.clear()
 
     def reset_turn_report_scratch(self) -> None:
         """Empties the per-turn lists the report recorders fill while a turn
