@@ -259,6 +259,11 @@ def process_turn(
     # docstring for why this has to happen here, not inside run_turn().
     sync_treat_orders_from_kingdom_headers(state, kingdom_headers)
 
+    # Everything the report recorders accumulate for "this turn" starts empty:
+    # nothing else clears these lists, so without this a later turn's report
+    # would repeat every earlier turn's battle narrative, notices and news.
+    state.reset_turn_report_scratch()
+
     results = run_turn(turn_leaders, state, board_width=board_width, rng=rng)
 
     # Phase 614: the Grandfather of Assassins title's own free attempt,
