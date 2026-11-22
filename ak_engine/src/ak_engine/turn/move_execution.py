@@ -2120,9 +2120,16 @@ def execute_move(
             target_province.owner_kingdom_id = kingdom_id
             conquered = True
 
+    # Rulebook [7.7]/[11.1]: entering a sea province costs the extra point
+    # "only if a battle takes place" ("le Flotte devono spendere questo Punto
+    # Movimento solo quando combattono una battaglia nella provincia") -- so
+    # taking an undefended sea province, unlike an undefended land one, owes
+    # nothing beyond the ordinary point (``battle_occurred`` still covers a
+    # defended one).
+    uncontested_sea_entry = conquered and not occupied_by_enemy and target_province.effective_terrain() is Terrain.SEA
     cost = movement_cost_for_move(
         battle_occurred=occupied_by_enemy,
-        conquered=conquered,
+        conquered=conquered and not uncontested_sea_entry,
     )
 
     # Phase 651, Illusory Fog's own [3.11]-addendum text: "must expend 1

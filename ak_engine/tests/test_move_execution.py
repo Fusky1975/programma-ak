@@ -92,6 +92,40 @@ def test_uncontested_move_conquers_an_unowned_province_too():
     assert result.movement_points_spent == 2
 
 
+def _sea_state(naval_target_owner: int | None = None) -> GameState:
+    state = base_state()
+    state.provinces[TARGET] = ProvinceState(TARGET, Terrain.SEA, Race.HUMAN, owner_kingdom_id=naval_target_owner, explored_percent=0)
+    state.armies.pop(101)
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=2))
+    return state
+
+
+def test_a_fleet_entering_an_undefended_sea_province_pays_no_extra_movement_point():
+    # Rulebook [7.7]/[11.1]: at sea the extra point is owed "only if a
+    # battle takes place" -- the province is still taken, but the move costs
+    # the ordinary single point.
+    state = _sea_state()
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.moved is True
+    assert result.battle_report is None
+    assert result.conquered is True
+    assert state.provinces[TARGET].owner_kingdom_id == 1
+    assert result.movement_points_spent == 1
+    assert state.armies[101].movement_points == 1
+
+
+def test_a_move_into_an_undefended_land_province_still_pays_the_conquest_point():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = None
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.conquered is True
+    assert result.movement_points_spent == 2
+
+
 def test_uncontested_move_does_not_conquer_allied_territory():
     state = base_state()
     state.allied_kingdoms.add(frozenset({1, 2}))
