@@ -3175,3 +3175,41 @@ def test_a_successful_hire_earns_druid_experience_and_a_refused_one_does_not():
     result = dispatch_phase(hired, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
     assert result.hired is True
     assert state.leaders[LEADER_ID].experience_credit > 0
+
+
+# -- Exploration follows the acting leader's own Explorer level --
+
+
+def _explore(state: GameState, location: HexCoord) -> int:
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+    return state.provinces[location].explored_percent
+
+
+def _explorer_skills(level: int) -> SkillTable:
+    raw = [0] * 31
+    raw[Ability.EXPLORER.value * 2] = level
+    raw[Ability.EXPLORER.value * 2 + 1] = 9
+    return SkillTable(raw)
+
+
+def test_explore_uses_the_leaders_own_explorer_level_without_a_caller_override():
+    location = HexCoord(3, 9)
+    untrained, _ = _state_with_army(location, {})
+    trained, _ = _state_with_army(location, {})
+    untrained.leaders[LEADER_ID].skills = _explorer_skills(0)
+    trained.leaders[LEADER_ID].skills = _explorer_skills(1)
+
+    assert _explore(untrained, location) == 50  # Plains(50) * (0 + 1)
+    assert _explore(trained, location) == 100  # Plains(50) * (1 + 1)
+
+
+def test_compass_and_telescope_raise_the_exploration_rate():
+    from ak_engine.models.discovery import Discovery
+
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.leaders[LEADER_ID].skills = _explorer_skills(0)
+    state.kingdoms[1].discoveries.update({Discovery.COMPASS, Discovery.TELESCOPE})
+
+    assert _explore(state, location) == 100  # effective Explorer level 2, capped by the province at 100

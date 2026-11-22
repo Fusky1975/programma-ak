@@ -1156,7 +1156,13 @@ def _roll_sage_device_discovery(
         and leader.location == HexCoord(leader.birth_x, leader.birth_y)
     )
     university_bonus = SUPER_SAGE_UNIVERSITY_BONUS if at_university else 0.0
-    device_discovered = rng.random() < current_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL + university_bonus
+    # The 5% is per level of the Talent as the character really has it: the two
+    # Sage Discoveries (Hieroglyphic Translation, Scientific Method) and a held
+    # Sage item each add a level, which is their whole purpose.
+    from ak_engine.turn.discovery_effects import effective_skill_level
+
+    sage_level = max(current_skill, effective_skill_level(state, leader, Ability.SAGE))
+    device_discovered = rng.random() < sage_level * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL + university_bonus
     discovery_granted: Discovery | None = None
     if device_discovered and leader.kingdom_id is not None:
         kingdom = state.kingdoms.get(leader.kingdom_id)

@@ -314,6 +314,7 @@ from ak_engine.turn.move_execution import (
 )
 from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, _has_spy_super_sleuth, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.command_experience import award_sage_practice_experience
@@ -2689,6 +2690,16 @@ def _dispatch_single(
     return run_leader_plan(wrapper, state, tl.kingdom_id, board_width=board_width, explorer_skill=explorer_skill, rng=rng)
 
 
+def _leader_explorer_skill(state: GameState, leader_id: int, base: int) -> int:
+    """The Explorer level a mover explores with: their own effective level
+    (Discoveries and items included), raised never lowered by ``base``."""
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return base
+    return max(base, effective_skill_level(state, leader, Ability.EXPLORER))
+
+
 def _dispatch_multi_attacker_lmove(
     movers: list[tuple[TurnLeader, int, PlanPhase]],
     target: HexCoord,
@@ -2779,7 +2790,7 @@ def _dispatch_multi_attacker_lmove(
                 bounds,
                 target_terrain=target_province.effective_terrain(),
                 target_explored_percent=target_province.explored_percent,
-                explorer_skill=explorer_skill,
+                explorer_skill=_leader_explorer_skill(state, tl.leader.leader_id, explorer_skill),
                 occupied_by_enemy=True,
             )
             exploration_new_percent = move_result.exploration.new_percent
@@ -2812,7 +2823,13 @@ def _dispatch_multi_attacker_lmove(
             # single shared scalar (which only the last mover in this loop wins).
             target_province.explored_percent = exploration_new_percent
         record_kingdom_exploration(
-            target_province, tl.kingdom_id, explorer_skill, partial=True, state=state, rng=rng, leader_id=tl.leader.leader_id
+            target_province,
+            tl.kingdom_id,
+            _leader_explorer_skill(state, tl.leader.leader_id, explorer_skill),
+            partial=True,
+            state=state,
+            rng=rng,
+            leader_id=tl.leader.leader_id,
         )
         reveal_adjacent_provinces(state, target_province, tl.kingdom_id, bounds)
 

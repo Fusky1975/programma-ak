@@ -2526,3 +2526,44 @@ def test_execute_practice_group_never_raids_as_bandit():
     assert results[0].gold_looted_as_bandit == 0
     assert results[1].gold_looted_as_bandit == 0
     assert state.kingdoms[2].treasury == 100
+
+
+# -- The Sage Discoveries and a held Sage item add a level to the 5%-per-level roll --
+
+
+def _discovering_rng(first_roll: float) -> ScriptedRandom:
+    # The device roll, then the discovery pick (forced-first check, diffusion keep).
+    return ScriptedRandom([first_roll, 0.99, 0.01], choice_indices=[0])
+
+
+def _sage_in_kingdom(skill: int, *, discoveries=()) -> tuple[GameState, LeaderState]:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.kingdoms[1].discoveries.update(discoveries)
+    leader = LeaderState(1, 1, "Sage", LOCATION, skills=_skills_with(Ability.SAGE, skill=skill, aptitude=9))
+    state.add_leader(leader)
+    return state, leader
+
+
+def test_a_sage_discovery_adds_a_level_to_the_device_discovery_chance():
+    # Skill 1 alone is 5%; with Scientific Method it is 2 levels, 10%.
+    plain_state, plain = _sage_in_kingdom(1)
+    boosted_state, boosted = _sage_in_kingdom(1, discoveries=[Discovery.SCIENTIFIC_METHOD])
+
+    assert _roll_sage_device_discovery(plain_state, plain, 1, ScriptedRandom([0.07]))[0] is False
+    assert _roll_sage_device_discovery(boosted_state, boosted, 1, _discovering_rng(0.07))[0] is True
+
+
+def test_both_sage_discoveries_add_two_levels():
+    state, leader = _sage_in_kingdom(
+        1, discoveries=[Discovery.SCIENTIFIC_METHOD, Discovery.HIEROGLYPHIC_TRANSLATION]
+    )
+
+    assert _roll_sage_device_discovery(state, leader, 1, _discovering_rng(0.14))[0] is True
+    assert _roll_sage_device_discovery(state, leader, 1, ScriptedRandom([0.16]))[0] is False
+
+
+def test_a_discovery_for_another_ability_does_not_change_the_sage_chance():
+    state, leader = _sage_in_kingdom(1, discoveries=[Discovery.COMPASS])
+
+    assert _roll_sage_device_discovery(state, leader, 1, ScriptedRandom([0.07]))[0] is False
