@@ -75,10 +75,13 @@ execution.py _award_cast_experience()``) were wired; Phase 686 adds
 Melee and Archery (both sourced with a clean, unambiguous base of 10 --
 see that phase's own README entry for the 6 real call sites); Phase
 768 (``MARCH.md`` SS11) adds March and Naval, credited from a
-successful Move (``turn/move_execution.py``). Tactical, Explorer, and
-Sage remain genuinely unwired -- SS3.3's own table marks all three
-"variabile"/"contestuale," not a clean fixed value the way Melee/
-Archery/Thief/the spell schools/March/Naval have, so they stay a real,
+successful Move (``turn/move_execution.py``). **2026-11-22**: the
+rulebook's own table ([3.13]) gives the remaining Tactical/Naval and
+March/Naval sources outright -- commanding in battle (15% Supreme
+Commander, 10% any other commander, Tactical on land / Naval at sea) and
+taking or leaving units (5%) -- wired in ``turn/command_experience.py``.
+Explorer and Sage remain unwired -- SS3.3's own table marks them
+"variabile"/"contestuale," not a clean fixed value, so they stay a real,
 separate, still-open item.
 
 **Also deliberately out of scope**: any Royal-Heir/comatose eligibility
