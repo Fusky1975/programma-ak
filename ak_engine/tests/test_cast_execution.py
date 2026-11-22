@@ -4220,3 +4220,37 @@ def test_earthquake_not_halved_when_target_province_has_no_owner():
     )
 
     assert result.applied is True
+
+
+def test_charm_records_the_turn_the_hero_entered_service_like_a_hire():
+    state = build_state()
+    state.turn_number = 7
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[78].hire_turn == 7
+
+
+def test_charm_on_an_already_loyal_hero_does_not_reset_the_hire_turn():
+    state = build_state()
+    state.turn_number = 7
+    state.add_leader(LeaderState(78, 1, "Loyal Hero", LOCATION, hire_turn=3))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert state.leaders[78].hire_turn == 3
+
+
+def test_a_character_cannot_charm_himself():
+    state = build_state()
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=CASTER_ID)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "a character cannot charm himself"
