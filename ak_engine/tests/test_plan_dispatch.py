@@ -3134,3 +3134,44 @@ def test_dispatch_lmove_auto_boards_an_ent_when_the_leader_holds_druidic_transpo
     assert ent_id in result.boarded_army_ids
     assert state.armies[ent_id].transported_by == fleet_id
     assert state.armies[ent_id].location == target
+
+
+# -- Druidism experience: Recruit/Hire 5% ([3.13] table) --
+
+
+def test_a_successful_recruit_earns_druid_experience():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    phase = PlanPhase(label="P3", action=ActionCode.RECRUIT, obj=1, extra=[0, 1, 1, 10, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert state.leaders[LEADER_ID].experience_credit > 0
+
+
+def test_a_recruit_that_levies_nothing_earns_no_experience():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.kingdoms[1].treasury = 0
+    phase = PlanPhase(label="P3", action=ActionCode.RECRUIT, obj=1, extra=[0, 1, 1, 10, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert not result.recruited
+    assert state.leaders[LEADER_ID].experience_credit == 0
+
+
+def test_a_successful_hire_earns_druid_experience_and_a_refused_one_does_not():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location))
+    state.add_leader(LeaderState(33, None, "Far Hero", HexCoord(9, 9)))
+
+    refused = PlanPhase(label="P1", action=ActionCode.HIRE, obj=33, extra=[3])
+    dispatch_phase(refused, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+    assert state.leaders[LEADER_ID].experience_credit == 0
+
+    hired = PlanPhase(label="P2", action=ActionCode.HIRE, obj=32, extra=[3])
+    result = dispatch_phase(hired, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+    assert result.hired is True
+    assert state.leaders[LEADER_ID].experience_credit > 0
