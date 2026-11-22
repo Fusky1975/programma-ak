@@ -1308,8 +1308,11 @@ def test_run_turn_spreads_plague_to_adjacent_provinces_at_phase_boundaries():
 
     # Deterministic under this fixed seed -- see turn/plague_spread.py's
     # own module docstring for the mechanic (rulebook [4.25.3]) this
-    # exercises via run_turn()'s own per-phase-boundary dispatch.
-    assert state.provinces[ORIGIN].plague_active is True
+    # exercises via run_turn()'s own per-phase-boundary dispatch. The
+    # plague lasts only for the turn it spreads in: nothing stays afflicted
+    # once run_turn() ends.
+    assert state.provinces[ORIGIN].plague_active is False
+    assert state.provinces[TARGET].plague_active is False
 
     # Phase 234: each newly-infected coordinate is also surfaced as its
     # own PhaseDispatchResult, the same sentinel convention

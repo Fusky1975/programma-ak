@@ -263,6 +263,7 @@ def process_turn(
     # nothing else clears these lists, so without this a later turn's report
     # would repeat every earlier turn's battle narrative, notices and news.
     state.reset_turn_report_scratch()
+    state.reset_turn_spell_effects()
 
     results = run_turn(turn_leaders, state, board_width=board_width, rng=rng)
 

@@ -266,6 +266,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, GARRISON_DEFENSE_STRENGTH, ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
+from ak_engine.turn.combat import Quality
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
@@ -944,6 +945,9 @@ def run_turn(
                 error=None,
             )
         )
+    # Oratory's one-rank boost lasts "for the rest of the turn" ([4.22.2]) --
+    # taken back before the end-of-turn pay/upgrade step sees the armies.
+    _revert_oratory_boosts(state)
     apply_turn_revenue(state, rng)
     apply_turn_maintenance(state, rng)
     # Phase 869: [8.4] Scientific Treaties -- "the exchange takes place
@@ -1048,6 +1052,16 @@ def _revert_analytical_psychology_charms(state: GameState) -> None:
         if leader.analytical_psychology_revert_kingdom_id is not None:
             leader.kingdom_id = leader.analytical_psychology_revert_kingdom_id
             leader.analytical_psychology_revert_kingdom_id = None
+
+
+def _revert_oratory_boosts(state: GameState) -> None:
+    """Takes back the rank Oratory added to each army for the turn."""
+
+    for army in state.armies.values():
+        levels = getattr(army, "oratory_boost_levels", 0)
+        if levels:
+            army.quality = Quality(max(int(army.quality) - levels, min(int(member) for member in Quality)))
+            army.oratory_boost_levels = 0
 
 
 def _replenish_turn_scoped_state(state: GameState) -> None:
@@ -1215,8 +1229,13 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         province.terrain_override = None
         province.tax_modifier_percent = 0
         province.earthquake_flat_reduction = 0
+        # Plague ([4.25.3]) spreads "each phase" of the turn it was cast in;
+        # the real reports show no spread in the turn after (SE3__T10 -> T11).
+        province.plague_active = False
     for leader in state.leaders.values():
         leader.oratory_boosted_this_turn = False
+        # Phantasmal Armies ([4.23.2]): "for the rest of the turn".
+        leader.phantasmal_armies_level = 0
     for kingdom in state.kingdoms.values():
         kingdom.treasury_raid_attempts_this_turn = 0
     state.action_casts_used = {}
