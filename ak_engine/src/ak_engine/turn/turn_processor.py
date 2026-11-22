@@ -1222,6 +1222,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         army.unhireable_this_turn = False
         army.recruited_this_turn = False
         army.flood_dams_exempt_at = None
+        army.mystic_winds_prior_movement = None
     for province in state.provinces.values():
         province.recruited_this_turn = {}
         province.recruit_locked_this_turn = False
@@ -1234,6 +1235,8 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         province.plague_active = False
     for leader in state.leaders.values():
         leader.oratory_boosted_this_turn = False
+        # Mystic Winds: the spell ends with the turn.
+        leader.mystic_winds_active = False
         # Phantasmal Armies ([4.23.2]): "for the rest of the turn".
         leader.phantasmal_armies_level = 0
     for kingdom in state.kingdoms.values():

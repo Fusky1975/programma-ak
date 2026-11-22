@@ -656,6 +656,13 @@ class ArmyState:
     # taken back by ``turn/turn_processor.py _revert_oratory_boosts()`` before
     # the end-of-turn pay/upgrade step.
     oratory_boost_levels: int = 0
+    # Mystic Winds ([Advanced Ability]: "movement set at 5 while the spell
+    # lasts"): the movement points the army had when the spell was cast, so
+    # the spell's end (just before a battle, or the end of the turn) can give
+    # back the movement the army would normally have left --
+    # ``turn/cast_execution.py end_mystic_winds_movement()``. ``None`` = no
+    # Mystic Winds on this army.
+    mystic_winds_prior_movement: int | None = None
     # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers)
     # -- rulebook [6.2]: "The increased army-movement allowed by the March
     # and Naval abilities is always calculated at the moment an army

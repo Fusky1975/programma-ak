@@ -2922,8 +2922,26 @@ def _execute_mystic_winds(
 
     target.mystic_winds_active = True
     for army in state.armies_commanded_by(request.target):
-        army.movement_points = MYSTIC_WINDS_MOVEMENT_POINTS
+        # A second cast while the spell lasts is a no-op: it must not hand
+        # back the movement already spent under the first.
+        if army.mystic_winds_prior_movement is None:
+            army.mystic_winds_prior_movement = army.movement_points
+            army.movement_points = MYSTIC_WINDS_MOVEMENT_POINTS
     return CastExecutionResult(request, applied=True)
+
+
+def end_mystic_winds_movement(armies: list[ArmyState]) -> None:
+    """The spell ends: each army goes back to the movement it would normally
+    have -- the points it had at the cast, less whatever it spent since (it
+    may end up negative, like after a conquest). Without this an army kept
+    the spell's 5 points after the spell was over."""
+
+    for army in armies:
+        prior = getattr(army, "mystic_winds_prior_movement", None)
+        if prior is not None:
+            spent = MYSTIC_WINDS_MOVEMENT_POINTS - army.movement_points
+            army.movement_points = prior - spent
+            army.mystic_winds_prior_movement = None
 
 
 @dataclass(slots=True, frozen=True)
