@@ -262,6 +262,8 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
             like = hero_liking(state, hero, king)
             roll = rng.choice(_DESERTION_ROLL_VALUES)
             if roll >= like:
+                if hero.race is None:
+                    hero.race = kingdom.race  # a hero with no kingdom keeps the race he served under
                 hero.kingdom_id = None
                 deserted.append(hero.leader_id)
             else:

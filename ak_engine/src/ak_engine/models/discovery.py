@@ -181,10 +181,12 @@ combat-strength bypass (Phase 773) and Ultraviolet Lenses's own explicit
 this. This closes the anti-spell-ward wiring list in full: all 7 wards
 Phase 880 flagged are now either wired (Infrared Goggles, Asbestos
 Clothing, Lead-Lined Helmet, Artificial Organs, Flood Dams, Ultraviolet
-Lenses) or confirmed genuinely blocked (`DRY_ICE_FOG`, Clairvoyance --
-its own real information-feed mechanism, `Set_Intel`, is confirmed dead
-code in the compiled game itself, `turn/world_events.py`'s own
-disassembly-level finding, so there is no live effect left to reduce).
+Lenses) or, for `DRY_ICE_FOG` (Clairvoyance), a project-original design: the
+original's information feed (`Set_Intel`) is dead code, so the Clairvoyance
+feed itself is the project's own -- the CLAIRVOYANCE REPORT section of
+`report/turn_report.py` replicates the target's turn to the caster's Kingdom,
+and when the target's Kingdom owns this Discovery only the large-scale facts
+come through (`_fog_sentences()`).
 
 ``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
 confirms the full "Discoveries of the Sages" report line format and the

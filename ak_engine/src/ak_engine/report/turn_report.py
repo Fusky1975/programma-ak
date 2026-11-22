@@ -1314,7 +1314,7 @@ import itertools
 import random
 import re
 import textwrap
-from typing import Sequence
+from typing import Callable, NamedTuple, Sequence
 
 from ak_engine.models.enums import (
     ActionCode,
@@ -14328,7 +14328,8 @@ def _leader_ability_description(state: GameState, leader: LeaderState) -> str:
 
     ability, level = _best_ability(state, leader)
     phrase = _ABILITY_LEVEL_PHRASE[min(level, 6)]
-    race = leader.race if leader.race is not None else state.kingdoms[leader.kingdom_id].race
+    kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None
+    race = leader.race if leader.race is not None else (kingdom.race if kingdom is not None else Race.HUMAN)
     return f"(a {RACE_NAME[race]} {phrase}{ABILITY_NAME[ability]})"
 
 
@@ -16754,6 +16755,34 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
             state.record_world_event(coord, [prefix + winner_sentence])
 
 
+def _battle_narrative_lines(
+    state: GameState, phase_label: str, battle_report: BattleReport, rng: random.Random
+) -> list[str]:
+    """One battle's full narrative (see ``record_battle_narratives()``); empty
+    for a battle missing its province or attacking kingdom."""
+
+    coord = battle_report.province_coord
+    if coord is None or battle_report.attacker_kingdom_id is None:
+        return []
+    province = state.provinces.get(coord)
+    is_sea = province is not None and province.effective_terrain() == Terrain.SEA
+    phase = int(phase_label[1:]) if phase_label.startswith("P") and phase_label[1:].isdigit() else None
+    destination_names = {
+        army_id: _province_label(state, dest_coord) for army_id, dest_coord in battle_report.retreat_destination_coord.items()
+    }
+    return describe_battle(
+        battle_report,
+        attacker_name=_kingdom_display_name(state, battle_report.attacker_kingdom_id),
+        defender_name=_battle_defender_display_name(state, battle_report.defender_kingdom_id, coord),
+        province_name=_province_label(state, coord),
+        state=state,
+        destination_names=destination_names,
+        rng=rng,
+        is_sea=is_sea,
+        phase=phase,
+    )
+
+
 def record_battle_narratives(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
     """Phase 711 -- populates ``state.battle_narratives_by_kingdom`` with
     ``describe_battle()``'s own full narrative (leader roster, monster
@@ -16785,26 +16814,7 @@ def record_battle_narratives(state: GameState, results: list[PhaseDispatchResult
     """
 
     for phase_label, battle_report in _battle_reports_from_results(results):
-        coord = battle_report.province_coord
-        if coord is None or battle_report.attacker_kingdom_id is None:
-            continue
-        province = state.provinces.get(coord)
-        is_sea = province is not None and province.effective_terrain() == Terrain.SEA
-        phase = int(phase_label[1:]) if phase_label.startswith("P") and phase_label[1:].isdigit() else None
-        destination_names = {
-            army_id: _province_label(state, dest_coord) for army_id, dest_coord in battle_report.retreat_destination_coord.items()
-        }
-        lines = describe_battle(
-            battle_report,
-            attacker_name=_kingdom_display_name(state, battle_report.attacker_kingdom_id),
-            defender_name=_battle_defender_display_name(state, battle_report.defender_kingdom_id, coord),
-            province_name=_province_label(state, coord),
-            state=state,
-            destination_names=destination_names,
-            rng=rng,
-            is_sea=is_sea,
-            phase=phase,
-        )
+        lines = _battle_narrative_lines(state, phase_label, battle_report, rng)
         if not lines:
             continue
         state.battle_narratives_by_kingdom.setdefault(battle_report.attacker_kingdom_id, []).extend(lines)
@@ -18206,6 +18216,7 @@ def _letter_paragraphs(
     *,
     ability_names: dict[Ability, str] | None,
     board_width: int | None,
+    narrator: "Callable[[list[PhaseDispatchResult]], list[str]] | None" = None,
 ) -> list[str]:
     by_phase: dict[int, list[PhaseDispatchResult]] = {}
     unphased: list[PhaseDispatchResult] = []
@@ -18217,7 +18228,12 @@ def _letter_paragraphs(
             by_phase.setdefault(index, []).append(entry)
 
     def narrate(entries: list[PhaseDispatchResult]) -> list[str]:
-        sentences = describe_turn_results(entries, state, rng, ability_names=ability_names, board_width=board_width)
+        if narrator is not None:
+            sentences = narrator(entries)
+        else:
+            sentences = describe_turn_results(
+                entries, state, rng, ability_names=ability_names, board_width=board_width
+            )
         if first_person:
             return [_to_first_person(sentence, leader_name, units) for sentence in sentences]
         return [_reflexive_possessive(sentence, leader_name, pronoun) for sentence in sentences]
@@ -18298,6 +18314,229 @@ def _pascal_letter_reports(
         # The section emitter adds the blank lines that follow the section.
         while lines and lines[-1] == "":
             lines.pop()
+    return lines
+
+
+# ---------------------------------------------------------------------------
+# CLAIRVOYANCE REPORT -- project-original (user-specified, 2026-11-22).
+#
+# The rulebook ([4.22.3]) says that after a successful Clairvoyance the caster
+# "knows everything that happens to the target" for the rest of the turn; the
+# original program has no working feed for it. Here the caster's Kingdom gets
+# a section of its report that replicates the target's own turn from the cast
+# onward, as if the Kingdom could read the character's report. When the
+# target's Kingdom owns Dry Ice Fog only the large-scale facts come through.
+# ---------------------------------------------------------------------------
+
+_CLAIRVOYANCE_HEADER = "CLAIRVOYANCE REPORT"
+
+
+class _ClairvoyanceWatch(NamedTuple):
+    caster_id: int
+    target_id: int
+    start: tuple[int, int]  # (phase index, position in the turn's results)
+    end: tuple[int, int] | None  # the same caster's next Clairvoyance cancels this one
+
+
+def _clairvoyance_cast(entry: PhaseDispatchResult) -> CastExecutionResult | None:
+    """The successful Clairvoyance cast behind ``entry`` (an ordinary Cast order
+    or a wand), else ``None``."""
+
+    result = entry.result
+    if isinstance(result, UseMIExecutionResult):
+        result = result.cast_result
+    if isinstance(result, CastExecutionResult) and result.request.spell is Spell.CLAIRVOYANCE and result.applied:
+        return result
+    return None
+
+
+def _clairvoyance_watches(results: list[PhaseDispatchResult], caster_ids: set[int]) -> list[_ClairvoyanceWatch]:
+    casts_by_caster: dict[int, list[tuple[int, int, int]]] = {}
+    for position, entry in enumerate(results):
+        if entry.error is not None or entry.leader_id not in caster_ids:
+            continue
+        cast = _clairvoyance_cast(entry)
+        phase = _phase_index(entry.phase_label)
+        if cast is None or phase is None:
+            continue
+        casts_by_caster.setdefault(entry.leader_id, []).append((phase, position, cast.request.target))
+    watches: list[_ClairvoyanceWatch] = []
+    for caster_id, casts in casts_by_caster.items():
+        casts.sort()
+        for index, (phase, position, target_id) in enumerate(casts):
+            following = casts[index + 1] if index + 1 < len(casts) else None
+            end = (following[0], following[1]) if following is not None else None
+            watches.append(_ClairvoyanceWatch(caster_id, target_id, (phase, position), end))
+    watches.sort(key=lambda watch: watch.start)
+    return watches
+
+
+def _in_watch(watch: _ClairvoyanceWatch, phase: int, position: int) -> bool:
+    moment = (phase, position)
+    return moment > watch.start and (watch.end is None or moment < watch.end)
+
+
+def _target_is_fogged(state: GameState, target_id: int) -> bool:
+    """Whether the target's own Kingdom owns Dry Ice Fog."""
+
+    target = state.leaders.get(target_id) or state.dead_leaders.get(target_id)
+    if target is None or target.kingdom_id is None:
+        return False
+    kingdom = state.kingdoms.get(target.kingdom_id)
+    return kingdom is not None and Discovery.DRY_ICE_FOG in kingdom.discoveries
+
+
+def _fog_sentences(entries: list[PhaseDispatchResult], state: GameState, rng: random.Random) -> list[str]:
+    """What a Dry-Ice-Fogged target lets through: where they moved, that they
+    explored, practiced, cast *a* spell, pursued or trailed *someone*, and that
+    they went into a feature and came out alive or dead. Nothing else -- not
+    Spy, not objects, not outcomes, not what was found."""
+
+    lines: list[str] = []
+    for entry in entries:
+        if entry.error is not None:
+            continue
+        name = _leader_name(state, entry.leader_id)
+        if name is None:
+            continue
+        action, result = entry.action, entry.result
+        coord = _leader_location(state, entry.leader_id)
+        if action is ActionCode.LMOVE and isinstance(result, MoveExecutionResult):
+            line = describe_move(result, state, character_name=name, rng=rng)
+            if line is not None:
+                lines.append(line)
+        elif action is ActionCode.EXPLORE and isinstance(result, ExploreResult):
+            if coord is not None:
+                lines.append(f"{name} explored {_province_label(state, coord)}.")
+        elif action is ActionCode.PRACTICE and result is not None:
+            lines.append(f"{name} practiced.")
+        elif action is ActionCode.SEARCH and isinstance(result, SearchExecutionResult) and result.accepted:
+            where = f" in {_province_label(state, coord)}" if coord is not None else ""
+            ending = "did not come out alive" if result.leader_killed else "came out alive"
+            lines.append(f"{name} entered a feature{where} and {ending}.")
+        elif action is ActionCode.CAST and isinstance(result, CastExecutionResult):
+            lines.append(f"{name} cast a spell.")
+        elif action is ActionCode.PURSUE and result is not None:
+            lines.append(f"{name} pursued someone.")
+        elif action is ActionCode.TRAIL and result is not None:
+            lines.append(f"{name} trailed someone.")
+    return lines
+
+
+def _fog_battle_sentence(state: GameState, battle_report: BattleReport) -> str | None:
+    coord = battle_report.province_coord
+    if coord is None or battle_report.attacker_kingdom_id is None:
+        return None
+    attacker = _kingdom_display_name(state, battle_report.attacker_kingdom_id)
+    defender = _battle_defender_display_name(state, battle_report.defender_kingdom_id, coord)
+    winner = battle_report.battle_result.winner
+    outcome = {"attacker": f"{attacker} prevailed", "defender": f"{defender} prevailed"}.get(
+        winner, "neither side prevailed"
+    )
+    return f"A battle was fought at {_province_label(state, coord)} between {attacker} and {defender}: {outcome}."
+
+
+def _battle_involves(battle_report: BattleReport, leader_id: int) -> bool:
+    return leader_id in (
+        *battle_report.attacker_commanding_leader_ids,
+        *battle_report.defender_commanding_leader_ids,
+        battle_report.attacker_commander_leader_id,
+        battle_report.defender_commander_leader_id,
+    )
+
+
+def describe_clairvoyance_report(
+    results: list[PhaseDispatchResult],
+    state: GameState,
+    kingdom_id: int,
+    caster_ids: set[int],
+    rng: random.Random,
+    *,
+    ability_names: dict[Ability, str] | None = None,
+    board_width: int | None = None,
+) -> list[str]:
+    """The body of the CLAIRVOYANCE REPORT section for ``kingdom_id``: one block per
+    successful Clairvoyance cast by its characters (``caster_ids``) on a
+    character of another Kingdom. Empty when there is none."""
+
+    units = _layout_units(state)
+    possessives = _leader_possessives(state)
+    battles = _battle_reports_from_results(results)
+    lines: list[str] = []
+    for watch in _clairvoyance_watches(results, caster_ids):
+        target = state.leaders.get(watch.target_id) or state.dead_leaders.get(watch.target_id)
+        caster = state.leaders.get(watch.caster_id) or state.dead_leaders.get(watch.caster_id)
+        if target is None or caster is None or target.kingdom_id == kingdom_id:
+            continue  # a character of one's own Kingdom already has a letter
+        fogged = _target_is_fogged(state, watch.target_id)
+        entries = [
+            entry
+            for position, entry in enumerate(results)
+            if entry.leader_id == watch.target_id
+            and entry.error is None
+            and (phase := _phase_index(entry.phase_label)) is not None
+            and _in_watch(watch, phase, position)
+        ]
+        layout_rng = _layout_rng(state, kingdom_id, watch.target_id)
+        if fogged:
+            paragraphs = _letter_paragraphs(
+                entries,
+                state,
+                rng,
+                layout_rng,
+                target.name,
+                _possessive_for(state, target.leader_id),
+                False,
+                units,
+                ability_names=ability_names,
+                board_width=board_width,
+                narrator=lambda group: _fog_sentences(group, state, rng),
+            )
+        else:
+            paragraphs = _letter_paragraphs(
+                entries,
+                state,
+                rng,
+                layout_rng,
+                target.name,
+                _possessive_for(state, target.leader_id),
+                False,
+                units,
+                ability_names=ability_names,
+                board_width=board_width,
+            )
+        for position, (phase_label, battle_report) in enumerate(battles):
+            phase = _phase_index(phase_label)
+            if phase is None or not _battle_involves(battle_report, watch.target_id):
+                continue
+            # A battle has no slot in the list of results; it belongs to the
+            # phase it was fought in, after everything else of that phase.
+            if (phase, len(results)) <= watch.start or (watch.end is not None and (phase, len(results)) >= watch.end):
+                continue
+            if fogged:
+                sentence = _fog_battle_sentence(state, battle_report)
+                if sentence is not None:
+                    paragraphs.extend(flow_sentences([sentence], units=units))
+            else:
+                paragraphs.extend(
+                    _flow_story_lines(_battle_narrative_lines(state, phase_label, battle_report, rng), units, possessives)
+                )
+        intro = (
+            f"My lord, through the Clairvoyance of {caster.name}, thou dost behold all that befalls {target.name} "
+            "for the rest of this turn"
+        )
+        intro += (
+            ", yet a fog of dry ice veils all but the greatest of the doings of that Kingdom:"
+            if fogged
+            else ":"
+        )
+        if not paragraphs:
+            paragraphs = flow_sentences([f"Nothing befell {target.name} after the spell was cast."], units=units)
+        if lines:
+            lines.append("")
+        lines.extend(flow_sentences([intro], units=units))
+        lines.append("")
+        lines.extend(paragraphs)
     return lines
 
 
@@ -19099,6 +19338,18 @@ def compose_letter_report(
     )
     if letter_lines:
         _emit_section(letter_lines[0], letter_lines[1:])
+    _emit_section(
+        _CLAIRVOYANCE_HEADER,
+        describe_clairvoyance_report(
+            results,
+            state,
+            kingdom_id,
+            kingdom_leader_ids,
+            rng,
+            ability_names=ability_names,
+            board_width=board_width,
+        ),
+    )
     state_sections_start = len(lines)
 
     # Phase 561: IMPERIAL OFFICE REPORT moves to print here, before
