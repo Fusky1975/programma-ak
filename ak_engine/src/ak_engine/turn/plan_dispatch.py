@@ -1601,6 +1601,8 @@ def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireEx
     if not (is_king or co_located):
         return FireExecutionResult(request, fired=False, reason="not co-located")
 
+    if hero.race is None and hero.kingdom_id in state.kingdoms:
+        hero.race = state.kingdoms[hero.kingdom_id].race  # a hero with no kingdom keeps the race he served under
     hero.kingdom_id = None
     return FireExecutionResult(request, fired=True)
 

@@ -1073,7 +1073,9 @@ class LeaderState:
     # a Kingdom's service.
     hire_turn: int = 0
     # Phase 193: kingdom ids currently watching this leader via a successful
-    # Clairvoyance cast -- see module docstring. Not auto-cleared.
+    # Clairvoyance cast -- see module docstring. Not auto-cleared. The feed itself
+    # is built at report time from the turn's results (CLAIRVOYANCE REPORT,
+    # `report/turn_report.py describe_clairvoyance_report()`), not from this set.
     clairvoyance_watchers: set[int] = field(default_factory=set)
     # Phase 637: this leader's own most-recently-cast Clairvoyance target
     # (the caster's side of the same successful cast that writes the
