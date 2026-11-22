@@ -430,3 +430,45 @@ def test_reset_turn_report_scratch_empties_every_per_turn_list():
     assert state.tornado_victim_notices_by_kingdom == {}
     assert state.plague_victim_notices_by_kingdom == {}
     assert state.illusory_terrain_reveals_by_kingdom == {}
+
+
+# ---- magic feature names ---------------------------------------------------
+
+
+def test_magic_feature_names_resolve_their_alternate_forms_by_feature_parity():
+    from ak_engine.models.magic_feature import MagicFeature, magic_feature_display_name
+
+    assert magic_feature_display_name(MagicFeature.IDOL, 1) == "Idol"
+    assert magic_feature_display_name(MagicFeature.IDOL, 2) == "Statue"
+    assert magic_feature_display_name(MagicFeature.IDOL) == "Idol"
+    assert magic_feature_display_name(MagicFeature.CRYSTAL_BALL, 3) == "Crystal Ball"
+    assert magic_feature_display_name(MagicFeature.CRYSTAL_BALL, 4) == "Magic Mirror"
+    assert magic_feature_display_name(MagicFeature.ITSELF, 4) == "&"
+
+
+def test_a_sea_alternate_depends_on_the_province_not_the_number():
+    from ak_engine.models.magic_feature import MagicFeature, magic_feature_display_name
+
+    assert magic_feature_display_name(MagicFeature.GAS_TRAP, 2) == "Gas Trap"
+    assert magic_feature_display_name(MagicFeature.GAS_TRAP, 2, is_sea=True) == "Electric Trap"
+
+
+def test_no_magic_feature_name_is_left_with_a_raw_choice_marker():
+    from ak_engine.models.magic_feature import MagicFeature, magic_feature_display_name
+
+    for magic_feature in MagicFeature:
+        for feature_id in (None, 1, 2):
+            for is_sea in (False, True):
+                name = magic_feature_display_name(magic_feature, feature_id, is_sea=is_sea)
+                assert "/" not in name and "_" not in name
+
+
+def test_the_discovery_sentence_shows_a_real_name_not_the_raw_template():
+    from ak_engine.models.magic_feature import MagicFeature
+    from ak_engine.report.turn_report import render_magic_feature_discovery
+
+    even = render_magic_feature_discovery(MagicFeature.IDOL, "Hollabrand", "Guerin", feature_id=2)
+    odd = render_magic_feature_discovery(MagicFeature.IDOL, "Hollabrand", "Guerin", feature_id=1)
+
+    assert "/F" not in even and "/F" not in odd
+    assert "Statue" in even and "Idol" in odd

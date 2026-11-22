@@ -1340,7 +1340,7 @@ from ak_engine.models.army_type import (
 )
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
-from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
+from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature, magic_feature_display_name
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster
 from ak_engine.models.office import (
@@ -3236,7 +3236,12 @@ _MAGFEAT_ITSELF_TEMPLATE = (
 
 
 def render_magic_feature_discovery(
-    magic_feature: MagicFeature, province_name: str, character_name: str
+    magic_feature: MagicFeature,
+    province_name: str,
+    character_name: str,
+    *,
+    feature_id: int | None = None,
+    is_sea: bool = False,
 ) -> str:
     """Renders MAGFEAT.X2's sentence for a Search discovering (or not)
     the ``models/magic_feature.py MagicFeature`` inside ``province_name``
@@ -3248,7 +3253,7 @@ def render_magic_feature_discovery(
 
     See the module docstring's Phase 96 addendum for why the
     ``MagicFeature.POOL``-``SEALED_ENTRANCE`` case's ``$\\`` substitution
-    still shows a raw, unresolved ``"Name/Falternate"``-style string.
+    used to show a raw, unresolved ``"Name/Falternate"``-style string (fixed: see ``models/magic_feature.py magic_feature_display_name()``).
     """
 
     values = {"&": province_name, "<": character_name}
@@ -3256,7 +3261,7 @@ def render_magic_feature_discovery(
         return render(_MAGFEAT_NOTHING_TEMPLATE, values)
     if magic_feature is MagicFeature.ITSELF:
         return render(_MAGFEAT_ITSELF_TEMPLATE, values)
-    values["$\\"] = MAGIC_FEATURE_NAME[magic_feature]
+    values["$\\"] = magic_feature_display_name(magic_feature, feature_id, is_sea=is_sea)
     return render(_MAGFEAT_FOUND_TEMPLATE, values)
 
 
@@ -3514,7 +3519,7 @@ def describe_feature_power_attempt(
 
     values: dict[str, str] = {}
     if outcome.magic_feature is not None:
-        values["$\\"] = MAGIC_FEATURE_NAME[outcome.magic_feature]
+        values["$\\"] = magic_feature_display_name(outcome.magic_feature, outcome.feature_id)
     if outcome.ability is not None:
         values["^"] = ABILITY_NAME[outcome.ability]
     if character_name is not None:
@@ -3846,7 +3851,7 @@ def describe_feature_power_needs_more_info(outcome: FeaturePowerAttemptResult, r
         return []
     values: dict[str, str] = {}
     if outcome.magic_feature is not None:
-        values["$\\"] = MAGIC_FEATURE_NAME[outcome.magic_feature]
+        values["$\\"] = magic_feature_display_name(outcome.magic_feature, outcome.feature_id)
     lines = [render(_POWER_NEEDS_MORE_INFO_TEMPLATE, values, rng=rng)]
     description = POWER_DESCRIPTION.get(outcome.power)
     if description is not None:
@@ -3881,7 +3886,7 @@ def _feature_power_values(
 
     values: dict[str, str] = {}
     if outcome.magic_feature is not None:
-        values["$\\"] = MAGIC_FEATURE_NAME[outcome.magic_feature]
+        values["$\\"] = magic_feature_display_name(outcome.magic_feature, outcome.feature_id)
     if outcome.condition_cost is not None:
         values["#"] = str(outcome.condition_cost)
     if character_name is not None:
@@ -12866,7 +12871,15 @@ def describe_search(
     # outcome below -- "found a magic item (or not)" precedes "here's
     # what using it did/needs" in narrative order.
     if result.magic_feature_discovered is not None:
-        lines.append(render_magic_feature_discovery(result.magic_feature_discovered, feature_name, character_name))
+        lines.append(
+            render_magic_feature_discovery(
+                result.magic_feature_discovered,
+                feature_name,
+                character_name,
+                feature_id=result.request.feature_id if result.request is not None else None,
+                is_sea=is_sea,
+            )
+        )
 
     # Phase 616: Scout's own Feature -> Power [5.8] outcome, narrated last
     # -- matches the rulebook's own "the computer will simply do your

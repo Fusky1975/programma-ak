@@ -112,3 +112,24 @@ MAGIC_FEATURE_NAME: dict[MagicFeature, str] = {
     MagicFeature.SEALED_ENTRANCE: "Sealed_Entrance/FSealed_Room",
     MagicFeature.ITSELF: "&",
 }
+
+
+def magic_feature_display_name(magic_feature: MagicFeature, feature_id: int | None = None, *, is_sea: bool = False) -> str:
+    """The name a report shows for a magic feature: ``MAGIC_FEATURE_NAME``'s
+    ``"Idol/FStatue"`` is a choice between two forms, resolved the way
+    ``report/prose.py`` resolves any ``/F`` or ``/S`` choice -- ``/F`` by the
+    parity of the containing Feature's number (even picks the second form, so a
+    given Feature always shows the same one), ``/S`` by whether the place is at
+    sea. Without a ``feature_id`` the first form is used. Underscores are
+    spaces ("Crystal_Ball" -> "Crystal Ball")."""
+
+    raw = MAGIC_FEATURE_NAME[magic_feature]
+    if "/" not in raw:
+        return raw.replace("_", " ")
+    first, rest = raw.split("/", 1)
+    marker, second = rest[0], rest[1:]
+    if marker == "F":
+        use_second = feature_id is not None and feature_id % 2 == 0
+    else:  # "S"
+        use_second = is_sea
+    return (second if use_second else first).replace("_", " ")
