@@ -1744,6 +1744,8 @@ def _execute_charm(
     target = state.leaders.get(request.target)
     if target is None:
         return CastExecutionResult(request, applied=False, reason="target character not found")
+    if target.leader_id == caster.leader_id:
+        return CastExecutionResult(request, applied=False, reason="a character cannot charm himself")
     if target.location != caster.location:
         return CastExecutionResult(request, applied=False, reason="not co-located")
     if state.armies_commanded_by(request.target):
@@ -1771,6 +1773,9 @@ def _execute_charm(
         and Discovery.ANALYTICAL_PSYCHOLOGY in state.kingdoms[target.kingdom_id].discoveries
     ):
         target.analytical_psychology_revert_kingdom_id = target.kingdom_id
+    if target.kingdom_id != kingdom_id:
+        # Entering the kingdom's service, exactly as a Hire does.
+        target.hire_turn = state.turn_number
     target.kingdom_id = kingdom_id
     if caster.alignment is Alignment.UNDEAD:
         _apply_undead_king_alignment_conversion(caster, target)
