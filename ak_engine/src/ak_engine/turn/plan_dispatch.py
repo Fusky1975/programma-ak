@@ -391,6 +391,7 @@ from typing import Any
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.turn.command_experience import award_pick_up_leave_experience
 from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
@@ -753,10 +754,14 @@ def dispatch_phase(
         return _dispatch_recruit(phase, state, kingdom_id, leader_id)
 
     if action is ActionCode.LEAVE:
-        return _dispatch_leave(phase, state, leader_id)
+        leave_result = _dispatch_leave(phase, state, leader_id)
+        award_pick_up_leave_experience(state, leader_id, leave_result.succeeded)
+        return leave_result
 
     if action is ActionCode.PICK_UP:
-        return _dispatch_pick_up(phase, state, leader_id)
+        pick_up_result = _dispatch_pick_up(phase, state, leader_id)
+        award_pick_up_leave_experience(state, leader_id, pick_up_result.succeeded)
+        return pick_up_result
 
     if action is ActionCode.DISBAND:
         return _dispatch_disband(phase, state, leader_id)

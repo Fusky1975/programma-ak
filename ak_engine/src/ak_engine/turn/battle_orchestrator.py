@@ -227,6 +227,7 @@ from ak_engine.turn.encounter import (
     weapon_melee_damage_bonus,
     weapon_offensive_hit_multiplier,
 )
+from ak_engine.turn.command_experience import award_battle_command_experience
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.leader_queries import find_king_of_kingdom
@@ -3133,6 +3134,14 @@ def fight_battle(
         defender_present_leader_ids=defender_present_leader_ids,
         attacker_race_fanatic_units=tuple(attacker_race_fanatic_units),
         defender_race_fanatic_units=tuple(defender_race_fanatic_units),
+    )
+
+    award_battle_command_experience(
+        state,
+        terrain,
+        province_key=f"{province_coord.x},{province_coord.y}",
+        supreme_commander_ids=(duel.attacker_commander_leader_id, duel.defender_commander_leader_id),
+        commanding_leader_ids=(attacker_commanding_leader_ids, defender_commanding_leader_ids),
     )
 
     _record_battle_merit(
