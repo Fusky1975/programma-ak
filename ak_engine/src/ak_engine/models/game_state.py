@@ -2594,6 +2594,19 @@ class GameState:
             if province.owner_kingdom_id is not None and self.is_allied(province.owner_kingdom_id, kingdom_id)
         }
 
+    def reset_turn_report_scratch(self) -> None:
+        """Empties the per-turn lists the report recorders fill while a turn
+        is processed (see ``orchestrator.process_turn()``): world events,
+        sunk-cargo events and the per-Kingdom narrative/notice lists."""
+
+        self.world_events.clear()
+        self.sunk_cargo_events.clear()
+        self.battle_narratives_by_kingdom.clear()
+        self.illusory_terrain_reveals_by_kingdom.clear()
+        self.blackmail_narratives_by_kingdom.clear()
+        self.tornado_victim_notices_by_kingdom.clear()
+        self.plague_victim_notices_by_kingdom.clear()
+
     def record_world_event(self, coord: HexCoord, lines: list[str], *, kind: str = "") -> None:
         """Appends one ``WorldEvent`` at ``coord`` -- see that class's own
         docstring for GENERAL INTELLIGENCE REPORT's own real raw material

@@ -358,3 +358,75 @@ def test_battle_narration_uses_the_pronoun_for_a_leaders_own_troops():
     out = _flow_battle_block(lines, {"Gladstone"}, {"Gladstone": "his"})
 
     assert "  Gladstone stood ready at the head of his thousands." in out
+
+
+# ---- audit fixes ---------------------------------------------------------
+
+
+def test_first_person_leaves_a_longer_name_that_contains_the_writers_alone():
+    assert _to_first_person("Isis rode into Isis Sea.  Isis was hurt.", "Isis", ["Isis Sea"]) == (
+        "I rode into Isis Sea.  I was hurt."
+    )
+
+
+def test_first_person_treats_a_name_after_a_conjunction_as_the_subject_and_fixes_the_verb():
+    assert _to_first_person("Guerin has a plan, and Guerin found himself in Hollabrand.", "Guerin") == (
+        "I have a plan, and I found myself in Hollabrand."
+    )
+    assert _to_first_person("The Dragon spoke to Guerin, and Guerin replied.", "Guerin") == (
+        "The Dragon spoke to me, and I replied."
+    )
+
+
+def test_first_person_does_not_split_a_hyphenated_name():
+    assert _to_first_person("Tao-Li hired Tao and Tao-Li's friend.", "Tao-Li") == "I hired Tao and my friend."
+
+
+def test_reflexive_possessive_looks_at_each_sentence_on_its_own():
+    assert _reflexive_possessive("Fusky marched.  Fusky's army won.", "Fusky", "his") == (
+        "Fusky marched.  Fusky's army won."
+    )
+    assert _reflexive_possessive("Fusky took Fusky's prize.  Fusky kept Fusky's word.", "Fusky", "his") == (
+        "Fusky took his prize.  Fusky kept his word."
+    )
+
+
+def test_reflexive_possessive_ignores_a_name_inside_another_word():
+    assert _reflexive_possessive("Anna met Ann and Ann's friend.", "Ann", "her") == "Anna met Ann and her friend."
+
+
+def test_office_table_handles_fractional_points_and_a_paragraph_between_rows():
+    lines = [
+        "Imperial Treasurer        Warg Riders army in Rosewood (19.0 points, rank 1, 50%)",
+        "",
+        "As the Treasurer Fusky did something.",
+        "                          Gladstone (3 points, rank 2, 30%)",
+        "Imperial Grand Marshal    Teleko (2 points, rank 8, 38%)",
+    ]
+
+    out = _pascal_office_table(lines)
+
+    assert not any("points" in line for line in out)
+    assert out[1].startswith("Imperial Treasurer        Warg Riders army in Rosewood")
+    assert "Gladstone" in out[1]
+    assert out[2:4] == ["", "As the Treasurer Fusky did something."]
+    assert out[4].startswith("Imperial Grand Marshal    Teleko")
+
+
+def test_reset_turn_report_scratch_empties_every_per_turn_list():
+    state, _ = _state_with_hero("Guerin", 18)
+    state.record_world_event(HexCoord(0, 0), ["x"], kind="wander")
+    state.battle_narratives_by_kingdom[1] = ["stale battle"]
+    state.blackmail_narratives_by_kingdom[1] = ["stale"]
+    state.tornado_victim_notices_by_kingdom[1] = ["stale"]
+    state.plague_victim_notices_by_kingdom[1] = ["stale"]
+    state.illusory_terrain_reveals_by_kingdom[1] = ["stale"]
+
+    state.reset_turn_report_scratch()
+
+    assert state.world_events == []
+    assert state.battle_narratives_by_kingdom == {}
+    assert state.blackmail_narratives_by_kingdom == {}
+    assert state.tornado_victim_notices_by_kingdom == {}
+    assert state.plague_victim_notices_by_kingdom == {}
+    assert state.illusory_terrain_reveals_by_kingdom == {}

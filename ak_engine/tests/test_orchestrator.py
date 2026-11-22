@@ -123,6 +123,25 @@ def test_process_turn_report_has_the_original_programs_title_page_and_closing():
     assert any(line.startswith("  Thy humble servant,   ") for line in report)
 
 
+def test_process_turn_report_has_two_blank_lines_after_the_last_letter_and_no_stale_news():
+    state = _base_state()
+    state.kingdoms[1].treasury = 1000
+    state.leaders[20].skills = SkillTable(raw_values=[0] * 31)
+    # Left over from an earlier turn: nothing but the orchestrator ever clears these.
+    state.battle_narratives_by_kingdom[1] = ["A stale battle from last turn."]
+    state.record_world_event(HexCoord(0, 0), ["A stale wanderer."], kind="wander")
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _practice_leader(20, "Cedric", Ability.MELEE)])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        outcome = process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    report = outcome.letter_reports[1]
+    assert not any("stale" in line for line in report)
+    signature = max(i for i, line in enumerate(report) if line.startswith("  Thy humble servant,   "))
+    assert report[signature + 1 : signature + 3] == ["", ""]
+    assert report[signature + 3] == "STATE OF THE NATION:"
+
+
 def test_process_turn_narrates_a_real_practice_order():
     # 2026-11-20 bug fix, user-confirmed (live AK0 playtest): this is the
     # one real production compose_letter_report() call every played

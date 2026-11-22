@@ -1397,7 +1397,7 @@ from ak_engine.report.ascii_map import (
     paginate_known_columns,
     select_layout_tier,
 )
-from ak_engine.report.layout import flow_paragraph, flow_prose_in_lines, flow_sentences
+from ak_engine.report.layout import flow_paragraph, flow_prose_in_lines, flow_sentences, looks_like_prose
 from ak_engine.report.prose import render
 from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
@@ -1469,6 +1469,7 @@ from ak_engine.turn.office_holder import (
     leader_office_rank,
     office_rival_best_points,
     resolve_army_office_holder,
+    resolve_all_office_holders,
     resolve_office_holder,
 )
 from ak_engine.turn.plan_dispatch import (
@@ -14631,11 +14632,8 @@ def _render_stranger_row(
 
 def _offices_by_leader(state: GameState) -> dict[int, list[Office]]:
     held: dict[int, list[Office]] = {}
-    for office in ALL_OFFICES:
-        if office is Office.NO_OFFICE:
-            continue
-        holder = resolve_office_holder(state, office)
-        if holder is not None:
+    for office, holder in resolve_all_office_holders(state).items():
+        if office is not Office.NO_OFFICE and holder is not None:
             held.setdefault(holder.leader_id, []).append(office)
     return held
 
@@ -14652,7 +14650,8 @@ def _special_abilities_lines(leader: LeaderState, offices: list[Office]) -> list
             title = OFFICE_NAME[office].removesuffix(" Palatine").upper()
             entries.append(f"{title}: {perk}")
     for ability in sorted(leader.advanced_abilities, key=lambda a: a.value):
-        entries.append(f"{ADVANCED_ABILITY_NAME[ability].upper()}: {ADVANCED_ABILITY_TAGLINE.get(ability, '')}".rstrip(": "))
+        ability_name = ADVANCED_ABILITY_NAME.get(ability, ability.name.replace("_", " ").title())
+        entries.append(f"{ability_name.upper()}: {ADVANCED_ABILITY_TAGLINE.get(ability, '')}".rstrip(": "))
     if not entries:
         return []
     lines = ["Special Abilities:  "]
@@ -18125,32 +18124,60 @@ def _reflexive_possessive(sentence: str, name: str, pronoun: str) -> str:
     """``"Fusky practiced Fusky's Tactics"`` -> ``"Fusky practiced his
     Tactics"``: the original writes the pronoun (``>``) for the acting
     character's own possessions; the name-plus-'s form a template resolves
-    to is kept only when it opens the sentence or follows another subject."""
+    to is kept only when it opens a sentence or follows another subject.
+    Each sentence is looked at on its own."""
 
-    marker = f"{name}'s"
-    first = sentence.find(name)
-    if first == -1:
+    if name not in sentence:
         return sentence
-    head_end = first + len(name)
-    tail = sentence[head_end:]
-    # Only a name mentioned earlier in the same sentence makes a later
-    # "<name>'s" reflexive; a sentence that opens with "<name>'s ..." keeps it.
-    if sentence.startswith(marker):
-        return sentence
-    return sentence[:head_end] + tail.replace(marker, pronoun)
+    escaped = re.escape(name)
+    mention = re.compile(rf"(?<![\w-]){escaped}(?![\w-])")
+    possessive = re.compile(rf"(?<![\w-]){escaped}'s(?![\w-])")
+
+    def one(part: str) -> str:
+        if part.startswith(f"{name}'s"):
+            return part
+        first = mention.search(part)
+        if first is None:
+            return part
+        return part[: first.end()] + possessive.sub(pronoun, part[first.end() :])
+
+    pieces = re.split(r"(?<=[.!?])(\s+)", sentence)
+    return "".join(one(piece) if index % 2 == 0 else piece for index, piece in enumerate(pieces))
 
 
-def _to_first_person(sentence: str, name: str) -> str:
+_FIRST_PERSON_OBJECT_WORDS = "to|with|by|of|at|in|on|for|from|into|and|but|or|the|a|an|as|than|before|after"
+_FIRST_PERSON_VERBS = ((re.compile(r"\bI has\b"), "I have"), (re.compile(r"\bI is\b"), "I am"), (re.compile(r"\bI does\b"), "I do"), (re.compile(r"\bI doesn't\b"), "I don't"))
+
+
+def _to_first_person(sentence: str, name: str, units: Iterable[str] = ()) -> str:
     """Rewrites a third-person narrative sentence about ``name`` the way the
     heroes' own letters tell it: ``"Tao-Li recruited X"`` -> ``"I recruited
     X"``, ``"Tao-Li's skill"`` -> ``"my skill"``, any other mention of the
-    writer -> ``"me"``."""
+    writer -> ``"me"``. A longer name that merely contains the writer's
+    (a province, an army) is left alone."""
 
+    if name not in sentence:
+        return sentence
+    masked: dict[str, str] = {}
+    for index, unit in enumerate(sorted((u for u in units if u != name and name in u), key=len, reverse=True)):
+        if unit in sentence:
+            token = f"\x00{index}\x00"
+            masked[token] = unit
+            sentence = sentence.replace(unit, token)
     escaped = re.escape(name)
-    sentence = re.sub(rf"{escaped}'s\b", "my", sentence)
-    sentence = re.sub(rf"(^|[.!?]  |, ){escaped}\b", lambda m: m.group(1) + "I", sentence)
-    sentence = re.sub(rf"\b{escaped}\b", "me", sentence)
+    standalone = rf"(?<![\w-]){escaped}(?![\w-])"
+    sentence = re.sub(rf"(?<![\w-]){escaped}'s(?![\w-])", "my", sentence)
+    sentence = re.sub(
+        rf"(^|[.!?]  |, |; | and | but | or | while | as | when | if | that | then | because | after | before ){standalone}(?= (?!(?:{_FIRST_PERSON_OBJECT_WORDS})\b)[a-z])",
+        lambda m: m.group(1) + "I",
+        sentence,
+    )
+    sentence = re.sub(standalone, "me", sentence)
     sentence = re.sub(r"\bhimself\b|\bherself\b", "myself", sentence)
+    for pattern, replacement in _FIRST_PERSON_VERBS:
+        sentence = pattern.sub(replacement, sentence)
+    for token, unit in masked.items():
+        sentence = sentence.replace(token, unit)
     return sentence
 
 
@@ -18179,7 +18206,7 @@ def _letter_paragraphs(
     def narrate(entries: list[PhaseDispatchResult]) -> list[str]:
         sentences = describe_turn_results(entries, state, rng, ability_names=ability_names, board_width=board_width)
         if first_person:
-            return [_to_first_person(sentence, leader_name) for sentence in sentences]
+            return [_to_first_person(sentence, leader_name, units) for sentence in sentences]
         return [_reflexive_possessive(sentence, leader_name, pronoun) for sentence in sentences]
 
     paragraphs: list[str] = []
@@ -18254,6 +18281,10 @@ def _pascal_letter_reports(
         lines.extend(["", f"  Thy humble servant,   {signature}", "", ""])
     if first_letter:
         lines.append(_LETTER_REPORTS_NONE)
+    else:
+        # The section emitter adds the blank lines that follow the section.
+        while lines and lines[-1] == "":
+            lines.pop()
     return lines
 
 
@@ -18331,7 +18362,7 @@ _FIGURE_PREFIXES = ("Expected Revenues:", "Expected Expenses:", "+Invention Bonu
 
 
 _IMPERIAL_OFFICE_TABLE_HEADER = "Imperial Office           Best Hope     Rank  Riv%   Second Hope   Rank  Riv%"
-_OFFICE_ROW = re.compile(r"^(.{26})(.+?) \((\d+) points, rank (\d+), ([^)]*)\)$")
+_OFFICE_ROW = re.compile(r"^(.{26})(.+?) \(([\d.]+) points, rank (\d+), ([^)]*)\)$")
 _OFFICE_NONE_ROW = re.compile(r"^(.{26})None at present$")
 _MANDATORY_OFFICE_NAMES = frozenset(OFFICE_NAME[office] for office in Office if office.value <= Office.MAGE.value)
 
@@ -18388,12 +18419,23 @@ def _pascal_office_table(lines: list[str]) -> list[str]:
         best = (match.group(2), match.group(4), _riv_column(match.group(5)))
         second = None
         index += 1
-        if index < len(lines):
-            follow = _OFFICE_ROW.match(lines[index])
+        # A "title acquired" paragraph may sit between a row and its
+        # runner-up line: it is kept, after the table row.
+        scan = index
+        while scan < len(lines) and _OFFICE_ROW.match(lines[scan]) is None and _OFFICE_NONE_ROW.match(lines[scan]) is None:
+            scan += 1
+        between = lines[index:scan]
+        if scan < len(lines):
+            follow = _OFFICE_ROW.match(lines[scan])
             if follow is not None and not follow.group(1).strip():
                 second = (follow.group(2), follow.group(4), _riv_column(follow.group(5)))
-                index += 1
+                index = scan + 1
+            else:
+                between = []
+        else:
+            between = []
         out.append(_office_table_row(office, best, second))
+        out.extend(between)
     return out
 
 
@@ -18424,13 +18466,16 @@ def _pascal_armies_lines(lines: list[str]) -> list[str]:
     return out
 
 
-def _polish_state_sections(lines: list[str], units: set[str]) -> list[str]:
+def _polish_state_sections(lines: list[str], units: set[str], possessives: dict[str, str] | None = None) -> list[str]:
     """STATE OF THE NATION onward, as the original lays it out: prose
     introductions flowed, list entries and figures indented two spaces, two
     blank lines between the DIPLOMACY groups."""
 
+    if possessives:
+        lines = [_reflexive_for_all(line, possessives) if looks_like_prose(line) else line for line in lines]
     out: list[str] = []
     exempt = frozenset(_ARMIES_QUALITY_NOTE) | {line for lines_ in _FIXED_PARAGRAPHS for line in lines_}
+    exempt |= {line for line in lines if line.startswith("Items:")}
     for line in flow_prose_in_lines(_apply_fixed_paragraphs(_pascal_office_table(lines)), units=units, exempt=exempt):
         if line.startswith("Gold in treasury:"):
             line = "  " + line.replace("Gold in treasury: ", "Gold in treasury:  ", 1)
@@ -18515,25 +18560,30 @@ def _pascal_action_report_body(
         if sentences:
             body.extend(flow_sentences(sentences, units=units))
 
+    possessives = _leader_possessives(state)
+
+    def flow(sentences: list[str]) -> list[str]:
+        return flow_sentences([_reflexive_for_all(sentence, possessives) for sentence in sentences], units=units)
+
     if valhalla_lines:
-        body.extend(flow_sentences(valhalla_lines, units=units))
+        body.extend(flow(valhalla_lines))
     if extra_story_lines:
-        body.extend(_flow_story_lines(extra_story_lines, units, _leader_possessives(state)))
+        body.extend(_flow_story_lines(extra_story_lines, units, possessives))
 
     body.append("")
     body.extend(flow_sentences([render(THUS_ENDETH_TEMPLATE, {"<": king_name}, rng=layout_rng)], units=units))
     body.extend(["", ""])
     if trailing_notice_lines:
-        body.extend(_flow_prose_lines(trailing_notice_lines, units))
+        body.extend(_flow_prose_lines([_reflexive_for_all(line, possessives) for line in trailing_notice_lines], units))
     wanderer_lines = _wanderer_news_lines(state, kingdom_id)
     if wanderer_lines:
         body.append(WANDERERS_NEWS_INTRO)
         for line in wanderer_lines:
-            body.extend(flow_sentences([line], units=units))
+            body.extend(flow([line]))
     if finance_sentences:
         if trailing_notice_lines or wanderer_lines:
             body.extend(["", ""])
-        body.extend(flow_sentences(finance_sentences, units=units))
+        body.extend(flow(finance_sentences))
     return body
 
 
@@ -19146,7 +19196,9 @@ def compose_letter_report(
     # scope here. No body of its own (hence not routed through
     # _emit_section(), which requires one) -- a bare trailing header.
     if pascal_layout:
-        lines[state_sections_start:] = _polish_state_sections(lines[state_sections_start:], _layout_units(state))
+        lines[state_sections_start:] = _polish_state_sections(
+            lines[state_sections_start:], _layout_units(state), _leader_possessives(state)
+        )
         # Three headings of the original carry trailing spaces.
         lines[:] = [_PASCAL_HEADING_PADDING.get(line, line) for line in lines]
     if lines:
