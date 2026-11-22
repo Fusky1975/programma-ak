@@ -80,9 +80,9 @@ rulebook's own table ([3.13]) gives the remaining Tactical/Naval and
 March/Naval sources outright -- commanding in battle (15% Supreme
 Commander, 10% any other commander, Tactical on land / Naval at sea) and
 taking or leaving units (5%) -- wired in ``turn/command_experience.py``.
-Explorer and Sage remain unwired -- SS3.3's own table marks them
-"variabile"/"contestuale," not a clean fixed value, so they stay a real,
-separate, still-open item.
+Explorer (an Explore order that explores something, 10%) and Sage
+(every Practice Sageness attempt, 10% -- a project decision, the table
+lists no Sage source) are wired there too.
 
 **Also deliberately out of scope**: any Royal-Heir/comatose eligibility
 gating -- ``turn/practice_execution.py execute_practice()`` applies
