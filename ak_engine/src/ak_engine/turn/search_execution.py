@@ -1605,6 +1605,7 @@ def _apply_scout(
             result.feature_power_outcome = resolve_feature_power_attempt(
                 state, leader_id, feature, event, rng, scout_orders_given=scout_count
             )
+            result.feature_power_outcome = replace(result.feature_power_outcome, feature_id=feature.feature_id)
         elif event.power in SA_ARGUMENT_POWERS:
             # Phase 619: the 5 Oracles/Recharge/Grant Wish/Gamble need
             # the Encounter Plan's own SAY tactic argument -- "just
@@ -1620,6 +1621,7 @@ def _apply_scout(
             result.feature_power_outcome = resolve_feature_power_attempt(
                 state, leader_id, feature, event, rng, sa_argument=sa_argument, scout_orders_given=scout_count
             )
+            result.feature_power_outcome = replace(result.feature_power_outcome, feature_id=feature.feature_id)
 
 
 def _apply_monster_duel_merit(

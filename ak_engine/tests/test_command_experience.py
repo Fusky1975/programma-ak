@@ -162,3 +162,81 @@ def test_a_rise_grants_the_naval_advanced_ability_of_the_new_level():
         )
 
     assert expected in state.leaders[1].advanced_abilities
+
+
+def test_an_explore_order_that_explores_something_credits_explorer_at_ten():
+    from ak_engine.turn.command_experience import EXPLORE_BASE_POINTS
+
+    state = _state()
+    state.provinces[PLACE].explored_percent = 20
+    phase = PlanPhase(label="P1", action=ActionCode.EXPLORE, obj=0, extra=[0])
+
+    with patch("ak_engine.turn.command_experience.add_experience", side_effect=_no_rise) as mocked:
+        dispatch_phase(phase, state, kingdom_id=1, leader_id=1, board_width=10)
+
+    assert [(call.args[0].leader_id, call.args[1], call.args[2]) for call in mocked.call_args_list] == [
+        (1, Ability.EXPLORER, EXPLORE_BASE_POINTS)
+    ]
+
+
+def test_exploring_a_fully_explored_province_credits_nothing():
+    state = _state()
+    state.provinces[PLACE].explored_percent = 100
+    phase = PlanPhase(label="P1", action=ActionCode.EXPLORE, obj=0, extra=[0])
+
+    with patch("ak_engine.turn.command_experience.add_experience", side_effect=_no_rise) as mocked:
+        dispatch_phase(phase, state, kingdom_id=1, leader_id=1, board_width=10)
+
+    assert mocked.call_count == 0
+
+
+def test_an_explorer_rise_grants_the_explorer_advanced_ability_of_the_new_level():
+    from ak_engine.turn.command_experience import award_explore_experience
+    from ak_engine.worldgen.explorer_ability_level_schedule import build_explorer_ability_level_schedule
+
+    state = _state()
+    level, expected = next(iter(build_explorer_ability_level_schedule(state.game_number).items()))
+    rise = ExperienceOutcome(skill_rose=True, aptitude_rose=False, new_skill=level, new_aptitude=level, new_credit=0)
+
+    with patch("ak_engine.turn.command_experience.add_experience", return_value=rise):
+        award_explore_experience(state, 1)
+
+    assert expected in state.leaders[1].advanced_abilities
+
+
+def test_practicing_sageness_also_credits_sage_experience_at_ten():
+    from ak_engine.turn.command_experience import SAGE_PRACTICE_BASE_POINTS
+
+    state = _state()
+    phase = PlanPhase(label="P2", action=ActionCode.PRACTICE, obj=Ability.SAGE.value, extra=[0])
+
+    with patch("ak_engine.turn.command_experience.add_experience", side_effect=_no_rise) as mocked:
+        dispatch_phase(phase, state, kingdom_id=1, leader_id=1, board_width=10, rng=random.Random(1))
+
+    assert [(call.args[0].leader_id, call.args[1], call.args[2]) for call in mocked.call_args_list] == [
+        (1, Ability.SAGE, SAGE_PRACTICE_BASE_POINTS)
+    ]
+
+
+def test_practicing_another_ability_credits_no_sage_experience():
+    state = _state()
+    phase = PlanPhase(label="P2", action=ActionCode.PRACTICE, obj=Ability.MELEE.value, extra=[0])
+
+    with patch("ak_engine.turn.command_experience.add_experience", side_effect=_no_rise) as mocked:
+        dispatch_phase(phase, state, kingdom_id=1, leader_id=1, board_width=10, rng=random.Random(1))
+
+    assert mocked.call_count == 0
+
+
+def test_the_same_award_twice_in_a_turn_does_not_repeat_the_same_draws():
+    # The leader's running credit is part of the stream's seed.
+    state = _state()
+    gains = []
+    for phase in ("P1", "P2", "P3", "P4"):
+        before = state.leaders[1].experience_credit
+        from ak_engine.turn.command_experience import award_sage_practice_experience
+
+        award_sage_practice_experience(state, 1, phase)
+        gains.append(state.leaders[1].experience_credit - before)
+
+    assert len(set(gains)) > 1

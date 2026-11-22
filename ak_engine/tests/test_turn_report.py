@@ -2118,7 +2118,7 @@ def test_render_magic_feature_discovery_none():
 def test_render_magic_feature_discovery_found_something():
     result = render_magic_feature_discovery(MagicFeature.POOL, "Everhold", "Arthur")
     assert result == (
-        "While scouting the Everhold, Arthur saw a Pool/FStream which "
+        "While scouting the Everhold, Arthur saw a Pool which "
         "seemed to be of a magical nature."
     )
 
@@ -2128,7 +2128,7 @@ def test_render_magic_feature_discovery_any_non_none_non_itself_ordinal_renders_
     # the specific MagicFeature only changes the substituted $\ value.
     result = render_magic_feature_discovery(MagicFeature.CRYSTAL_BALL, "Everhold", "Arthur")
     assert result == (
-        "While scouting the Everhold, Arthur saw a Crystal_Ball/FMagic_Mirror "
+        "While scouting the Everhold, Arthur saw a Crystal Ball "
         "which seemed to be of a magical nature."
     )
 
@@ -9646,7 +9646,7 @@ def test_describe_feature_power_attempt_new_temp_already_matched():
         power=Power.NEW_TEMP, applied=True, already_matched=True, new_temper=Temper.BRAVE, magic_feature=MagicFeature.POOL
     )
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
-    assert line == "The Pool/FStream turns your temper to Brave.But your temper is already Brave, so you're fine already."
+    assert line == "The Pool turns your temper to Brave.But your temper is already Brave, so you're fine already."
 
 
 def test_describe_feature_power_attempt_new_temp_changed():
@@ -9668,7 +9668,7 @@ def test_describe_feature_power_attempt_up_skill_success():
         power=Power.UP_SKILL, applied=True, ability=Ability.MELEE, new_skill_level=2, magic_feature=MagicFeature.PENTAGRAM
     )
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
-    assert line == "by the power of the Pentagram/FMagic_Circle, I increase your skill in Meleeing by 1 skill level!"
+    assert line == "by the power of the Pentagram, I increase your skill in Meleeing by 1 skill level!"
 
 
 def test_describe_feature_power_attempt_up_skill_at_limit():
@@ -10258,9 +10258,9 @@ def test_describe_search_orac_power_has_armies_renders_per_army_lines_with_no_su
 def test_describe_feature_power_needs_more_info_renders_both_lines_for_every_sa_argument_power(power):
     outcome = FeaturePowerAttemptResult(power=power, applied=False, reason="no SA argument given", magic_feature=MagicFeature.POOL)
     lines = describe_feature_power_needs_more_info(outcome, ScriptedRandom([0.1] * 4))
-    assert lines[0] == "The Pool/FStream needs more information to perform its power."
+    assert lines[0] == "The Pool needs more information to perform its power."
     assert len(lines) == 2
-    assert "Pool/FStream" in lines[1]
+    assert "Pool" in lines[1]
 
 
 def test_describe_feature_power_needs_more_info_excludes_grant_wish():
@@ -10306,7 +10306,7 @@ def test_describe_search_renders_magic_feature_discovery_before_the_feature_powe
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "While scouting the Ancient Ruins, Aldric saw a Pool/FStream which seemed to be of a magical nature.",
+        "While scouting the Ancient Ruins, Aldric saw a Pool which seemed to be of a magical nature.",
         "There are no more features to be told of in the provinces you have mapped.",
     ]
 
@@ -10324,8 +10324,8 @@ def test_describe_search_needs_more_info_refusal_renders_after_the_empty_power_l
     # refusal (no recovered POWMSG id) -- both new lines still follow.
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "The Pool/FStream needs more information to perform its power.",
-        "The Pool/FStream is an Oracle of Alignment.When you scout it, just SA-y the character number "
+        "The Pool needs more information to perform its power.",
+        "The Pool is an Oracle of Alignment.When you scout it, just SA-y the character number "
         '(not the name; e.g., "SA Tell me about character 1.") and the character\'s alignment will become '
         "known to you.",
     ]
@@ -10346,10 +10346,10 @@ def test_describe_search_grant_wish_invalid_argument_renders_the_tutorial_then_a
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "The Pool/FStream will grant a wish to a character.SA-y an ability number (not the skill name itself), "
+        "The Pool will grant a wish to a character.SA-y an ability number (not the skill name itself), "
         "and your skill shall be raised by one: 0-Tac, 1-Mar, 2-Nav, 3-Arc, 4-Mel, 5-Whi, 6-Nec, 7-Ele, 8-Psy, "
         "9-Ill, 10-Dru, 11-Thi, 12-Exp, 13-Spy, 14-Sage. "
-        "The Pool/FStream cannot grant the wish if the character's skill has already reached his aptitude level.",
+        "The Pool cannot grant the wish if the character's skill has already reached his aptitude level.",
     ]
 
 
@@ -10363,20 +10363,20 @@ def test_describe_search_grant_wish_invalid_argument_renders_the_tutorial_then_a
         (
             PowerCondition.PAY_UP,
             5,
-            "You must pay 5 gold each time the Pool/FStream is used (to show that you accept these terms, "
+            "You must pay 5 gold each time the Pool is used (to show that you accept these terms, "
             "a character must give two Scout orders when he Searches this feature.)",
         ),
         (
             PowerCondition.DRAIN_SKILL,
             2,
-            "2 skill level(s), chosen at random, will be drained from the character if the Pool/FStream is "
-            "scouted.You MUST have enough skill levels to meet the Pool/FStream's demand (to accept these "
+            "2 skill level(s), chosen at random, will be drained from the character if the Pool is "
+            "scouted.You MUST have enough skill levels to meet the Pool's demand (to accept these "
             "terms, a character must give two Scout orders when Searching this feature.",
         ),
         (
             PowerCondition.DRAIN_COURAGE,
             None,
-            "When you use the Pool/FStream, it will drain away one level of courage (Brave men become "
+            "When you use the Pool, it will drain away one level of courage (Brave men become "
             "Cautious, etc.)A Coward may not use this feature!To accept these terms, a character must give "
             "two Scout orders when Searching this feature.",
         ),
@@ -10427,7 +10427,7 @@ def test_describe_feature_power_condition_terms_need_king_renders_both_lines_in_
     # actually resolves in the output -- proven via `feature_name`).
     lines = describe_feature_power_condition_terms(outcome, ScriptedRandom([0.1, 0.1, 0.9]), feature_name="Ancient Ruins")
     assert lines == [
-        "Only a King may use the power of the Pool/FStream.",
+        "Only a King may use the power of the Pool.",
         "You're just a lowly hero, so get out of this Ancient Ruins!",
     ]
 
@@ -10443,7 +10443,7 @@ def test_describe_feature_power_condition_terms_same_align_resolves_the_real_ali
     )
     lines = describe_feature_power_condition_terms(outcome, ScriptedRandom([0.9]))
     assert lines == [
-        "A character must be Evil to use the Pool/FStream (the Kingdom alignment does not matter.)",
+        "A character must be Evil to use the Pool (the Kingdom alignment does not matter.)",
         "You are not Evil, so go away!",
     ]
 
@@ -10458,7 +10458,7 @@ def test_describe_feature_power_condition_terms_g_turn_renders_both_lines_with_n
     )
     lines = describe_feature_power_condition_terms(outcome, ScriptedRandom([]))
     assert lines == [
-        "After the power of the Pool/FStream is used in a gameturn, it may not be used again until the next gameturn.",
+        "After the power of the Pool is used in a gameturn, it may not be used again until the next gameturn.",
         "The power has already been used this turn, so go away!",
     ]
 
@@ -10532,8 +10532,8 @@ def test_describe_search_scout_consent_refusal_renders_the_real_pcond_terms():
     # refusal -- the PCOND terms line is the entire added content.
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "2 skill level(s), chosen at random, will be drained from the character if the Pool/FStream is "
-        "scouted.You MUST have enough skill levels to meet the Pool/FStream's demand (to accept these "
+        "2 skill level(s), chosen at random, will be drained from the character if the Pool is "
+        "scouted.You MUST have enough skill levels to meet the Pool's demand (to accept these "
         "terms, a character must give two Scout orders when Searching this feature.",
     ]
 
@@ -10557,8 +10557,8 @@ def test_describe_search_need_king_refusal_renders_the_full_real_three_line_sequ
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "You don't meet the conditions for using the Pool/FStream.",
-        "Only a King may use the power of the Pool/FStream.",
+        "You don't meet the conditions for using the Pool.",
+        "Only a King may use the power of the Pool.",
         "You're just a lowly hero, so get out of this Ancient Ruins!",
     ]
 
@@ -10578,7 +10578,7 @@ def test_describe_search_scout_consent_success_renders_the_power_line_then_mcond
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "By the power of the Pool/FStream, I change you to a woman!Hee hee, how do you like THEM apples!",
+        "By the power of the Pool, I change you to a woman!Hee hee, how do you like THEM apples!",
         'Spake Aldric, "I agree to lose some of my courage in exchange for your favor".'
         "immediately, Aldric felt less hot-tempered.",
     ]

@@ -532,6 +532,9 @@ class FeaturePowerAttemptResult:
     # attempt()`` regardless of outcome, since every real POWMSG message
     # this project reaches names the magic object itself.
     magic_feature: MagicFeature | None = None
+    # The geographic Feature the power belongs to -- picks which form of the
+    # magic feature's name a report shows (``magic_feature_display_name()``).
+    feature_id: int | None = None
     # Phase 619: the 5 Oracles/Recharge/Grant Wish/Gamble -- populated
     # only for the specific power/outcome that occurred, same convention
     # as every field above. `ability`/`new_skill_level` above are reused

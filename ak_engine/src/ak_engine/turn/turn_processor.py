@@ -315,6 +315,7 @@ from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, _has_spy_super_sleuth, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
+from ak_engine.turn.command_experience import award_sage_practice_experience
 from ak_engine.turn.practice_execution import commit_pending_skill_advancements, execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
@@ -2202,6 +2203,9 @@ def _dispatch_multi_practice(
 
     leader_ids = [tl.leader.leader_id for tl, _segment_index, _phase in movers]
     outcomes = execute_practice_group(state, leader_ids, ability, rng)
+    if ability is Ability.SAGE:
+        for tl, _segment_index, phase in movers:
+            award_sage_practice_experience(state, tl.leader.leader_id, phase.label)
     return [
         PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, outcome, None)
         for (tl, segment_index, phase), outcome in zip(movers, outcomes)

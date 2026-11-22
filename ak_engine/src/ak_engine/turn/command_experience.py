@@ -5,6 +5,10 @@
     Prendere o Lasciare unità navali       5%  Navale
     Comandante Supremo in battaglia       15%  Tattica o Navale
     Comandare unità in battaglia          10%  Tattica o Navale
+    Esplorare                             10%  Esplorazione
+
+Sage has no row in that table; on the user's decision (2026-11-22) every
+Practice Sageness attempt also earns 10 points of Sage experience.
 
 Tactical applies to a battle on land, Naval to a battle in a sea province
 (rulebook [6.3]: "Tactical ability (or Naval ability in Sea provinces)").
@@ -35,13 +39,18 @@ from ak_engine.worldgen.naval_ability_level_schedule import build_naval_ability_
 SUPREME_COMMANDER_BASE_POINTS = 15
 COMMANDER_BASE_POINTS = 10
 PICK_UP_LEAVE_BASE_POINTS = 5
+EXPLORE_BASE_POINTS = 10
+SAGE_PRACTICE_BASE_POINTS = 10
 
 
 def _stream(state: GameState, *key: object) -> random.Random:
     return random.Random(":".join(["command-xp", str(state.game_number), str(state.turn_number), *map(str, key)]))
 
 
-def _award(state: GameState, leader: LeaderState, ability: Ability, base_points: int, rng: random.Random) -> ExperienceOutcome:
+def _award(state: GameState, leader: LeaderState, ability: Ability, base_points: int, *key: object) -> ExperienceOutcome:
+    # The leader's running credit is part of the seed, so the same leader
+    # earning the same award twice in a turn does not repeat the same draws.
+    rng = _stream(state, *key, leader.leader_id, ability.name, leader.experience_credit)
     outcome = add_experience(leader, ability, base_points, rng)
     if outcome.skill_rose:
         if ability is Ability.NAVAL:
@@ -81,7 +90,7 @@ def award_battle_command_experience(
             if leader is None:
                 continue
             base = SUPREME_COMMANDER_BASE_POINTS if leader_id in supreme else COMMANDER_BASE_POINTS
-            _award(state, leader, ability, base, _stream(state, "battle", province_key, leader_id))
+            _award(state, leader, ability, base, "battle", province_key)
 
 
 def award_pick_up_leave_experience(state: GameState, leader_id: int, army_ids: list[int]) -> None:
@@ -93,6 +102,28 @@ def award_pick_up_leave_experience(state: GameState, leader_id: int, army_ids: l
         return
     armies = [state.armies[army_id] for army_id in army_ids if army_id in state.armies]
     if any(army.army_type in SEA_ARMY_TYPES for army in armies):
-        _award(state, leader, Ability.NAVAL, PICK_UP_LEAVE_BASE_POINTS, _stream(state, "units-naval", leader_id, sorted(army_ids)))
+        _award(state, leader, Ability.NAVAL, PICK_UP_LEAVE_BASE_POINTS, "units-naval", sorted(army_ids))
     if any(is_land_army(army.army_type) for army in armies):
-        _award(state, leader, Ability.MARCH, PICK_UP_LEAVE_BASE_POINTS, _stream(state, "units-land", leader_id, sorted(army_ids)))
+        _award(state, leader, Ability.MARCH, PICK_UP_LEAVE_BASE_POINTS, "units-land", sorted(army_ids))
+
+
+def award_explore_experience(state: GameState, leader_id: int) -> ExperienceOutcome | None:
+    """Credits Explorer for an Explore order that actually explored something
+    (an already fully explored province teaches nothing, so repeating the
+    order there is no way to farm experience)."""
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return None
+    return _award(state, leader, Ability.EXPLORER, EXPLORE_BASE_POINTS, "explore", leader.location.x, leader.location.y)
+
+
+def award_sage_practice_experience(state: GameState, leader_id: int, phase_label: str) -> ExperienceOutcome | None:
+    """Every Practice Sageness attempt earns Sage experience on top of the
+    practice's own credit (project decision: the rulebook table lists no
+    Sage source)."""
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return None
+    return _award(state, leader, Ability.SAGE, SAGE_PRACTICE_BASE_POINTS, "sage-practice", phase_label)

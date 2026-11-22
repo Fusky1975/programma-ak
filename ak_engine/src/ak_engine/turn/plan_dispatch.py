@@ -391,7 +391,11 @@ from typing import Any
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.turn.command_experience import award_pick_up_leave_experience
+from ak_engine.turn.command_experience import (
+    award_explore_experience,
+    award_pick_up_leave_experience,
+    award_sage_practice_experience,
+)
 from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
@@ -708,6 +712,8 @@ def dispatch_phase(
             has_difficult_terrain=has_difficult_terrain,
         )
         province.explored_percent = result.new_percent
+        if result.delta_applied > 0:
+            award_explore_experience(state, leader_id)
         exploration = record_kingdom_exploration(
             province,
             kingdom_id,
@@ -853,7 +859,10 @@ def _dispatch_practice(
     phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
 ) -> PracticeExecutionResult:
     request = decode_practice_phase(phase)
-    return execute_practice(state, leader_id, request.ability, rng)
+    result = execute_practice(state, leader_id, request.ability, rng)
+    if request.ability is Ability.SAGE:
+        award_sage_practice_experience(state, leader_id, phase.label)
+    return result
 
 
 def _dispatch_recruit(phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int) -> RecruitExecutionResult:
