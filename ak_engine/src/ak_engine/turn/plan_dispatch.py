@@ -602,6 +602,11 @@ def dispatch_phase(
     # action outside RUMOR_CHANCE_BY_ACTION or when GameState has no
     # eligible feature nearby -- i.e. every pre-Phase-243 caller.
     leader = state.leaders.get(leader_id)
+    if leader is not None:
+        # Exploration speed follows the acting character's own Explorer level
+        # (Compass, Telescope and a held Explorer item included); a caller's
+        # explicit value only ever raises it.
+        explorer_skill = max(explorer_skill, effective_skill_level(state, leader, Ability.EXPLORER))
     if leader is not None and action in RUMOR_CHANCE_BY_ACTION:
         rumor_rng = rng if rng is not None else random.Random()
         rumor = resolve_rumor_generation(state, kingdom_id, leader_id, leader.location, action, rumor_rng)
