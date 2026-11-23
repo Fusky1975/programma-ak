@@ -774,7 +774,7 @@ def test_execute_challenge_combat_with_no_decisive_winner_kills_nobody():
     # combatants have equal (zero) melee skill, so every round's initiative
     # tie-break plus both always-miss attack rolls consumes 3 scripted
     # values -- 1000 rounds * 3.
-    rng = ScriptedRandom([0.99] * 3100)
+    rng = ScriptedRandom([0.99] * 3000)
 
     result = execute_challenge(state, 1, _melee_request(2), rng=rng)
 
@@ -3496,7 +3496,7 @@ def test_execute_challenge_draw_credits_no_duel_encounter_merit():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
-    rng = ScriptedRandom([0.99] * 3100)
+    rng = ScriptedRandom([0.99] * 3000)
 
     result = execute_challenge(state, 1, _melee_request(2), rng=rng)
 
@@ -3725,7 +3725,7 @@ def test_execute_challenge_bravest_inspiration_also_fires_alongside_accepted_com
     # here) -- 3001, not 3000, the one real behavioral difference this
     # fixture has from test_execute_challenge_draw_credits_no_duel_
     # encounter_merit's own Temper-less target above.
-    rng = ScriptedRandom([0.99] * 3101)
+    rng = ScriptedRandom([0.99] * 3001)
 
     result = execute_challenge(state, 1, _talk_then_melee_request(2), rng=rng)
 
@@ -4110,9 +4110,7 @@ def test_execute_challenge_landed_fire_arrow_shot_credits_the_challenger():
     mock_add_experience.assert_any_call(challenger, Ability.ARCHERY, 10, ANY)
 
 
-def test_execute_challenge_all_miss_still_credits_the_attempted_melee():
-    # Rulebook [3.13]: experience is for the tactic attempted -- a swing that misses counts too
-    # (user decision 2026-11-23: "si può crescere anche con i fallimenti").
+def test_execute_challenge_all_miss_credits_nothing():
     state = _base_state()
     challenger = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
     target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
@@ -4129,8 +4127,7 @@ def test_execute_challenge_all_miss_still_credits_the_attempted_melee():
         )
         execute_challenge(state, 1, ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=tactics))
 
-    credited = {(call.args[0].leader_id, call.args[1]) for call in mock_add_experience.call_args_list}
-    assert credited == {(1, Ability.MELEE), (2, Ability.MELEE)}
+    mock_add_experience.assert_not_called()
 
 
 def test_execute_challenge_never_threads_an_army_commanding_targets_plan():
@@ -5094,3 +5091,25 @@ def test_resolve_challenge_combat_give_tactic_never_transfers_the_valhalla_visit
         resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
 
     assert state.items[item.item_id].owner_leader_id == caster_leader.leader_id  # never transferred
+
+
+def test_execute_challenge_archery_experience_is_for_the_attempt_melee_only_for_a_hit():
+    # Rulebook [3.13] "per tattica tentata" -- user decision 2026-11-23, Archery only: every arrow
+    # missing still credits Archery, while Melee needs a swing that actually landed.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    tactics = [SearchTactic(Maneuver.SHOOT)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner=None,
+            fire_arrow_shots=(FireArrowShot(shooter="a", hit=False, damage=0),),
+            melee_swings=(MeleeSwing(attacker="a", hit=False, damage=0), MeleeSwing(attacker="b", hit=False, damage=0)),
+        )
+        execute_challenge(state, 1, ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=tactics))
+
+    credited = [(call.args[0].leader_id, call.args[1]) for call in mock_add_experience.call_args_list]
+    assert credited == [(1, Ability.ARCHERY)]

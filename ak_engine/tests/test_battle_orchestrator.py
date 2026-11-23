@@ -4196,10 +4196,9 @@ def test_fight_battle_with_real_duel_combat_reports_a_loser_side():
     # Phase 906: build_state()'s own exact deterministic pursuit-destroy
     # matchup (see no_luck_overwhelming_attacker_rng()'s own Phase 906
     # note) tacked onto the end -- three placeholder draws (r01, pursuer/
-    # target multipliers) plus one .choice() draw for the sole retreater. The three 0.99 draws after
-    # the duel are the Melee/Archery experience attempts (credited for an attempt, hit or miss).
+    # target multipliers) plus one .choice() draw for the sole retreater.
     rng = ScriptedRandom(
-        [0.1, 0.5, 0.9, 0.1, 0.5] + [0.99] * 3 + [0.5, 0.5] + [0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0]
+        [0.1, 0.5, 0.9, 0.1, 0.5] + [0.5, 0.5] + [0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0]
     )
 
     report = fight_battle(

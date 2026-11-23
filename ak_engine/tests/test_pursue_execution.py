@@ -1203,7 +1203,7 @@ def test_execute_pursue_short_range_archery_reaches_through_the_shared_function(
     ):
         mock_round.return_value = MeleeRoundOutcome(result=None)
         mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
-        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5] + [0.99] * 20))
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     mock_resolve.assert_called_once_with(ANY, ANY, ANY, short_range_archer="a")
 
