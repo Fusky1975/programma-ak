@@ -95,7 +95,7 @@ def _beg_request(feature_id: int, *following: Maneuver) -> SearchRequest:
     return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
 
 
-def _damage_leader_fire_arrow_duel(leader_combatant, monster_combatant, rng):
+def _damage_leader_fire_arrow_duel(leader_combatant, monster_combatant, rng, **_kwargs):
     leader_combatant.hit_points -= 3
     return EncounterCombatResult(winner=None, rounds=1)
 
@@ -859,7 +859,8 @@ def test_execute_search_landed_melee_hit_credits_the_leaders_melee_experience():
     mock_add_experience.assert_any_call(state.leaders[LEADER_ID], Ability.MELEE, 10, ANY)
 
 
-def test_execute_search_all_miss_melee_credits_nothing():
+def test_execute_search_all_miss_melee_still_credits_the_attempt():
+    # Rulebook [3.13]: experience is for the tactic attempted, even when every swing misses.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
 
@@ -871,7 +872,7 @@ def test_execute_search_all_miss_melee_credits_nothing():
         )
         execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
 
-    mock_add_experience.assert_not_called()
+    assert any(call.args[1] is Ability.MELEE for call in mock_add_experience.call_args_list)
 
 
 def test_execute_search_landed_fire_arrow_shot_credits_the_leaders_archery_experience():
@@ -1551,10 +1552,9 @@ def test_execute_search_long_range_archery_fires_from_spell_range_one_sided():
     assert result.winner == "leader"
 
 
-def test_execute_search_shoot_without_long_range_archery_calls_fire_arrow_duel_with_no_kwargs():
-    # Non-regression: an ordinary Shoot at Spell Range (no ability) still
-    # calls resolve_fire_arrow_duel() with no long_range_archer/short_
-    # range_archer kwarg at all, matching every pre-Phase-719 call.
+def test_execute_search_shoot_without_long_range_archery_closes_to_bow_range_first():
+    # An ordinary Shoot at Spell Range (no ability) passes only closing_side="a" ([5.2]: the
+    # archer spends the first round closing in) -- no long_range_archer/short_range_archer kwarg.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
 
@@ -1562,7 +1562,25 @@ def test_execute_search_shoot_without_long_range_archery_calls_fire_arrow_duel_w
         mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
         execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
 
-    assert mock_resolve.call_args.kwargs == {}
+    assert mock_resolve.call_args.kwargs == {"closing_side": "a"}
+
+
+def test_execute_search_the_archer_fires_nothing_in_the_round_spent_closing_in():
+    # Real (unmocked) duel: the leader (Archery 2) closes in during round 1 while the Archer guardian
+    # (Archery 3) fires normally -- so the very first shot of the encounter is the guardian's.
+    raw = [0] * 30
+    raw[Ability.ARCHERY.value * 2] = 2
+    raw[Ability.ARCHERY.value * 2 + 1] = 9
+    checked = 0
+    for seed in range(20):
+        state = _state_with_leader(skills=SkillTable(raw_values=raw))
+        state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+        result = execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(seed))
+        shots = result.fire_arrow_shots
+        if shots:
+            checked += 1
+            assert shots[0].shooter == "b"
+    assert checked > 0
 
 
 def test_execute_search_short_range_archery_fires_at_melee_range_after_reactive_swing():
@@ -6814,7 +6832,7 @@ def test_execute_search_guardians_own_cast_disrupted_by_a_missed_swing_uses_the_
             MeleeRoundOutcome(result=None),
             MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=2)),
         ]
-        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5] + [0.99] * 20))
 
     assert mock_miss_disrupt.called
     assert not mock_damage_disrupt.called  # a miss uses the flat 30%, not the damage-scaled formula

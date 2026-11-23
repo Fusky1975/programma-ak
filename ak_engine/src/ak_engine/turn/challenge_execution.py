@@ -3108,15 +3108,15 @@ def execute_challenge(
 
     # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
     # Melee/Archery rows -- "evento di mischia/duello qualificante"/
-    # "evento di tiro riuscito" -- a landed hit, credited once per
+    # "evento di tiro riuscito" -- an attempted swing/shot (a miss counts too: rulebook [3.13] "per tattica tentata", user decision 2026-11-23), credited once per
     # encounter per side, independent of who ultimately wins.
-    if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
+    if any(s.attacker == "a" for s in combat_result.melee_swings):
         add_experience(challenger, Ability.MELEE, 10, rng)
-    if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
+    if any(s.attacker == "b" for s in combat_result.melee_swings):
         add_experience(target, Ability.MELEE, 10, rng)
-    if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "a"):
+    if any(s.shooter == "a" for s in combat_result.fire_arrow_shots):
         add_experience(challenger, Ability.ARCHERY, 10, rng)
-    if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "b"):
+    if any(s.shooter == "b" for s in combat_result.fire_arrow_shots):
         add_experience(target, Ability.ARCHERY, 10, rng)
 
     if combat_result.fled:

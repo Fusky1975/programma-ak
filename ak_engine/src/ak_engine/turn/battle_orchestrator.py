@@ -1950,7 +1950,7 @@ def _maybe_fight_duel(
         )
         # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
         # Melee/Archery rows -- "evento di mischia/duello qualificante"/
-        # "evento di tiro riuscito" -- a landed hit, credited once per
+        # "evento di tiro riuscito" -- an attempted swing/shot (a miss counts too: rulebook [3.13] "per tattica tentata", user decision 2026-11-23), credited once per
         # encounter per side, independent of who wins. Dormant today
         # (this whole block only runs when a production caller opts into
         # `use_real_duel_combat=True`, which none do -- see this
@@ -1958,14 +1958,14 @@ def _maybe_fight_duel(
         # eventually flipped on. The garrison-commander fallback (`None`
         # leader) has no LeaderState to credit and is skipped.
         if attacker_leader is not None:
-            if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
+            if any(s.attacker == "a" for s in combat_result.melee_swings):
                 add_experience(attacker_leader, Ability.MELEE, 10, rng)
-            if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "a"):
+            if any(s.shooter == "a" for s in combat_result.fire_arrow_shots):
                 add_experience(attacker_leader, Ability.ARCHERY, 10, rng)
         if defender_leader is not None:
-            if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
+            if any(s.attacker == "b" for s in combat_result.melee_swings):
                 add_experience(defender_leader, Ability.MELEE, 10, rng)
-            if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "b"):
+            if any(s.shooter == "b" for s in combat_result.fire_arrow_shots):
                 add_experience(defender_leader, Ability.ARCHERY, 10, rng)
         # `combat_result.winner is None` also covers a successful Charm/
         # Augur-Combat flee (`combat_result.fled`) -- see this function's

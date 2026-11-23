@@ -1177,11 +1177,11 @@ def execute_search(
         if leader is not None:
             # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's
             # own Melee/Archery rows -- "evento di mischia/duello
-            # qualificante"/"evento di tiro riuscito" -- a landed hit,
+            # qualificante"/"evento di tiro riuscito" -- an attempted swing/shot (a miss counts too: rulebook [3.13] "per tattica tentata", user decision 2026-11-23),
             # credited once per encounter, independent of who wins.
-            if any(s.hit for s in result.melee_swings if s.attacker == "a"):
+            if any(s.attacker == "a" for s in result.melee_swings):
                 add_experience(leader, Ability.MELEE, 10, rng)
-            if any(s.hit for s in result.fire_arrow_shots if s.shooter == "a"):
+            if any(s.shooter == "a" for s in result.fire_arrow_shots):
                 add_experience(leader, Ability.ARCHERY, 10, rng)
         _apply_scout(state, leader_id, request, result, rng)
         _apply_talk_language_failure(state, leader, request, result)
@@ -3411,7 +3411,10 @@ def _resolve_search_encounter(
         return _resolve_cast(monster_tactic, caster_is_leader=False, is_first_tactic=is_first_tactic)
 
     def _resolve_fire_arrow_phase(
-        *, long_range_archer: str | None = None, short_range_archer: str | None = None
+        *,
+        long_range_archer: str | None = None,
+        short_range_archer: str | None = None,
+        closing_side: str | None = None,
     ) -> SearchExecutionResult | None:
         nonlocal fire_arrow_shots, fire_arrow_resolved
         fire_arrow_resolved = True
@@ -3429,6 +3432,8 @@ def _resolve_search_encounter(
             kwargs["long_range_archer"] = long_range_archer
         if short_range_archer is not None:
             kwargs["short_range_archer"] = short_range_archer
+        if closing_side is not None:
+            kwargs["closing_side"] = closing_side
         duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng, **kwargs)
         fire_arrow_shots = duel_result.shots
         outcome = _outcome_from(duel_result)
@@ -3975,7 +3980,14 @@ def _resolve_search_encounter(
             if current_range is CombatRange.SPELL_RANGE and AdvancedAbility.LONG_RANGE_ARCHERY in leader.advanced_abilities:
                 outcome = _resolve_fire_arrow_phase(long_range_archer="a")
             else:
-                outcome = _resolve_fire_arrow_phase()
+                # [5.2]: "Se un personaggio riceve l'ordine di attaccare con armi da lancio a portata
+                # d'incantesimo, si avvicina a portata d'arco, consumando così un round e tira quindi
+                # nel round successivo" -- the same rule turn/challenge_execution.py applies: the
+                # leader spends the first round closing in (no shot of his own), the guardian fires
+                # normally from round 1.
+                outcome = _resolve_fire_arrow_phase(
+                    closing_side="a" if current_range is CombatRange.SPELL_RANGE else None
+                )
             if outcome is not None:
                 return outcome
             continue  # free attacks exhausted, nobody dead -- fall through
