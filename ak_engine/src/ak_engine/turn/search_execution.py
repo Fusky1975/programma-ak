@@ -568,6 +568,7 @@ from ak_engine.turn.discovery_effects import (
     holds_bow_of_elven_kings,
     holds_monster_command_item_for,
 )
+from ak_engine.turn.random_encounter import is_humanoid_species
 from ak_engine.turn.encounter import (
     SUMMON_SPELLS,
     CHARACTER_HIT_POINTS,
@@ -606,6 +607,7 @@ from ak_engine.turn.encounter import (
     control_undead_anti_holy_resist_chance,
     control_undead_failure_new_hit_points,
     effective_melee_skill,
+    melee_skill_hit_bonus,
     weapon_defensive_hit_multiplier,
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
@@ -908,6 +910,10 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
     character-vs-character Encounter does (the bonus is about characters
     aiding each other, [5.0]'s "Order of Duelists" -- not sourced as
     applying against monsters), so it's omitted here rather than guessed.
+
+    **Superseded**: the rulebook's own text ([5.0]) says the Order of Duelists counts "negli scontri
+    con Eroi o mostri umanoidi, come ad esempio gli Spadaccini Rinnegati", so ``execute_search()``
+    now sets ``neutral_duelist_bonus`` on the returned combatant itself once the guardian is known.
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
@@ -1858,6 +1864,13 @@ def _resolve_search_encounter(
         missile_damage_range=stats.missile_damage if stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
         regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND if feature.guardian_monster is Monster.TROLL else 0,
         is_undead_or_anti_holy=feature.guardian_monster in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
+        is_humanoid=is_humanoid_species(feature.guardian_monster),
+    )
+    # [5.0]: a Neutral Kingdom's Order of Duelists (+1 Melee/Archery) counts "negli scontri con Eroi
+    # o mostri umanoidi, come ad esempio gli Spadaccini Rinnegati" -- so against a humanoid guardian.
+    leader_kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None
+    leader_combatant.neutral_duelist_bonus = (
+        leader_kingdom is not None and leader_kingdom.alignment is Alignment.NEUTRAL and monster_combatant.is_humanoid
     )
 
     # Phase 617: this Feature's own passive battle field, if any --
@@ -3005,6 +3018,7 @@ def _resolve_search_encounter(
         # swings, so effective_melee_skill() needs computing only once
         # per call, not once per bonus round.
         skill_difference_bonus = max(0, effective_melee_skill(attacker) - effective_melee_skill(defender))
+        skill_hit_bonus = melee_skill_hit_bonus(effective_melee_skill(attacker), effective_melee_skill(defender))
         while attacker.bonus_unanswered_attacks > 0:
             attacker.bonus_unanswered_attacks -= 1
             damage = roll_melee_attack(
@@ -3012,6 +3026,7 @@ def _resolve_search_encounter(
                 damage_range=attacker.melee_damage_range,
                 hit_chance_multiplier=defender.defensive_hit_multiplier,
                 skill_difference_bonus=skill_difference_bonus,
+                skill_hit_bonus=skill_hit_bonus,
             )
             damage = max(0, damage - attacker.melee_damage_dealt_reduction)
             defender.hit_points -= damage

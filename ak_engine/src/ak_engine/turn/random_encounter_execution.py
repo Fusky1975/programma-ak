@@ -115,6 +115,7 @@ from ak_engine.turn.encounter import (
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.random_encounter import (
+    is_humanoid_species,
     is_leader_eligible_for_random_encounter,
     is_patrol_framing,
     patrol_evades_via_diplomacy,
@@ -155,6 +156,7 @@ def monster_combatant(monster: Monster, rng: random.Random) -> Combatant:
         missile_damage_range=stats.missile_damage if stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
         regenerates_hp=_TROLL_REGENERATION_PER_COMBAT_ROUND if monster is Monster.TROLL else 0,
         is_undead_or_anti_holy=monster in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
+        is_humanoid=is_humanoid_species(monster),
     )
 
 
@@ -300,6 +302,8 @@ def resolve_random_encounter(
 
     leader_combatant = _leader_combatant(leader, state)
     opponent = monster_combatant(monster, rng)
+    # [5.0]: the Order of Duelists' +1 only counts "negli scontri con Eroi o mostri umanoidi".
+    leader_combatant.neutral_duelist_bonus = leader_combatant.neutral_duelist_bonus and opponent.is_humanoid
     outcome = resolve_challenge_combat(decoded_sep, leader, leader_combatant, None, opponent, state, rng)
 
     if any(swing.hit for swing in outcome.melee_swings if swing.attacker == "a"):
