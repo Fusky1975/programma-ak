@@ -158,11 +158,11 @@ _SEARCHER_LEADER_ID = 999
 # this module's own 2026-11-20 rescan paragraph above) -- a fixed,
 # reproducible fact of this scenario, not a tuning choice. The first
 # treasure+guardian feature (feature_id 1) is now guarded by a HYDRA.
-_SEARCH_WIN_SEED = 0
+_SEARCH_WIN_SEED = 9  # rescanned 2026-11-23: Melee now shifts the hit chance by the skill difference
 # feature_id 5 (a BASILISK guarding a Druid skill book) is the
 # SKILL_BOOK-category feature this test now targets.
 _BOOK_FEATURE_ID = 5
-_BOOK_SEARCH_WIN_SEED = 248
+_BOOK_SEARCH_WIN_SEED = 527  # rescanned 2026-11-23 (Melee hit chance now depends on the skill difference)
 
 
 def _generate_game(king_count: int = 10) -> GameState:

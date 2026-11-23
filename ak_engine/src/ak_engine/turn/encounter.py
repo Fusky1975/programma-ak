@@ -1731,6 +1731,10 @@ CHARACTER_HIT_POINTS = 10
 # [5.3] Melee: flat 50% base chance, 1-6 damage -- not skill-scaled.
 MELEE_HIT_CHANCE = 0.50
 MELEE_DAMAGE_RANGE = (1, 6)
+# [4.1.5]: the Melee Talent "accresce la probabilità di colpire e diminuisce quella di essere
+# colpiti del 10% per differenza di livello" -- 10 percentage points of the 50% base per level of
+# difference (level 3 vs 2: 60% to hit; the other side 40%). Confirmed by the user 2026-11-23.
+MELEE_HIT_CHANCE_PER_SKILL_LEVEL = 0.10
 
 # [Tabella dei Temperamenti] ("Temper Table"), Regolamento AK.txt -- see
 # module docstring's own Phase 284 addendum for the full quoted source
@@ -3743,12 +3747,19 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
             combatant.defensive_hit_multiplier *= 1.0 - CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION
 
 
+def melee_skill_hit_bonus(attacker_skill: int, defender_skill: int) -> float:
+    """[4.1.5]: the signed change to the 50% base chance to hit for the Melee level difference."""
+
+    return MELEE_HIT_CHANCE_PER_SKILL_LEVEL * (attacker_skill - defender_skill)
+
+
 def roll_melee_attack(
     rng: random.Random,
     damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE,
     *,
     hit_chance_multiplier: float = 1.0,
     skill_difference_bonus: int = 0,
+    skill_hit_bonus: float = 0.0,
 ) -> int:
     """Rulebook [5.3]: one Melee swing. Returns damage dealt (0 on a miss).
 
@@ -3758,6 +3769,10 @@ def roll_melee_attack(
     defaults to 1.0 (every pre-Phase-209 caller unaffected); pass a
     defender's own ``Combatant.defensive_hit_multiplier`` (Phase 209) to
     apply Holy Symbol's/Invisibility's own hit-chance reduction.
+
+    ``skill_hit_bonus`` ([4.1.5], confirmed by the user 2026-11-23): the signed change to the 50%
+    base chance to hit for the Melee level difference, ``melee_skill_hit_bonus(attacker, defender)``
+    (+/-10 points per level, the base kept within 0-100% before the multipliers). Defaults to 0.
 
     ``skill_difference_bonus`` -- sourced directly from the user
     (2026-10-28): "infligge 1-6 punti danno per colpo più 1 per
@@ -3772,7 +3787,8 @@ def roll_melee_attack(
     bonus when more skilled than the defender.
     """
 
-    if rng.random() < MELEE_HIT_CHANCE * hit_chance_multiplier:
+    base_chance = min(1.0, max(0.0, MELEE_HIT_CHANCE + skill_hit_bonus))
+    if rng.random() < base_chance * hit_chance_multiplier:
         return rng.randint(*damage_range) + skill_difference_bonus
     return 0
 
@@ -4013,6 +4029,7 @@ def resolve_one_melee_round(
             damage_range=attacker.melee_damage_range,
             hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
             skill_difference_bonus=max(0, attacker_skill - defender_skill),
+            skill_hit_bonus=melee_skill_hit_bonus(attacker_skill, defender_skill),
         )
         damage = _melee_landed_damage(raw_damage, attacker, defender)
         defender.hit_points -= damage
@@ -4043,6 +4060,7 @@ def resolve_one_melee_round(
                 damage_range=attacker.melee_damage_range,
                 hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
                 skill_difference_bonus=max(0, attacker_skill - defender_skill),
+                skill_hit_bonus=melee_skill_hit_bonus(attacker_skill, defender_skill),
             )
             bonus_damage = _melee_landed_damage(bonus_raw_damage, attacker, defender)
             defender.hit_points -= bonus_damage
@@ -4090,6 +4108,7 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
         damage_range=attacker.melee_damage_range,
         hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
         skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
+        skill_hit_bonus=melee_skill_hit_bonus(effective_melee_skill(attacker), effective_melee_skill(defender)),
     )
     damage = _melee_landed_damage(raw_damage, attacker, defender)
     defender.hit_points -= damage
@@ -4557,6 +4576,8 @@ def resolve_hand_of_death_channel(
                         * caster.defensive_hit_multiplier
                         * HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER
                     ),
+                    # The caster defends "al livello di abilità che ha in Necromancy".
+                    skill_hit_bonus=melee_skill_hit_bonus(victim_skill, caster_skill),
                 )
                 if raw_damage > 0:
                     # Phase 1050 bug fix -- this used to hand-roll `max(0,

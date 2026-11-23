@@ -659,8 +659,10 @@ def test_execute_search_leader_loses_is_removed_from_state():
     state = _state_with_leader()
     feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.TROLL)
     state.add_feature(feature)
-    block = [0.1, 0.5, 0.9]  # Troll hits (chance+damage), leader misses
-    rng = ScriptedRandom(block * 20)
+    # The guardian's hit points are the very first draw; then each round is: Troll hit roll (a hit,
+    # the Troll's chance is 60% against a skill-0 leader), its damage draw, the leader's own roll (a
+    # miss at 40%).
+    rng = ScriptedRandom([0.5] + [0.1, 0.9, 0.9] * 30)
 
     result = execute_search(state, LEADER_ID, _melee_request(1), rng)
 
@@ -700,8 +702,10 @@ def test_execute_search_leader_loss_credits_nothing():
     state = _state_with_leader()
     feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.TROLL)
     state.add_feature(feature)
-    block = [0.1, 0.5, 0.9]  # Troll hits (chance+damage), leader misses
-    rng = ScriptedRandom(block * 20)
+    # The guardian's hit points are the very first draw; then each round is: Troll hit roll (a hit,
+    # the Troll's chance is 60% against a skill-0 leader), its damage draw, the leader's own roll (a
+    # miss at 40%).
+    rng = ScriptedRandom([0.5] + [0.1, 0.9, 0.9] * 30)
 
     result = execute_search(state, LEADER_ID, _melee_request(1), rng)
 
@@ -896,7 +900,7 @@ def test_execute_search_sets_undead_flag_on_an_undead_species_guardian():
 
     with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
         mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
-        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(2))
 
     monster_combatant = mock_resolve.call_args[0][1]
     assert monster_combatant.is_undead_or_anti_holy is True

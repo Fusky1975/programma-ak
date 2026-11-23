@@ -396,17 +396,19 @@ def test_resolve_one_melee_round_more_skilled_attacker_gets_a_damage_bonus():
 
 def test_resolve_one_melee_round_less_skilled_attacker_gets_no_penalty():
     # Sourced directly from the user's own confirmation (2026-10-28): the
-    # skill-difference term is only ever a bonus, floored at 0 -- a
-    # less-skilled attacker never deals less than the base die roll.
-    a = Combatant("A", melee_skill=0, hit_points=10)
-    b = Combatant("B", melee_skill=5, hit_points=10)
-    # B acts first (higher skill): B hits (gets its own +5 bonus), then
-    # A hits back with no bonus and no penalty (base die only).
+    # skill-difference term on *damage* is only ever a bonus, floored at 0 -- a
+    # less-skilled attacker never deals less than the base die roll. (The hit chance
+    # does drop 10 points per level: 4.1.5, confirmed 2026-11-23 -- see
+    # tests/test_melee_skill_hit_chance.py.)
+    a = Combatant("A", melee_skill=1, hit_points=10)
+    b = Combatant("B", melee_skill=2, hit_points=10)
+    # B acts first (higher skill): B hits at 60% (roll 0.1) for 1 + its own +1 bonus, then
+    # A hits back at 40% (roll 0.1) with no bonus and no penalty (base die only).
     rng = ScriptedRandom([0.1, 0.0, 0.1, 0.0])
 
     outcome = resolve_one_melee_round(a, b, rng, round_number=1)
 
-    assert outcome.damage_dealt_to_a == 1 + 5  # B's own +5 bonus
+    assert outcome.damage_dealt_to_a == 1 + 1  # B's own +1 bonus
     assert outcome.damage_dealt_to_b == 1  # A's own difference is negative -- floored at 0, not a penalty
 
 
@@ -468,7 +470,7 @@ def test_resolve_one_melee_round_always_acts_first_overrides_a_real_skill_disadv
     # Phase 665: B has the LOWER skill but Office.ILLUS_MAGE's own
     # Chameleon Familiar (Combatant.always_acts_first) still lets B act
     # first, landing a lethal hit on a 1-hp A -- A must never swing back.
-    a = Combatant("A", melee_skill=99, hit_points=1)
+    a = Combatant("A", melee_skill=3, hit_points=1)
     b = Combatant("B", melee_skill=0, hit_points=10, always_acts_first=True)
     rng = ScriptedRandom([0.1, 0.5])  # B's hit-chance roll, then damage roll
 
