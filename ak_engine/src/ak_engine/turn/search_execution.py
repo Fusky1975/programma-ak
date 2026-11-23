@@ -536,6 +536,7 @@ from ak_engine.models.monster import (
     DUEL_MERIT_MONSTERS,
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
     HAND_OF_DEATH_IMMUNE_MONSTERS,
+    HUMANOID_MONSTERS,
     ICE_SUSPENSION_FLYING_MONSTERS,
     ICE_SUSPENSION_IMMUNE_MONSTERS,
     MONSTER_COMBAT_STATS,
@@ -568,7 +569,6 @@ from ak_engine.turn.discovery_effects import (
     holds_bow_of_elven_kings,
     holds_monster_command_item_for,
 )
-from ak_engine.turn.random_encounter import is_humanoid_species
 from ak_engine.turn.encounter import (
     SUMMON_SPELLS,
     CHARACTER_HIT_POINTS,
@@ -1864,7 +1864,7 @@ def _resolve_search_encounter(
         missile_damage_range=stats.missile_damage if stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
         regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND if feature.guardian_monster is Monster.TROLL else 0,
         is_undead_or_anti_holy=feature.guardian_monster in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
-        is_humanoid=is_humanoid_species(feature.guardian_monster),
+        is_humanoid=feature.guardian_monster in HUMANOID_MONSTERS,
     )
     # [5.0]: a Neutral Kingdom's Order of Duelists (+1 Melee/Archery) counts "negli scontri con Eroi
     # o mostri umanoidi, come ad esempio gli Spadaccini Rinnegati" -- so against a humanoid guardian.

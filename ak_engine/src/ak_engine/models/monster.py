@@ -622,6 +622,34 @@ MONSTER_STATS: dict[Monster, MonsterStats] = {
 }
 
 
+# Monsters of humanoid type ("Tipo: umanoide" in Mostri.md): the Order of Duelists' +1 Melee/Archery
+# (Neutral Kingdoms) and the Duellist's Medal count against them like against Heroes ([5.0]:
+# "Eroi o mostri umanoidi, come ad esempio gli Spadaccini Rinnegati"). The user confirmed the
+# whole list on 2026-11-23, adding Centaur, Medusa, Minotaur, Troll and Werewolf to the ten species
+# of the original's `Humanoid_Opponent` range (Giant..Witch). Distinct from
+# `turn/random_encounter.py is_humanoid_species()`, which only decides how a random encounter is
+# narrated (patrol or wandering monster).
+HUMANOID_MONSTERS: frozenset[Monster] = frozenset(
+    {
+        Monster.GIANT,
+        Monster.BIGFOOT,
+        Monster.ARCHER,
+        Monster.SWORDSMAN,
+        Monster.WHITE_MAGE,
+        Monster.NEC_MAGE,
+        Monster.ELE_MAGE,
+        Monster.PSY_MAGE,
+        Monster.ILL_MAGE,
+        Monster.WITCH,
+        Monster.CENTAUR,
+        Monster.MEDUSA,
+        Monster.MINOTAUR,
+        Monster.TROLL,
+        Monster.WEREWOLF,
+    }
+)
+
+
 @dataclass(frozen=True, slots=True)
 class MonsterCombatStats:
     hit_points_range: tuple[int, int]
