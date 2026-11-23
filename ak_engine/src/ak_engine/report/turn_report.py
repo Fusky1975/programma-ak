@@ -4856,6 +4856,31 @@ def describe_cast(
     return line
 
 
+# Scar Terrain, Mystic Winds and Illusory Fog (the secret action spells that had
+# no line in the caster's own report): no Pascal text survives for them, so the
+# sentences are the project's own, in the style of the other cast announcements.
+def render_secret_spell_cast(
+    spell: Spell,
+    caster_name: str,
+    *,
+    province_name: str | None = None,
+    target_name: str | None = None,
+    collapsed: bool = False,
+) -> str | None:
+    if spell is Spell.SCAR_TERRAIN and province_name is not None:
+        sentence = f"{caster_name} cast a Scar Terrain spell and {province_name} was scarred and mangled."
+        if collapsed:
+            sentence += f" {province_name} could no longer support life."
+        return sentence
+    if spell is Spell.ILLUS_FOG and province_name is not None:
+        return f"{caster_name} cast an Illusory Fog spell and a dense fog blanketed {province_name}."
+    if spell is Spell.MYSTIC_WINDS and target_name is not None:
+        if target_name == caster_name:
+            return f"{caster_name} cast a Mystic Winds spell and the Wind Spirits carried {caster_name} into the sky."
+        return f"{caster_name} cast a Mystic Winds spell and the Wind Spirits carried {target_name} into the sky."
+    return None
+
+
 # Phase 878: Locate Object (`AdvancedAbility.LOCATE_OBJECT_SPELL`, one of
 # the 5 secret Action-Cast spells 25-34 with no `SPELL_CAST_ANNOUNCEMENT`
 # entry -- unlike Scar Terrain/Mystic Winds, whose own real success text
@@ -9588,6 +9613,27 @@ def describe_turn_results(
                 coord = decode_hex_number(entry.result.request.target, board_width)
                 province_name = _province_label(state, coord)
                 line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
+                continue
+            if spell in (Spell.SCAR_TERRAIN, Spell.ILLUS_FOG, Spell.MYSTIC_WINDS):
+                if not entry.result.applied:
+                    continue
+                province_name = None
+                target_name = None
+                if spell is Spell.MYSTIC_WINDS:
+                    target_name = _leader_name(state, entry.result.request.target)
+                else:
+                    if board_width is None:
+                        continue
+                    province_name = _province_label(state, decode_hex_number(entry.result.request.target, board_width))
+                line = render_secret_spell_cast(
+                    spell,
+                    caster_name,
+                    province_name=province_name,
+                    target_name=target_name,
+                    collapsed=getattr(entry.result, "scar_terrain_collapsed", False),
+                )
                 if line is not None:
                     lines.append(line)
                 continue

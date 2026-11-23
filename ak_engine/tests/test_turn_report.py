@@ -18030,3 +18030,72 @@ def test_describe_recruit_explains_a_request_that_could_not_be_carried_out():
 
     assert any("Teleko could not recruit Axemen in Santiago" in line and "no mercenary" in line for line in lines)
     assert any("Phalanx" in line and "treasury" in line for line in lines)
+
+
+# -- Scar Terrain, Mystic Winds and Illusory Fog tell the caster what happened --
+
+
+def _secret_cast_report(spell, target, *, collapsed=False):
+    from ak_engine.models.enums import ActionCode
+    from ak_engine.turn.cast_decode import CastRequest
+    from ak_engine.turn.cast_execution import CastExecutionResult
+    from ak_engine.turn.hex_numbering import encode_hex_number
+    from ak_engine.turn.plan_dispatch import PhaseDispatchResult
+
+    state = GameState(board_width=10, board_height=10)
+    home = HexCoord(3, 3)
+    state.add_kingdom(KingdomState(1, "Aland", Race.HUMAN, Alignment.GOOD, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Home"))
+    state.add_leader(LeaderState(1, 1, "Caster", home, is_king=True))
+    state.add_leader(LeaderState(2, 1, "Friend", home))
+    code = encode_hex_number(home, 10) if target == "province" else 2
+    result = CastExecutionResult(CastRequest(spell, target=code), applied=True, scar_terrain_collapsed=collapsed)
+    entry = PhaseDispatchResult(1, 0, "P1", ActionCode.CAST, result, None)
+    return describe_turn_results([entry], state, random.Random(1), board_width=10)
+
+
+def test_a_scar_terrain_cast_is_told_to_the_caster():
+    from ak_engine.models.enums import Spell
+
+    lines = _secret_cast_report(Spell.SCAR_TERRAIN, "province")
+
+    assert lines == ["Caster cast a Scar Terrain spell and Home was scarred and mangled."]
+
+
+def test_a_scar_terrain_that_exhausts_the_province_says_it_can_no_longer_support_life():
+    from ak_engine.models.enums import Spell
+
+    lines = _secret_cast_report(Spell.SCAR_TERRAIN, "province", collapsed=True)
+
+    assert lines == ["Caster cast a Scar Terrain spell and Home was scarred and mangled. Home could no longer support life."]
+
+
+def test_an_illusory_fog_cast_is_told_to_the_caster():
+    from ak_engine.models.enums import Spell
+
+    lines = _secret_cast_report(Spell.ILLUS_FOG, "province")
+
+    assert lines == ["Caster cast an Illusory Fog spell and a dense fog blanketed Home."]
+
+
+def test_a_mystic_winds_cast_names_the_leader_carried_into_the_sky():
+    from ak_engine.models.enums import Spell
+
+    lines = _secret_cast_report(Spell.MYSTIC_WINDS, "leader")
+
+    assert lines == ["Caster cast a Mystic Winds spell and the Wind Spirits carried Friend into the sky."]
+
+
+def test_a_failed_secret_spell_says_nothing():
+    from ak_engine.models.enums import ActionCode, Spell
+    from ak_engine.turn.cast_decode import CastRequest
+    from ak_engine.turn.cast_execution import CastExecutionResult
+    from ak_engine.turn.plan_dispatch import PhaseDispatchResult
+
+    state = GameState(board_width=10, board_height=10)
+    state.add_kingdom(KingdomState(1, "Aland", Race.HUMAN, Alignment.GOOD, HexCoord(3, 3)))
+    state.add_leader(LeaderState(1, 1, "Caster", HexCoord(3, 3), is_king=True))
+    failed = CastExecutionResult(CastRequest(Spell.ILLUS_FOG, target=0), applied=False, reason="spell failed")
+    entry = PhaseDispatchResult(1, 0, "P1", ActionCode.CAST, failed, None)
+
+    assert describe_turn_results([entry], state, random.Random(1), board_width=10) == []
