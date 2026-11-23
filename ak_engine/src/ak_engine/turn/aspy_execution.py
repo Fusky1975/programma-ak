@@ -379,6 +379,10 @@ class SpyReport:
     # doesn't hold the ability, an unowned province, or a province with
     # no Features the owner has discovered.
     features_known_to_owner: dict[int, int] = field(default_factory=dict)
+    # False for a repeat Spy order by the same spy in the same province in the same turn: the
+    # military/characters report is made once per turn ([3.14]), so ``spotted_characters``/
+    # the garrison are left empty and the report omits that block.
+    forces_reported: bool = True
 
 
 def execute_aspy(
@@ -392,6 +396,7 @@ def execute_aspy(
     caster_has_detect_align: bool = False,
     caster_has_druidic_animal_spies: bool = False,
     caster_has_spy_expanded_spying: bool = False,
+    once_per_turn: bool = True,
     rng: random.Random | None = None,
 ) -> SpyReport | None:
     """Builds the intelligence report for the caster's own current province.
@@ -431,6 +436,10 @@ def execute_aspy(
     and for offices held") is unrelated to this function -- see
     ``turn/trail_execution.py execute_trail()``'s own Phase 705
     addendum.
+
+    ``once_per_turn`` (default True): the military/characters part is only made the first time
+    a spy reports on a province in a turn ([3.14]); the Double Agent's end-of-turn report passes
+    False because it is not a second Spy order.
 
     ``board_width``/``board_height`` (Phase 780, default ``None``) fall
     back to ``state.board_width``/``.board_height``.
@@ -482,8 +491,14 @@ def execute_aspy(
 
     spy_skill = _spy_skill_of(state, leader)
     perfect_alignment = caster_holds_psychic_mage_office or caster_has_detect_align
+    # [3.14]: "Una volta per turno di gioco, la spia farà anche un rapporto concernente le forze
+    # militari e i personaggi che si trovano nella provincia" -- once per spy and province.
+    forces_key = (leader_id, leader.location)
+    forces_reported = not once_per_turn or forces_key not in state.spy_force_reports
+    if once_per_turn:
+        state.spy_force_reports.add(forces_key)
     spotted_characters: list[SpottedCharacter] = []
-    for spotted in state.leaders_at(leader.location):
+    for spotted in state.leaders_at(leader.location) if forces_reported else ():
         if spotted.leader_id == leader_id:
             continue
 
@@ -521,7 +536,9 @@ def execute_aspy(
             )
         )
 
-    unled_armies = [army for army in state.armies_at(leader.location) if army.commanded_by is None]
+    unled_armies = (
+        [army for army in state.armies_at(leader.location) if army.commanded_by is None] if forces_reported else []
+    )
     garrison_army_names = tuple(_army_display_name(state, army) for army in unled_armies)
     garrison_estimate = _estimate_forces(unled_armies, spy_skill, state, leader, "garrison")
 
@@ -565,4 +582,5 @@ def execute_aspy(
         discoveries_obtained=discoveries_obtained,
         adjacent_military_forces=adjacent_military_forces,
         features_known_to_owner=features_known_to_owner,
+        forces_reported=forces_reported,
     )

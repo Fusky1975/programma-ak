@@ -2519,7 +2519,9 @@ def describe_aspy(
 
     has_characters = bool(report.spotted_characters)
     has_forces = bool(report.garrison_army_names) or any(c.army_names for c in report.spotted_characters)
-    if not has_characters and not has_forces:
+    if not report.forces_reported:
+        pass  # a repeat Spy order in the same province this turn: the closing line says where the rest is
+    elif not has_characters and not has_forces:
         lines.append(render_spy_no_characters_or_forces(province_name, rng))
     else:
         lines.append(render_spy_elements_intro(province_name, rng))
@@ -16811,7 +16813,7 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
         )
         if winner_sentence is not None:
             prefix = _season_phrase_for_phase_label(phase_label)
-            state.record_world_event(coord, [prefix + winner_sentence])
+            state.record_world_event(coord, [prefix + winner_sentence], phase=phase_label)
 
 
 def _battle_narrative_lines(
@@ -17244,7 +17246,7 @@ def record_spell_world_events(
 
         if request.spell is Spell.PLAGUE:
             hit_line = render_plague_world_event(province_name, rng)
-            state.record_world_event(coord, [prefix + hit_line])
+            state.record_world_event(coord, [prefix + hit_line], phase=entry.phase_label)
             if result.plague_destroyed or result.plague_quality_downgraded:
                 # Phase 947: _APDestr's own real S_AA victim-kingdom
                 # notice -- see `GameState.plague_victim_notices_by_
@@ -17285,7 +17287,7 @@ def record_spell_world_events(
             line = render_illus_terrain_world_event(
                 TERRAIN_NAME[province.terrain], province_name, TERRAIN_NAME[province.illusory_terrain], rng
             )
-            state.record_world_event(coord, [prefix + line])
+            state.record_world_event(coord, [prefix + line], phase=entry.phase_label)
             # Phase 886: Discovery.ULTRAVIOLET_LENSES / Treasure.
             # AMULET_ANTI_ILLUSION -- every currently-privileged Kingdom
             # (other than the caster's own, which already gets its own
@@ -17300,7 +17302,7 @@ def record_spell_world_events(
                 if kingdom_sees_through_illusory_terrain(state, privileged_kingdom_id):
                     state.illusory_terrain_reveals_by_kingdom.setdefault(privileged_kingdom_id, []).append(prefix + line)
         elif request.spell is Spell.FLOOD:
-            state.record_world_event(coord, [prefix + render_flood_world_event(province_name, rng)])
+            state.record_world_event(coord, [prefix + render_flood_world_event(province_name, rng)], phase=entry.phase_label)
         elif request.spell is Spell.TORNADO and (result.tornado_destroyed or result.tornado_quality_downgraded):
             # Phase 939: _ATDestr's own real S_AA bystander notice -- see
             # this function's own Phase 939 addendum for the full
@@ -17328,7 +17330,7 @@ def record_spell_world_events(
                 state.tornado_victim_notices_by_kingdom.setdefault(army.kingdom_id, []).append(prefix + line)
         elif request.spell in _BYSTANDER_SPELL_NOTICE_SPELLS:
             line = render_bystander_spell_notice(request.spell, province_name, rng)
-            state.record_world_event(coord, [prefix + line])
+            state.record_world_event(coord, [prefix + line], phase=entry.phase_label)
         elif request.spell is Spell.SCAR_TERRAIN:
             lines = [prefix + render_scar_terrain_cast_notice(province_name, rng)]
             if result.scar_terrain_collapsed:
@@ -17343,7 +17345,7 @@ def record_spell_world_events(
                                     RACE_NAME[province.race], ARMY_TYPE_DESIGNATION[recruit_type], rng
                                 )
                             )
-            state.record_world_event(coord, lines)
+            state.record_world_event(coord, lines, phase=entry.phase_label)
 
 
 def record_plague_spread_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
@@ -17697,7 +17699,7 @@ def record_move_world_events(state: GameState, results: list[PhaseDispatchResult
             line = render_fly_move_world_event(leader.name, province_name, rng)
         else:
             continue
-        state.record_world_event(new_location, [prefix + line])
+        state.record_world_event(new_location, [prefix + line], phase=entry.phase_label)
 
 
 def record_illusory_fog_foreign_entry_world_events(
@@ -17728,7 +17730,7 @@ def record_illusory_fog_foreign_entry_world_events(
         province_name = _province_label(state, new_location)
         prefix = _season_phrase_for_phase_label(entry.phase_label)
         line = render_illusory_fog_foreign_entry_note(province_name, rng)
-        state.record_world_event(new_location, [prefix + line])
+        state.record_world_event(new_location, [prefix + line], phase=entry.phase_label)
 
 
 def record_uncontested_conquest_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
@@ -17784,7 +17786,7 @@ def record_uncontested_conquest_world_events(state: GameState, results: list[Pha
         is_sea = province.effective_terrain() == Terrain.SEA
         prefix = _season_phrase_for_phase_label(entry.phase_label)
         line = render_uncontested_conquest(attacker_name, province_name, rng, is_sea=is_sea)
-        state.record_world_event(new_location, [prefix + line])
+        state.record_world_event(new_location, [prefix + line], phase=entry.phase_label)
 
 
 def record_wandering_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
@@ -17986,7 +17988,9 @@ def describe_general_intelligence_report(
     groups: dict[int, list[str]] = {}
     order: list[int] = []
     for event in state.world_events:
-        if not is_visible_to(state, kingdom_id, event.coord, bounds):
+        if not is_visible_to(state, kingdom_id, event.coord, bounds) and not state.spy_watched(
+            kingdom_id, event.coord, getattr(event, "phase", "")
+        ):
             continue
         province = state.provinces.get(event.coord)
         owner = province.owner_kingdom_id if province is not None else None
