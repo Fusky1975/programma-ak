@@ -317,6 +317,7 @@ from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.sickness import apply_sickness
+from ak_engine.turn.spy_cover import compute_cover_ability
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, _has_spy_super_sleuth, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.command_experience import award_sage_practice_experience
@@ -452,6 +453,16 @@ def run_turn(
     board_width = board_width if board_width is not None else state.board_width
     results: list[PhaseDispatchResult] = []
     bounds = MapBounds(board_width, state.board_height)
+    # Spy/Thief cover for the whole turn ([4.3.3]), computed from the plans alone -- see
+    # `turn/spy_cover.py`. Kept after the turn ends: the reports composed afterwards read it.
+    for state_leader in state.leaders.values():
+        state_leader.cover_ability = None
+    for turn_leader in turn_leaders:
+        covered = state.leaders.get(turn_leader.leader.leader_id)
+        if covered is not None:
+            covered.cover_ability = compute_cover_ability(
+                turn_leader.leader.plan, tuple(covered.special_encounter_plan or ())
+            )
     active_defends: dict[int, DefendCoverage] = {}  # defender leader_id -> origin + coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
     active_move_chases: dict[int, _ActiveMoveChase] = {}  # mover leader_id -> ongoing non-adjacent Move chase

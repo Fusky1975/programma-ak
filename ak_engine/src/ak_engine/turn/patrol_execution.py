@@ -43,12 +43,11 @@ are quite similar":
      no current threat to be intercepted by the Patrol." -- persistence
      and cancellation live in ``turn/turn_processor.py``, not here.
   e) "A Patrol may be unable to detect an enemy character if he is
-     using his Spy or Thief ability that gameturn." **Not modeled --
-     a genuine data-model gap, not a choice.** This project's
-     ``GameState`` has no field anywhere for per-turn ability-usage
-     tracking (the same category of gap already declared for ASpy's
-     own "Chance of Escaping Notice" column, ``turn/spy_table.py``'s
-     own docstring).
+     using his Spy or Thief ability that gameturn." Modeled via
+     ``LeaderState.cover_ability`` (``turn/spy_cover.py``): an intruder
+     whose plan has a Spy/Trail order or a Steal tactic is only noticed
+     with the Spy Table's chance of being noticed (100/50/25/12/5% by
+     level of the covering Talent).
   f) "A Patrol will only intercept in owned or Allied territory." --
      read here as the patroller's own current province (their "beat")
      needing to be owned by their own Kingdom or an ally, not the
@@ -170,6 +169,7 @@ from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.office_holder import cached_office_holder_leader_id
 from ak_engine.turn.sep_decode import target_uses_special_encounter_plan
+from ak_engine.turn.spy_cover import notice_chance_of
 
 _MAGIC_ABILITIES = (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)
 
@@ -200,9 +200,15 @@ def _is_enemy(patroller: LeaderState, candidate: LeaderState, state: GameState) 
     return not state.is_allied(patroller.kingdom_id, candidate.kingdom_id)
 
 
-def find_patrol_target(state: GameState, patroller_leader_id: int, bounds: MapBounds) -> LeaderState | None:
-    """Rules (a)-(c), (f)-(h): the most threatening qualifying intruder to intercept
+def find_patrol_target(
+    state: GameState, patroller_leader_id: int, bounds: MapBounds, rng: random.Random | None = None
+) -> LeaderState | None:
+    """Rules (a)-(c), (e), (f)-(h): the most threatening qualifying intruder to intercept
     this phase, or ``None`` if none qualify. See module docstring.
+
+    Rule (e): an intruder using Spy or Thief that game turn (``LeaderState.cover_ability``)
+    is only noticed with the Spy Table's own chance of being noticed (``turn/spy_cover.py``);
+    rolled with ``rng`` (no roll, so no cover effect, when none is supplied).
     """
 
     patroller = state.leaders.get(patroller_leader_id)
@@ -229,6 +235,9 @@ def find_patrol_target(state: GameState, patroller_leader_id: int, bounds: MapBo
             continue  # rule (c)
         if _combat_skill_of(state, candidate) > patroller_skill:
             continue  # rule (g)
+        if rng is not None and candidate.cover_ability is not None:
+            if rng.random() >= notice_chance_of(state, candidate):
+                continue  # rule (e): slipped past the Patrol under Spy/Thief cover
         candidates.append(candidate)
 
     if not candidates:
@@ -408,7 +417,7 @@ def execute_patrol(
     rng = rng if rng is not None else random.Random()
     bounds = MapBounds(board_width, board_height)
 
-    target = find_patrol_target(state, patroller_leader_id, bounds)
+    target = find_patrol_target(state, patroller_leader_id, bounds, rng)
     if target is None:
         return PatrolExecutionResult(intercepted=False, reason="no intruder detected")
 

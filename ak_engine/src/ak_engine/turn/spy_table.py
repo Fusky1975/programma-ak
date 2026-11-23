@@ -28,13 +28,11 @@ module's own documented design choice**: ``estimate_reported_value()``
 applies a uniform random offset in ``[-margin, +margin]`` (as a
 fraction of the true value), floored at 0 -- the same "no negative
 report" floor ``turn/tax_base.py province_tax_yield()`` already applies
-to the true value itself. **"Chance of Escaping Notice"** (column 0,
-ASpy's own [3.14] detection-avoidance mechanic) stays genuinely
-unmodeled -- confirmed by a direct search of the available rulebook
-text: no consequence of *being* noticed while spying is ever described
-anywhere (only the flavor fact that spying/trailing reduces detection
-odds), so there is nothing concrete this project could attach a roll's
-result to yet.
+to the true value itself. **"Chance of Escaping Notice"** is modeled in ``turn/spy_cover.py``: a character using Spy,
+Trail or a Steal tactic in a turn is only noticed with the complementary chance (100/50/25/12/5%
+by level) by a Patrol and in the other Kings' CHARACTERS report. The military figures of a Spy
+report (armies per type) also go through the "Margin of Error" column
+(``turn/aspy_execution.py _estimate_forces()``).
 
 **Distance-0 (same-province) special case, a documented design choice,
 not a rulebook quote**: the table's own formula ("divided by the
@@ -50,7 +48,7 @@ from __future__ import annotations
 import random
 
 # (escaping_notice_pct, margin_of_error_pct, pursue_or_trail_base_pct) by Spy skill level 0-4.
-# escaping_notice_pct (index 0) is still unused -- see module docstring.
+# escaping_notice_pct (index 0) is applied by turn/spy_cover.py (as its complement, 100/50/25/12/5).
 _SPY_TABLE: dict[int, tuple[int, int, int]] = {
     0: (0, 70, 50),
     1: (50, 55, 100),

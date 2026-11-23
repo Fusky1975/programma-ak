@@ -37,6 +37,7 @@ import itertools
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import HexCoord
 from ak_engine.turn.movement import hex_distance_wrapped
+from ak_engine.turn.spy_cover import notice_chance_of
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 
 
@@ -107,13 +108,16 @@ def leader_location_known_to_kingdom(
     if target.is_king and target.kingdom_id is not None and owner_kingdom_id == target.kingdom_id:
         return False
 
-    # cover_gate: ISpy_Cover(ln) is unconditionally 1.0 in the standard,
-    # non-Moderator report engine (DEF2.PAS: the only two `cover[ldr]`
-    # setters, lines 417/562, are both inside {$IFDEF Moderator}), so
-    # Trunc(16*1.0)=16 is unconditionally greater than any (.. AND 15)
-    # value (capped 0-15) -- this gate is always satisfied, and
-    # `orig_turn`/`begvalkng` never actually matter for it.
-    cover_gate = True
+    # cover_gate: ``Dead(ln) or Trunc(16*ISpy_Cover(ln)) > ((kng+ln+orig_turn+gtmod+
+    # begvalkng) AND 15)``. ``ISpy_Cover`` is 1.0 (so the gate always holds) unless the
+    # character used Spy/Trail or a Steal tactic this turn -- then the Spy Table's chance of
+    # being noticed (``turn/spy_cover.py``) lets only that share of (kingdom, character, turn)
+    # combinations see them. ``gtmod`` is 0 here; ``begvalkng`` (a per-game constant in the
+    # original, not recoverable from the archive) is taken as 0.
+    cover_gate = (
+        state.leaders.get(target_leader_id) is None
+        or int(16 * notice_chance_of(state, target)) > ((viewer_kingdom_id + target_leader_id + orig_turn) & 15)
+    )
 
     location_gate = owner_kingdom_id == viewer_kingdom_id or (
         (target_leader_id + orig_turn) % 5 <= 1
