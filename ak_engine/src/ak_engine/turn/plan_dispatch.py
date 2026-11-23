@@ -392,6 +392,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.turn.sickness import apply_sickness
+from ak_engine.turn.spy_watch import note_spy_watch
 from ak_engine.turn.command_experience import (
     award_explore_experience,
     award_pick_up_leave_experience,
@@ -1683,6 +1684,7 @@ def run_leader_plan(
                     rng=rng,
                 )
                 results.append(PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, result, None))
+                note_spy_watch(state, leader.leader_id, phase, result)
             except Exception as exc:  # noqa: BLE001 -- intentionally broad, see docstring
                 results.append(PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, None, exc))
                 continue

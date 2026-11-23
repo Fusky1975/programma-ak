@@ -916,6 +916,7 @@ def run_turn(
                 board_width=state.board_width,
                 board_height=state.board_height,
                 rng=rng,
+                once_per_turn=False,  # a separate end-of-turn report, not a second Spy order
             )
         except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
             results.append(

@@ -1603,6 +1603,10 @@ class WorldEvent:
     # news of wanderers in the owner's own ACTION REPORT); "" for the rest.
     # Read with ``getattr(event, "kind", "")``: saved games predate it.
     kind: str = ""
+    # The plan phase ("P0".."P4") it happened in, "" when it has no phase (end-of-turn events).
+    # Read with ``getattr(event, "phase", "")``: saved games predate it. A spy watching the
+    # province in that phase sees the event ([3.14]).
+    phase: str = ""
 
 
 @dataclass(slots=True)
@@ -2039,6 +2043,16 @@ class GameState:
     # ``compose_letter_report()`` call for that turn -- every King's own
     # report reads the same shared list, filtered by ``is_visible_to()``.
     world_events: list[WorldEvent] = field(default_factory=list)
+    # (watching kingdom id, province, phase label) -- a character of that kingdom was spying
+    # on / moving or exploring with Spy skill in that province in that phase this turn, so the
+    # kingdom's GENERAL INTELLIGENCE REPORT includes what happened there in that phase ([3.14],
+    # RUMORS.PAS Set_Intel). Filled by `turn/spy_watch.py`, cleared with the other per-turn
+    # report scratch lists.
+    spy_watches: list[tuple[int, HexCoord, str]] = field(default_factory=list)
+    # (spy leader id, province) pairs whose military/characters report was already made this
+    # turn: "Una volta per turno di gioco, la spia farà anche un rapporto concernente le forze
+    # militari e i personaggi" ([3.14]).
+    spy_force_reports: set[tuple[int, HexCoord]] = field(default_factory=set)
     # Phase 736: raw material for a real, previously-unrendered Phase
     # 716 event -- see SunkCargoEvent's own docstring. Populated by
     # ``turn/sea_transport.py apply_battle_carrier_destruction()`` at
@@ -2636,6 +2650,8 @@ class GameState:
         sunk-cargo events and the per-Kingdom narrative/notice lists."""
 
         self.world_events.clear()
+        self.spy_watches.clear()
+        self.spy_force_reports.clear()
         self.sunk_cargo_events.clear()
         self.battle_narratives_by_kingdom.clear()
         self.illusory_terrain_reveals_by_kingdom.clear()
@@ -2644,10 +2660,16 @@ class GameState:
         self.plague_victim_notices_by_kingdom.clear()
         self.summon_nullifications.clear()
 
-    def record_world_event(self, coord: HexCoord, lines: list[str], *, kind: str = "") -> None:
+    def spy_watched(self, kingdom_id: int, coord: HexCoord, phase: str) -> bool:
+        """Whether a character of ``kingdom_id`` was watching ``coord`` in ``phase`` this turn
+        (see ``turn/spy_watch.py``)."""
+
+        return bool(phase) and (kingdom_id, coord, phase) in self.spy_watches
+
+    def record_world_event(self, coord: HexCoord, lines: list[str], *, kind: str = "", phase: str = "") -> None:
         """Appends one ``WorldEvent`` at ``coord`` -- see that class's own
         docstring for GENERAL INTELLIGENCE REPORT's own real raw material
         (Phase 231).
         """
 
-        self.world_events.append(WorldEvent(coord, lines, kind))
+        self.world_events.append(WorldEvent(coord, lines, kind, phase))
