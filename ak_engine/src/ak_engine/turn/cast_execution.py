@@ -543,7 +543,11 @@ mischaracterized as already-uniform for years.
      state. An army the leader picks up *after* the cast is not
      retroactively affected, the same "snapshot at cast time" reading
      Oratory's own army-quality bump already established.
-  2. **"Moves as an air unit" is a confirmed fact, not modeled.** This
+  2. **"Moves as an air unit" -- modeled (2026-11-23), see ``turn/move_execution.py
+     wind_walking_army_ids_of()``/``find_transport_illegality()``: the led armies
+     cross land and sea without transport, like Dragon/Eagle Wings; no fleet
+     boarding takes place; each unit pays its own movement points.** The paragraph
+     below is the earlier reasoning, kept for the record. This
      project's only existing "air unit" classification
      (``models/army_type.py OVERFLIGHT_AIR``) is a static, per-
      ``ArmyType`` property (Dragon Wing/Eagle Wing) consumed by combat
@@ -991,8 +995,8 @@ GATE_ANGEL_ELIGIBLE_ALIGNMENTS = (
 # module docstring's own Phase 204 addendum for the remaining three
 # confirmed-but-unmodeled facts.
 MYSTIC_WINDS_MOVEMENT_POINTS = 5
-MYSTIC_WINDS_MOVES_AS_AIR_UNIT = True
-MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY = True
+MYSTIC_WINDS_MOVES_AS_AIR_UNIT = True  # modeled: move_execution.wind_walking_army_ids_of()
+MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY = True  # modeled: no auto-boarding under the spell
 MYSTIC_WINDS_ENDS_BEFORE_ARMY_BATTLE = True
 
 _SPELL_ABILITY: dict[Spell, Ability] = {
