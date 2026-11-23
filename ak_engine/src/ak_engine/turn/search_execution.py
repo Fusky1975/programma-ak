@@ -646,6 +646,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, Treasure, TreasureCategory
 from ak_engine.turn.command_experience import award_talk_experience
+from ak_engine.turn.sickness import make_sick
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.feature_power_execution import (
     SA_ARGUMENT_POWERS,
@@ -2372,6 +2373,7 @@ def _resolve_search_encounter(
                     and Discovery.HIDDEN_TATTOOS in state.kingdoms[leader.kingdom_id].discoveries
                 )
                 if target_has_hidden_tattoos:
+                    make_sick(state, leader.leader_id)
                     return None
                 # "Se l'incantesimo riesce, la vittima viene uccisa" --
                 # unlike the Action-Cast form (which substitutes a coma,

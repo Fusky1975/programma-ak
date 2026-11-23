@@ -747,6 +747,7 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import ENHANCED_CHARM_ELIGIBLE_CATEGORIES, TREASURE_CATEGORY
+from ak_engine.turn.sickness import make_sick
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, CastRequest
 from ak_engine.turn.combat import Quality
@@ -2052,14 +2053,11 @@ def _execute_kill_enemy(
     Enemy spell of Necromancers... All characters of the Kingdom are
     protected. Instead of being killed, the target character will be
     sick for the remainder of the gameturn and will spend his time
-    practicing abilities somewhat randomly." Only the confirmed core
-    effect -- the target survives (now: doesn't fall comatose either,
-    reusing the same ward for the Phase 310 coma outcome) -- is
-    modeled; the "sick, practices randomly" secondary effect has no
-    consumer this project could wire it into without inventing a new
-    sickness/forced-Practice mechanic the source doesn't specify the
-    parameters of (same "don't guess" convention as Flood's own
-    unmodeled land-units-trapped clause).
+    practicing abilities somewhat randomly." The target survives (and
+    doesn't fall comatose either, reusing the same ward for the Phase 310
+    coma outcome) and, as of 2026-11-23, falls sick: its orders become
+    Practice for the rest of the turn -- see ``turn/sickness.py`` for the
+    user-specified rules.
 
     **2026-10-31 update**: this function remains the Action-Cast half
     only -- the "no Individual-Combat-mode dispatch path" and "no
@@ -2143,6 +2141,7 @@ def _execute_kill_enemy(
         return CastExecutionResult(request, applied=False, reason="target is immune (anti-magic amulet)")
 
     if kingdom_has_discovery(state, target.kingdom_id, Discovery.HIDDEN_TATTOOS):  # Phase 1048
+        make_sick(state, request.target)
         return CastExecutionResult(request, applied=True, discovery_defended=Discovery.HIDDEN_TATTOOS)
 
     # Phase 447: Grandfather of Assassins (Office.ASSASSIN, id 43) merit

@@ -316,6 +316,7 @@ from ak_engine.turn.move_execution import (
 from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
 from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.sickness import apply_sickness
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, _has_spy_super_sleuth, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.command_experience import award_sage_practice_experience
@@ -1239,6 +1240,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         leader.oratory_boosted_this_turn = False
         # Mystic Winds: the spell ends with the turn.
         leader.mystic_winds_active = False
+        leader.sick_this_turn = False
         # Phantasmal Armies ([4.23.2]): "for the rest of the turn".
         leader.phantasmal_armies_level = 0
     for kingdom in state.kingdoms.values():
@@ -2253,7 +2255,7 @@ def _collect_phase_entries(
         for segment_index, segment in enumerate(tl.leader.plan.segments):
             phase = segment.phases.get(label)
             if phase is not None:
-                entries.append((tl, segment_index, phase))
+                entries.append((tl, segment_index, apply_sickness(state, tl.leader.leader_id, phase)))
     return _order_phase_entries_by_initiative(entries, state)
 
 

@@ -1192,6 +1192,10 @@ class LeaderState:
     # resurrection, curing a coma never changes ``kingdom_id``, even
     # when cast by a hero/King of a different kingdom (same source).
     is_comatose: bool = False
+    # Hidden Tattoos: a Kill Enemy that succeeded against this character only made
+    # them sick for the rest of the turn -- see `turn/sickness.py`. Cleared at the
+    # end of every turn.
+    sick_this_turn: bool = False
     # Phase 477: AKGEN_reverse_engineering_report (2).md SS20.9's own
     # "Grandfather of Assassins" title-perk guard escalation -- "Ogni
     # fallimento raddoppia la guardia e dimezza la probabilità normale
