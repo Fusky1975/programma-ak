@@ -1177,11 +1177,11 @@ def execute_search(
         if leader is not None:
             # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's
             # own Melee/Archery rows -- "evento di mischia/duello
-            # qualificante"/"evento di tiro riuscito" -- a landed hit,
+            # qualificante"/"evento di tiro riuscito" -- an attempted swing/shot (a miss counts too: rulebook [3.13] "per tattica tentata", user decision 2026-11-23),
             # credited once per encounter, independent of who wins.
-            if any(s.hit for s in result.melee_swings if s.attacker == "a"):
+            if any(s.attacker == "a" for s in result.melee_swings):
                 add_experience(leader, Ability.MELEE, 10, rng)
-            if any(s.hit for s in result.fire_arrow_shots if s.shooter == "a"):
+            if any(s.shooter == "a" for s in result.fire_arrow_shots):
                 add_experience(leader, Ability.ARCHERY, 10, rng)
         _apply_scout(state, leader_id, request, result, rng)
         _apply_talk_language_failure(state, leader, request, result)

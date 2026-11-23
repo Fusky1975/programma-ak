@@ -306,9 +306,9 @@ def resolve_random_encounter(
     leader_combatant.neutral_duelist_bonus = leader_combatant.neutral_duelist_bonus and opponent.is_humanoid
     outcome = resolve_challenge_combat(decoded_sep, leader, leader_combatant, None, opponent, state, rng)
 
-    if any(swing.hit for swing in outcome.melee_swings if swing.attacker == "a"):
+    if any(swing.attacker == "a" for swing in outcome.melee_swings):
         add_experience(leader, Ability.MELEE, 10, rng)
-    if any(shot.hit for shot in outcome.fire_arrow_shots if shot.shooter == "a"):
+    if any(shot.shooter == "a" for shot in outcome.fire_arrow_shots):
         add_experience(leader, Ability.ARCHERY, 10, rng)
 
     leader_died = False
