@@ -73,7 +73,15 @@ def test_a_non_neutral_hero_never_gets_it():
 
 @pytest.mark.parametrize(
     "monster,humanoid",
-    [(Monster.SWORDSMAN, True), (Monster.GIANT, True), (Monster.WITCH, True), (Monster.R_DRAGON, False), (Monster.DRYAD, False)],
+    [(Monster.SWORDSMAN, True), (Monster.GIANT, True), (Monster.WITCH, True), (Monster.TROLL, True), (Monster.R_DRAGON, False), (Monster.DRYAD, False)],
 )
 def test_wandering_monsters_know_whether_they_are_humanoid(monster, humanoid):
     assert monster_combatant(monster, random.Random(1)).is_humanoid is humanoid
+
+
+def test_the_humanoid_monsters_are_the_fifteen_of_mostri_md():
+    from ak_engine.models.monster import HUMANOID_MONSTERS, MONSTER_NAMES
+
+    names = {MONSTER_NAMES[m] for m in HUMANOID_MONSTERS}
+    assert len(HUMANOID_MONSTERS) == 15
+    assert {"Centaur", "Medusa", "Minotaur", "Troll", "Werewolf", "Giant", "Bigfoot", "Witch"} <= names
