@@ -18891,6 +18891,19 @@ def _pascal_action_report_body(
     return body
 
 
+def describe_summon_nullifications(state: GameState, kingdom_id: int) -> list[str]:
+    """Two summoning spells (Mirror Image, Gate Demon, Gate Angel, Illusory Hero) that met in an
+    encounter of one of this Kingdom's characters and dissolved each other. Project-original
+    sentence (no Pascal text for it)."""
+
+    return [
+        f"{first_name}'s {SPELL_NAME[first_spell]} spell and {second_name}'s {SPELL_NAME[second_spell]} spell "
+        "met, and both dissolved."
+        for first_name, first_spell, second_name, second_spell, kingdom_ids in state.summon_nullifications
+        if kingdom_id in kingdom_ids
+    ]
+
+
 def compose_letter_report(
     results: list[PhaseDispatchResult],
     state: GameState,
@@ -19353,6 +19366,7 @@ def compose_letter_report(
     # Phase 947: Plague's own real S_AA victim-kingdom notice, the same
     # placement reasoning as Tornado's own sibling list right above.
     story_lines = story_lines + state.plague_victim_notices_by_kingdom.get(kingdom_id, [])
+    story_lines = story_lines + describe_summon_nullifications(state, kingdom_id)
     finance_sentences: list[str] = []
     finances_lines: list[str] = []
     if pascal_layout:

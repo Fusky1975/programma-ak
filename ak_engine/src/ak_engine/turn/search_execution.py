@@ -569,6 +569,7 @@ from ak_engine.turn.discovery_effects import (
     holds_monster_command_item_for,
 )
 from ak_engine.turn.encounter import (
+    SUMMON_SPELLS,
     CHARACTER_HIT_POINTS,
     DAMP_MAGIC_CAST_CHANCE_MULTIPLIER,
     FIRE_ARROW_DAMAGE_RANGE,
@@ -1916,6 +1917,12 @@ def _resolve_search_encounter(
     monster_tactic_index = 0
     current_range = CombatRange.SPELL_RANGE
     melee_setup_done = False
+    # Summons that dissolved each other (turn/encounter.py SUMMON_SPELLS): the leader's tactics
+    # used up as the answer to the guardian's own summon, where the leader stands in his plan,
+    # and the one-shot flag a probing cast reports back through.
+    consumed_leader_tactics: set[int] = set()
+    leader_tactic_cursor = 0
+    summon_probe_ready = False
 
     # Phase 732: this encounter's own Personal-Combat cast-slot trackers
     # (`turn/encounter.py try_consume_combat_cast_slot()`'s own docstring
@@ -1989,7 +1996,12 @@ def _resolve_search_encounter(
     cast_attempt_applied = False
 
     def _resolve_cast_tactic(
-        tactic, *, caster_is_leader: bool, is_first_tactic: bool = False, forced_level: int | None = None
+        tactic,
+        *,
+        caster_is_leader: bool,
+        is_first_tactic: bool = False,
+        forced_level: int | None = None,
+        summon_probe: bool = False,
     ) -> SearchExecutionResult | None:
         """Applies one of the ten Personal-Combat-only spells (or Charm's
         combat form) to the encounter: the 8 non-channeled, one-roll
@@ -2069,7 +2081,7 @@ def _resolve_search_encounter(
         addendum for where that restriction is actually enforced.
         """
 
-        nonlocal cast_attempt_applied
+        nonlocal cast_attempt_applied, summon_probe_ready
         cast_attempt_applied = False
         # Phase 1052: Kill Enemy's retaliation duel and Gate Demon/Gate
         # Angel's summoned-combatant duels below all call resolve_melee_
@@ -2710,6 +2722,26 @@ def _resolve_search_encounter(
                 return outcome
             return None
 
+        if spell in SUMMON_SPELLS:
+            # Two summons meeting dissolve each other (turn/encounter.py SUMMON_SPELLS).
+            # ``summon_probe`` is the opponent's side of that meeting: every precondition,
+            # slot and roll above has been settled, and the effect is not carried out.
+            if summon_probe:
+                summon_probe_ready = True
+                return None
+            opponent_spell = _opponent_counters_summon(caster_is_leader)
+            if opponent_spell is not None:
+                state.summon_nullifications.append(
+                    (
+                        caster.name,
+                        spell,
+                        target.name,
+                        opponent_spell,
+                        (leader.kingdom_id,) if leader.kingdom_id is not None else (),
+                    )
+                )
+                return None
+
         if spell is Spell.MIRROR_IMAGE:
             if target_is_monster:
                 opponent_tier = MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER[monster_species]
@@ -3084,6 +3116,45 @@ def _resolve_search_encounter(
         nonlocal monster_tactic_index
         if monster_plan is not None and monster_tactic_index < len(monster_plan):
             monster_tactic_index += 1
+
+    def _is_summon_cast(tactic) -> bool:
+        if tactic.maneuver is not Maneuver.CAST or tactic.sub_object is None:
+            return False
+        try:
+            return Spell(tactic.sub_object) in SUMMON_SPELLS
+        except ValueError:
+            return False
+
+    def _opponent_counters_summon(caster_is_leader: bool) -> Spell | None:
+        """One side is summoning: if the other side's next queued tactic is a summon that also
+        takes effect, both dissolve -- returns the other side's spell then."""
+
+        nonlocal summon_probe_ready, cast_attempt_applied
+        if caster_is_leader:
+            pending = _peek_monster_action()
+            if pending is None or not _is_summon_cast(pending):
+                return None
+            is_first = monster_tactic_index == 0
+            _advance_monster_tactic()
+        else:
+            cursor = leader_tactic_cursor
+            if (
+                cursor >= len(request.tactics)
+                or cursor in consumed_leader_tactics
+                or not _is_summon_cast(request.tactics[cursor])
+            ):
+                return None
+            pending = request.tactics[cursor]
+            is_first = cursor == 0
+            consumed_leader_tactics.add(cursor)
+        applied_before = cast_attempt_applied
+        summon_probe_ready = False
+        _resolve_cast_tactic(
+            pending, caster_is_leader=not caster_is_leader, is_first_tactic=is_first, summon_probe=True
+        )
+        ready, summon_probe_ready = summon_probe_ready, False
+        cast_attempt_applied = applied_before
+        return Spell(pending.sub_object) if ready else None
 
     def _monster_has_more_casts_pending() -> bool:
         """Phase 293: True if the guardian's own plan, from ``monster_
@@ -3817,6 +3888,9 @@ def _resolve_search_encounter(
         return None
 
     for tactic_index, tactic in enumerate(request.tactics):
+        if tactic_index in consumed_leader_tactics:
+            continue  # dissolved together with the guardian's own summon
+        leader_tactic_cursor = tactic_index + 1
         if tactic.maneuver is Maneuver.FLEE:
             flee_chance = effective_flee_chance(
                 FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=leader_combatant.is_invisible,

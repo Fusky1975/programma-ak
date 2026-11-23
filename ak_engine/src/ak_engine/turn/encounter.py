@@ -2064,6 +2064,15 @@ def spiritwrack_melee_damage_reduction(
     return _round_randomly(rate * effective_level, rng)
 
 
+# The four summoning spells: whatever fights in the caster's place (Mirror Image
+# phantom, Gate Demon's demon, Gate Angel's angel, Illusory Hero's hero) is undone
+# when the opponent summons one too -- "If another Mirror Image or Gate Demon spell
+# is cast against it, both spells will be nullified" (extended by the user, 2026-11-23,
+# to every combination of these four): both spells dissolve and the encounter goes on
+# with each side's next tactic. See `turn/challenge_execution.py`/`turn/search_execution.py`.
+SUMMON_SPELLS = frozenset({Spell.MIRROR_IMAGE, Spell.GATE_DEMON, Spell.GATE_ANGEL, Spell.ILLUS_HERO})
+
+
 # Charm [CH], module docstring's own Phase 183 addendum -- project-
 # original, user-supplied. Used mid-combat, Charm is unconditionally
 # equivalent to a Flee command that always succeeds -- no roll, no

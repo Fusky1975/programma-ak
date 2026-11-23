@@ -280,6 +280,8 @@ module's own Phase 719 addendum.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import random
 from dataclasses import dataclass, field, replace
 
@@ -309,6 +311,7 @@ from ak_engine.turn.discovery_effects import (
     holds_bow_of_elven_kings,
 )
 from ak_engine.turn.encounter import (
+    SUMMON_SPELLS,
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
     INFRARED_GOGGLES_HIT_CHANCE_MULTIPLIER,
@@ -398,6 +401,7 @@ WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL = 5
 # Phase 761 addendum for the full reasoning (this file never had them
 # gated at all, only Illusory Hero/Words of Healing above).
 GATE_DEMON_KNOWN_ABILITY_LEVEL = 5
+SUMMON_READY = "summon_ready"  # the probe result: this summon would have taken effect
 LAVA_POOL_KNOWN_ABILITY_LEVEL = 5
 AUGUR_COMBAT_KNOWN_ABILITY_LEVEL = 5
 
@@ -823,6 +827,8 @@ def _resolve_personal_combat_cast(
     is_defensive: bool = False,
     melee_setup_done: list[bool] | None = None,
     melee_swings: list[MeleeSwing] | None = None,
+    summon_probe: bool = False,
+    opponent_summon_counter: "Callable[[], Spell | None] | None" = None,
 ) -> str | None:
     """Leader-vs-leader Personal-Combat spell dispatch -- see module
     docstring's own Phase 290 addendum for how this was re-derived
@@ -1106,6 +1112,30 @@ def _resolve_personal_combat_cast(
         if fizzled_spells is not None:
             fizzled_spells.append((caster.name, spell))
         return None
+
+    if spell in SUMMON_SPELLS:
+        # Two summons meeting dissolve each other (turn/encounter.py SUMMON_SPELLS).
+        # ``summon_probe`` is the opponent's side of that meeting: every precondition,
+        # slot and roll above has been settled, and the effect is not carried out.
+        if summon_probe:
+            return SUMMON_READY
+        if opponent_summon_counter is not None:
+            opponent_spell = opponent_summon_counter()
+            if opponent_spell is not None:
+                state.summon_nullifications.append(
+                    (
+                        caster.name,
+                        spell,
+                        target.name,
+                        opponent_spell,
+                        tuple(
+                            leader.kingdom_id
+                            for leader in (caster_leader, target_leader)
+                            if leader is not None and leader.kingdom_id is not None
+                        ),
+                    )
+                )
+                return None
 
     if spell is Spell.CHARM:
         # Phase 529: AKGEN_reverse_engineering_report (3).md SS8.3/SS10.1
@@ -2073,6 +2103,11 @@ def resolve_challenge_combat(
     current_range = CombatRange.SPELL_RANGE
     melee_setup_done = False
     target_tactic_index = 0
+    # Summons that dissolved each other (turn/encounter.py SUMMON_SPELLS): the caster's
+    # tactics already used up as the answer to the target's own summon, and where the
+    # caster stands in his own plan (what he would do next).
+    consumed_caster_tactics: set[int] = set()
+    caster_tactic_cursor = 0
     # Phase 732: this encounter's own Personal-Combat cast-slot trackers
     # (`turn/encounter.py try_consume_combat_cast_slot()`'s own docstring
     # has the full sourced rule) -- one pair per side, never persisted
@@ -2156,6 +2191,64 @@ def resolve_challenge_combat(
     def _target_has_more_casts_pending() -> bool:
         return any(t.maneuver is Maneuver.CAST for t in (target_tactics or ())[target_tactic_index:])
 
+    def _is_summon_cast(tactic: SearchTactic) -> bool:
+        if tactic.maneuver is not Maneuver.CAST or tactic.sub_object is None:
+            return False
+        try:
+            return Spell(tactic.sub_object) in SUMMON_SPELLS
+        except ValueError:
+            return False
+
+    def _target_counters_summon() -> Spell | None:
+        """The caster is summoning: if the target's next queued tactic is a summon that
+        also takes effect, both dissolve -- returns the target's spell then."""
+
+        pending = _peek_target_cast()
+        if pending is None or not _is_summon_cast(pending):
+            return None
+        is_first = target_tactic_index == 0
+        _advance_target_tactic()
+        probe = _resolve_personal_combat_cast(
+            target,
+            target_leader,
+            caster,
+            caster_leader,
+            pending,
+            state,
+            rng,
+            is_first_tactic=is_first,
+            cast_slots_used=target_cast_slots_used,
+            cast_spells_attempted=target_cast_spells_attempted,
+            fizzled_spells=fizzled_spells,
+            is_defensive=True,
+            summon_probe=True,
+        )
+        return Spell(pending.sub_object) if probe == SUMMON_READY else None
+
+    def _caster_counters_summon() -> Spell | None:
+        """The target is summoning: if the caster's next tactic is a summon that also
+        takes effect, both dissolve -- returns the caster's spell then."""
+
+        cursor = caster_tactic_cursor
+        if cursor >= len(tactics) or cursor in consumed_caster_tactics or not _is_summon_cast(tactics[cursor]):
+            return None
+        consumed_caster_tactics.add(cursor)
+        probe = _resolve_personal_combat_cast(
+            caster,
+            caster_leader,
+            target,
+            target_leader,
+            tactics[cursor],
+            state,
+            rng,
+            is_first_tactic=(cursor == 0),
+            cast_slots_used=caster_cast_slots_used,
+            cast_spells_attempted=caster_cast_spells_attempted,
+            fizzled_spells=fizzled_spells,
+            summon_probe=True,
+        )
+        return Spell(tactics[cursor].sub_object) if probe == SUMMON_READY else None
+
     def _resolve_target_cast(tactic: SearchTactic, *, is_first: bool) -> str | None:
         """Resolves the target's own queued `CAST`, roles swapped (the
         target plays `_resolve_personal_combat_cast()`'s own `caster`
@@ -2191,6 +2284,7 @@ def resolve_challenge_combat(
             is_defensive=True,
             melee_setup_done=setup_box,
             melee_swings=melee_swings,
+            opponent_summon_counter=_caster_counters_summon,
         )
         melee_setup_done = setup_box[0]
         if outcome == "fled":
@@ -2315,6 +2409,9 @@ def resolve_challenge_combat(
         return _outcome(winner=target_cast_outcome)
 
     for index, tactic in enumerate(tactics):
+        if index in consumed_caster_tactics:
+            continue  # dissolved together with the target's own summon
+        caster_tactic_cursor = index + 1
         if tactic.maneuver is Maneuver.FLEE:
             # Phase 743: rulebook [5.6], "from ... other characters
             # [50%]" -- MonsterSpeed.MEDIUM needs no per-unit lookup
@@ -2500,6 +2597,7 @@ def resolve_challenge_combat(
                 hand_of_death_channels=hand_of_death_channels,
                 melee_setup_done=setup_box,
                 melee_swings=melee_swings,
+                opponent_summon_counter=_target_counters_summon,
             )
             # Phase 1042 bug fix -- see _resolve_personal_combat_cast()'s
             # own Phase 1042 docstring addendum and _resolve_target_cast()'s
