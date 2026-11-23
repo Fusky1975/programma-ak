@@ -564,11 +564,11 @@ def execute_pursue(
 
     # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
     # Melee/Archery rows -- "evento di mischia/duello qualificante"/
-    # "evento di tiro riuscito" -- an attempted swing/shot (a miss counts too: rulebook [3.13] "per tattica tentata", user decision 2026-11-23), credited once per
+    # "evento di tiro riuscito" -- Melee: a landed hit; Archery: an attempted shot, a miss counts too (rulebook [3.13] "per tattica tentata", user decision 2026-11-23, Archery only), credited once per
     # encounter per side, independent of who ultimately wins.
-    if any(s.attacker == "a" for s in combat_result.melee_swings):
+    if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
         add_experience(pursuer, Ability.MELEE, 10, rng)
-    if any(s.attacker == "b" for s in combat_result.melee_swings):
+    if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
         add_experience(target, Ability.MELEE, 10, rng)
     if any(s.shooter == "a" for s in combat_result.fire_arrow_shots):
         add_experience(pursuer, Ability.ARCHERY, 10, rng)

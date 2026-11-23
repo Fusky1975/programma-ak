@@ -859,8 +859,7 @@ def test_execute_search_landed_melee_hit_credits_the_leaders_melee_experience():
     mock_add_experience.assert_any_call(state.leaders[LEADER_ID], Ability.MELEE, 10, ANY)
 
 
-def test_execute_search_all_miss_melee_still_credits_the_attempt():
-    # Rulebook [3.13]: experience is for the tactic attempted, even when every swing misses.
+def test_execute_search_all_miss_melee_credits_nothing():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
 
@@ -872,7 +871,7 @@ def test_execute_search_all_miss_melee_still_credits_the_attempt():
         )
         execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
 
-    assert any(call.args[1] is Ability.MELEE for call in mock_add_experience.call_args_list)
+    mock_add_experience.assert_not_called()
 
 
 def test_execute_search_landed_fire_arrow_shot_credits_the_leaders_archery_experience():
@@ -6832,7 +6831,7 @@ def test_execute_search_guardians_own_cast_disrupted_by_a_missed_swing_uses_the_
             MeleeRoundOutcome(result=None),
             MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=2)),
         ]
-        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5] + [0.99] * 20))
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
     assert mock_miss_disrupt.called
     assert not mock_damage_disrupt.called  # a miss uses the flat 30%, not the damage-scaled formula
