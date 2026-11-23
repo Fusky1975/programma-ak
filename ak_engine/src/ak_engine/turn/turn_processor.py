@@ -311,6 +311,7 @@ from ak_engine.turn.move_execution import (
     find_transport_illegality,
     record_kingdom_exploration,
     reveal_adjacent_provinces,
+    wind_walking_army_ids_of,
 )
 from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
@@ -1510,7 +1511,16 @@ def _apply_defend_reinforcements(
         for army in state.armies_commanded_by(defender_leader_id):
             if army.movement_points < movement_cost_for_move(battle_occurred=True):
                 continue
-            if find_transport_illegality([army], [army.army_id], origin_province, target_province) is not None:
+            if (
+                find_transport_illegality(
+                    [army],
+                    [army.army_id],
+                    origin_province,
+                    target_province,
+                    wind_walking_army_ids=wind_walking_army_ids_of(state, [army]),
+                )
+                is not None
+            ):
                 continue
             eligible_armies.append(army)
 
@@ -2780,7 +2790,12 @@ def _dispatch_multi_attacker_lmove(
                 mover_leader is not None and AdvancedAbility.MARCH_THROUGH_FLOODS in mover_leader.advanced_abilities
             )
             transport_reason = find_transport_illegality(
-                armies, army_ids, origin_province, target_province, has_march_through_floods=has_march_through_floods
+                armies,
+                army_ids,
+                origin_province,
+                target_province,
+                has_march_through_floods=has_march_through_floods,
+                wind_walking_army_ids=wind_walking_army_ids_of(state, armies),
             )
             if transport_reason is not None:
                 raise TransportIllegalMoveError(transport_reason, origin_coord=origin, destination_coord=target)

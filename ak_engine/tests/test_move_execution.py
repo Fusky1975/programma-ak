@@ -2946,3 +2946,80 @@ def test_a_second_general_departing_does_not_queue_the_same_mercenary_again():
     assert first == [301]
     assert second == []
     assert state.pending_mercenary_follows == [(301, TARGET)]
+
+
+# -- Mystic Winds: the led armies "move as an air unit" while the spell lasts --
+
+
+def test_find_transport_illegality_wind_walking_army_crosses_the_sea_like_an_air_unit():
+    legion = ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, ORIGIN)
+
+    assert find_transport_illegality([legion], [1], _land_province(ORIGIN), _sea_province(TARGET)) == "insufficient_water_transport"
+    assert (
+        find_transport_illegality(
+            [legion], [1], _land_province(ORIGIN), _sea_province(TARGET), wind_walking_army_ids=frozenset({1})
+        )
+        is None
+    )
+
+
+def test_find_transport_illegality_wind_walking_frees_dinosaurs_and_ents_from_the_shoreline():
+    for army_type in (ArmyType.DINOSAURS, ArmyType.ENTS):
+        army = ArmyState(1, 1, army_type, Quality.AVERAGE, ORIGIN)
+        assert (
+            find_transport_illegality(
+                [army], [1], _land_province(ORIGIN), _sea_province(TARGET), wind_walking_army_ids=frozenset({1})
+            )
+            is None
+        )
+
+
+def test_find_transport_illegality_wind_walking_only_frees_the_listed_armies():
+    flying = ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, ORIGIN)
+    grounded = ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN)
+
+    reason = find_transport_illegality(
+        [flying, grounded],
+        [1, 2],
+        _land_province(ORIGIN),
+        _sea_province(TARGET),
+        wind_walking_army_ids=frozenset({1}),
+    )
+
+    assert reason == "insufficient_water_transport"
+
+
+def test_execute_move_under_mystic_winds_crosses_the_sea_without_a_fleet():
+    state = _sea_transport_legality_state()
+    state.add_leader(LeaderState(1, 1, "Mage", ORIGIN, mystic_winds_active=True))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=5, commanded_by=1))
+
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101], leader_id=1, target=TARGET, enforce_transport_legality=True
+    )
+
+    assert result.moved is True
+    assert state.armies[101].location == TARGET
+    assert state.armies[101].transported_by is None  # nothing boarded: it flew on its own movement points
+
+
+def test_execute_move_without_mystic_winds_still_needs_the_fleet():
+    state = _sea_transport_legality_state()
+    state.add_leader(LeaderState(1, 1, "Mage", ORIGIN))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=5, commanded_by=1))
+
+    with pytest.raises(TransportIllegalMoveError):
+        execute_move(state, kingdom_id=1, army_ids=[101], leader_id=1, target=TARGET, enforce_transport_legality=True)
+
+
+def test_under_mystic_winds_a_fleet_and_its_would_be_cargo_each_move_alone():
+    state = _sea_transport_legality_state()
+    state.add_leader(LeaderState(1, 1, "Mage", ORIGIN, mystic_winds_active=True))
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=5, commanded_by=1))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=5, commanded_by=1))
+
+    execute_move(
+        state, kingdom_id=1, army_ids=[101, 102], leader_id=1, target=TARGET, auto_board=True, enforce_transport_legality=True
+    )
+
+    assert state.armies[102].transported_by is None  # no fleet transport takes place

@@ -963,7 +963,10 @@ def resolve_wandering_mercenary_following(
             continue
         if army.movement_points <= 0:
             continue
-        if find_transport_illegality([army], [army.army_id], origin_province, target_province) is not None:
+        if find_transport_illegality(
+            [army], [army.army_id], origin_province, target_province,
+            wind_walking_army_ids=wind_walking_army_ids_of(state, [army]),
+        ) is not None:
             continue
         state.pending_mercenary_follows.append((army.army_id, target))
         army.movement_points -= WANDERING_MERCENARY_FOLLOW_MOVEMENT_COST
@@ -1039,6 +1042,9 @@ def _plan_auto_board_transport_group(
     boarding has to wait until every such check has passed.
     """
 
+    # Under Mystic Winds "no fleet transport or air transport takes place": each
+    # unit moves on its own movement points, so nothing boards anything.
+    armies = [army for army in armies if not mystic_winds_active_for(army, state)]
     carriers = sorted((army for army in armies if army.army_type in _CARRIER_ARMY_TYPES), key=lambda army: army.army_id)
     if not carriers:
         return []
@@ -1234,6 +1240,14 @@ def _land_crossing_blocked(
     return True
 
 
+def wind_walking_army_ids_of(state: GameState, armies: list[ArmyState]) -> frozenset[int]:
+    """The armies among ``armies`` led by a leader under Mystic Winds, which
+    "move as an air unit" while the spell lasts: they cross land and sea
+    without transport, like Dragon and Eagle Wings."""
+
+    return frozenset(army.army_id for army in armies if mystic_winds_active_for(army, state))
+
+
 def find_transport_illegality(
     armies: list[ArmyState],
     army_ids: list[int],
@@ -1243,6 +1257,7 @@ def find_transport_illegality(
     has_march_through_floods: bool = False,
     is_hug_coastline_hop: bool = False,
     planned_boarded_ids: frozenset[int] = frozenset(),
+    wind_walking_army_ids: frozenset[int] = frozenset(),
 ) -> TransportIllegalMoveReason | None:
     """The real sea-transport legality check -- see the module-level
     Phase 737 addendum right above `TransportIllegalMoveReason` for the
@@ -1318,8 +1333,8 @@ def find_transport_illegality(
             continue  # not really aboard yet, but validated to board as part of this same call's own plan
         if army.transported_by is not None and army.transported_by in army_ids:
             continue  # legally aboard a same-move carrier
-        if army.army_type in OVERFLIGHT_AIR:
-            continue  # "can move by land and sea... can end a turn on the sea"
+        if army.army_type in OVERFLIGHT_AIR or army.army_id in wind_walking_army_ids:
+            continue  # "can move by land and sea... can end a turn on the sea" (Mystic Winds gives the same)
         if army.army_type is ArmyType.MERMEN:
             # 2026-11-20 bug fix, user-confirmed via a live playtest: "I
             # Tritoni muovono come le Flotte" (Mermen move like Fleets)
@@ -1918,6 +1933,7 @@ def execute_move(
             has_march_through_floods=has_march_through_floods,
             is_hug_coastline_hop=is_hug_coastline_hop,
             planned_boarded_ids=planned_boarded_ids,
+            wind_walking_army_ids=wind_walking_army_ids_of(state, planned_armies),
         )
         if transport_reason is not None:
             # Phase 1045 bug fix -- same unrolled-mutation gap as the
