@@ -391,6 +391,7 @@ from typing import Any
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.turn.sickness import apply_sickness
 from ak_engine.turn.command_experience import (
     award_explore_experience,
     award_pick_up_leave_experience,
@@ -1656,6 +1657,8 @@ def run_leader_plan(
             phase = segment.phases.get(label)
             if phase is None:
                 continue
+            # A character made sick by Hidden Tattoos carries out Practice orders only.
+            phase = apply_sickness(state, leader.leader_id, phase)
             if valhalla_cap_active and phase.action not in (ActionCode.WAIT, ActionCode.NO_ACTION, ActionCode.MOVE_ABORT):
                 allowed = visitor.valhalla_allowed_phase_count or 0
                 is_over_budget = valhalla_phases_used >= allowed

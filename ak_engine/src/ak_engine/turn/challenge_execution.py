@@ -377,6 +377,7 @@ from ak_engine.turn.encounter import (
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.office_holder import cached_office_holder_leader_id, resolve_office_holder
 from ak_engine.turn.search_decode import SearchTactic
+from ak_engine.turn.sickness import make_sick
 from ak_engine.turn.sep_decode import plan_intent, sep_accepts_challenge, target_uses_special_encounter_plan
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
@@ -1053,6 +1054,7 @@ def _resolve_personal_combat_cast(
                 and Discovery.HIDDEN_TATTOOS in state.kingdoms[target_leader.kingdom_id].discoveries
             )
             if target_has_hidden_tattoos:
+                make_sick(state, target_leader.leader_id)
                 return None
             # "Se l'incantesimo riesce, la vittima viene uccisa" --
             # unlike the Action-Cast form's documented coma substitute,

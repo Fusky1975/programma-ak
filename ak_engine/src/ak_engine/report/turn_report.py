@@ -4822,6 +4822,12 @@ def describe_cast(
         return render_tornado_outcome(
             caster_name, province_name, result.tornado_destroyed, result.tornado_quality_downgraded, rng
         )
+    if spell is Spell.KILL_ENEMY and result.discovery_defended is Discovery.HIDDEN_TATTOOS and target_name is not None:
+        # Project-original (no Pascal text): the spell worked but Hidden Tattoos turned it into sickness.
+        return (
+            f"{caster_name} cast a Kill Enemy spell, but {target_name}, protected by Hidden Tattoos, "
+            "was only taken ill for the rest of the turn."
+        )
     if spell is Spell.CHARM:
         if target_name is None:
             raise ValueError(f"{spell!r} needs target_name")
