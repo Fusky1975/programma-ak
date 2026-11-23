@@ -15902,7 +15902,12 @@ def test_describe_aspy_no_characters_or_forces():
 
 
 def test_describe_aspy_forces_but_no_characters():
-    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1, garrison_army_names=("241st Axemen",))
+    report = SpyReport(
+        province=HexCoord(0, 0),
+        owner_kingdom_id=1,
+        garrison_army_names=("241st Axemen",),
+        garrison_estimate=((ArmyType.AXEMEN, 2),),
+    )
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
 
     lines = describe_aspy(
@@ -15911,7 +15916,7 @@ def test_describe_aspy_forces_but_no_characters():
 
     assert "the following elements are present in Greenfield:  " in lines
     assert "there were no conspicuous characters in Greenfield." in lines
-    assert "there is a garrison of approximately 241st Axemen." in lines
+    assert "there is a garrison of approximately 2 Axemen." in lines
     assert "there were no conspicuous characters or forces in Greenfield." not in lines
 
 
@@ -15922,7 +15927,12 @@ def test_describe_aspy_characters_with_and_without_armies():
         spotted_characters=[
             SpottedCharacter(1, "Borin", estimated_alignment=None, estimated_temper=None),
             SpottedCharacter(
-                2, "Commander Vale", estimated_alignment=None, estimated_temper=None, army_names=("34th Legion",)
+                2,
+                "Commander Vale",
+                estimated_alignment=None,
+                estimated_temper=None,
+                army_names=("34th Legion", "35th Garrison", "36th Fleet"),
+                army_estimate=((ArmyType.GARRISON, 2), (ArmyType.LEGION, 1), (ArmyType.FLEET, 1)),
             ),
         ],
     )
@@ -15934,7 +15944,7 @@ def test_describe_aspy_characters_with_and_without_armies():
 
     assert "Borin  is here." in lines
     assert "Commander Vale  is here." in lines
-    assert "Commander Vale leads approximately 34th Legion." in lines
+    assert "Commander Vale leads approximately 2 Garrison, 1 Legion and 1 Fleet." in lines
     assert not any("no conspicuous characters" in line for line in lines)
 
 

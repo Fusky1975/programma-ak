@@ -296,6 +296,32 @@ def _army_display_name(state: GameState, army: ArmyState) -> str:
     return make_army_name(army.army_id, army.army_type, race)
 
 
+_ARMY_TYPE_ORDER = {army_type: index for index, army_type in enumerate(ArmyType)}
+
+
+def _estimate_forces(
+    armies: list[ArmyState], spy_skill: int, state: GameState, leader: LeaderState, key: object
+) -> tuple[tuple[ArmyType, int], ...]:
+    """The spy's estimate of ``armies`` as "number of armies per type": each true count is
+    perturbed by the Spy Table's margin of error (``estimate_reported_value()``), never below 1
+    for a type that is really there. Rulebook [3.14]: "i propri rapporti militari ... sono
+    soggetti a un margine di errore che diminuisce con l'aumentare dell'abilità nel Talento
+    Spiare"; the real reports read "leads approximately 2 Garrison and 1 Fleet". Which quantity
+    the original perturbs (armies, soldiers) and how is not recoverable -- counting armies per
+    type, with the same symmetric uniform margin as the tax estimate, is this project's choice.
+    Drawn from its own derived stream so it never shifts any other roll.
+    """
+
+    counts: dict[ArmyType, int] = {}
+    for army in armies:
+        counts[army.army_type] = counts.get(army.army_type, 0) + 1
+    stream = random.Random(f"spy-forces:{state.game_number}:{state.turn_number}:{leader.leader_id}:{key}")
+    return tuple(
+        (army_type, max(1, estimate_reported_value(count, spy_skill, stream)))
+        for army_type, count in sorted(counts.items(), key=lambda item: _ARMY_TYPE_ORDER[item[0]])
+    )
+
+
 @dataclass(slots=True)
 class SpottedCharacter:
     leader_id: int
@@ -306,6 +332,10 @@ class SpottedCharacter:
     # every army this spotted character leads -- SAY.PAS's own
     # ``_LSLeads`` line item needs this list, see module docstring.
     army_names: tuple[str, ...] = ()
+    # The spy's own *estimate* of those armies, by type (``ArmyType`` -> number of armies,
+    # perturbed by the Spy Table's margin of error) -- what the report actually prints:
+    # "leads approximately 2 Garrison and 1 Fleet" (see ``_estimate_forces()``).
+    army_estimate: tuple[tuple[ArmyType, int], ...] = ()
 
 
 @dataclass(slots=True)
@@ -320,6 +350,8 @@ class SpyReport:
     # this province -- SAY.PAS's own ``_LSGarr`` line item needs this
     # list, see module docstring.
     garrison_army_names: tuple[str, ...] = ()
+    # Same estimate-by-type form as ``SpottedCharacter.army_estimate``, for the unled garrison.
+    garrison_estimate: tuple[tuple[ArmyType, int], ...] = ()
     # Phase 253: this province's own expected tax revenue this turn
     # (``turn/tax_base.py province_tax_yield()``), perturbed by the [4.33]
     # Spy Table's own margin of error as of Phase 265 (``turn/spy_table.py
@@ -448,6 +480,7 @@ def execute_aspy(
         kingdom = state.kingdoms.get(province.owner_kingdom_id)
         is_capital = kingdom is not None and kingdom.home_province == leader.location
 
+    spy_skill = _spy_skill_of(state, leader)
     perfect_alignment = caster_holds_psychic_mage_office or caster_has_detect_align
     spotted_characters: list[SpottedCharacter] = []
     for spotted in state.leaders_at(leader.location):
@@ -474,7 +507,8 @@ def execute_aspy(
                 perfect=caster_holds_psychic_mage_office,
             )
 
-        army_names = tuple(_army_display_name(state, army) for army in state.armies_commanded_by(spotted.leader_id))
+        led_armies = state.armies_commanded_by(spotted.leader_id)
+        army_names = tuple(_army_display_name(state, army) for army in led_armies)
 
         spotted_characters.append(
             SpottedCharacter(
@@ -483,14 +517,14 @@ def execute_aspy(
                 estimated_alignment=estimated_alignment,
                 estimated_temper=estimated_temper,
                 army_names=army_names,
+                army_estimate=_estimate_forces(led_armies, spy_skill, state, leader, f"led{spotted.leader_id}"),
             )
         )
 
-    garrison_army_names = tuple(
-        _army_display_name(state, army) for army in state.armies_at(leader.location) if army.commanded_by is None
-    )
+    unled_armies = [army for army in state.armies_at(leader.location) if army.commanded_by is None]
+    garrison_army_names = tuple(_army_display_name(state, army) for army in unled_armies)
+    garrison_estimate = _estimate_forces(unled_armies, spy_skill, state, leader, "garrison")
 
-    spy_skill = _spy_skill_of(state, leader)
     sage_skill = effective_skill_level(state, leader, Ability.SAGE)
 
     exact_tax_yield = province_tax_yield(province)
@@ -526,6 +560,7 @@ def execute_aspy(
         is_capital=is_capital,
         spotted_characters=spotted_characters,
         garrison_army_names=garrison_army_names,
+        garrison_estimate=garrison_estimate,
         tax_estimate=tax_estimate,
         discoveries_obtained=discoveries_obtained,
         adjacent_military_forces=adjacent_military_forces,

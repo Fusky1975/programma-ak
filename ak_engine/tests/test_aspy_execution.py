@@ -668,3 +668,61 @@ def test_execute_aspy_does_not_repeat_a_type_listed_in_both_slots():
     report = execute_aspy(state, LEADER_ID, _request())
 
     assert report.recruitable_army_types == [ArmyType.AXEMEN]
+
+
+def test_execute_aspy_estimates_unled_forces_as_a_count_per_army_type(monkeypatch):
+    # "leads/garrison of approximately 2 Garrison and 1 Fleet": armies grouped by type, in
+    # ArmyType order, each count run through the Spy Table's margin of error.
+    from ak_engine.turn import aspy_execution
+
+    monkeypatch.setattr(aspy_execution, "estimate_reported_value", lambda true_value, _skill, _rng: true_value)
+    state = _state()
+    state.add_army(ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, HOME))
+    state.add_army(ArmyState(2, 1, ArmyType.GARRISON, Quality.AVERAGE, HOME))
+    state.add_army(ArmyState(3, 1, ArmyType.GARRISON, Quality.AVERAGE, HOME))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.garrison_estimate == ((ArmyType.GARRISON, 2), (ArmyType.FLEET, 1))
+
+
+def test_execute_aspy_estimate_never_drops_a_type_that_is_really_there(monkeypatch):
+    from ak_engine.turn import aspy_execution
+
+    monkeypatch.setattr(aspy_execution, "estimate_reported_value", lambda _true, _skill, _rng: 0)
+    state = _state()
+    state.add_army(ArmyState(1, 1, ArmyType.GARRISON, Quality.AVERAGE, HOME))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.garrison_estimate == ((ArmyType.GARRISON, 1),)
+
+
+def test_execute_aspy_estimates_the_armies_a_spotted_leader_leads(monkeypatch):
+    from ak_engine.turn import aspy_execution
+
+    monkeypatch.setattr(aspy_execution, "estimate_reported_value", lambda true_value, _skill, _rng: true_value)
+    state = _state()
+    state.add_leader(LeaderState(7, 2, "Commander", HOME))
+    state.add_army(ArmyState(1, 2, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=7))
+    state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=7))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.spotted_characters[0].army_estimate == ((ArmyType.BOWMEN, 2),)
+    assert report.garrison_estimate == ()
+
+
+def test_execute_aspy_force_estimate_does_not_touch_the_callers_rng():
+    # The estimate comes from its own derived stream: the caller's rng sees no extra draws.
+    import random
+
+    state = _state()
+    state.add_army(ArmyState(1, 1, ArmyType.GARRISON, Quality.AVERAGE, HOME))
+    rng_with_army, rng_without = random.Random(5), random.Random(5)
+
+    with_army = execute_aspy(state, LEADER_ID, _request(), rng=rng_with_army)
+    execute_aspy(_state(), LEADER_ID, _request(), rng=rng_without)
+
+    assert with_army.garrison_estimate
+    assert rng_with_army.getstate() == rng_without.getstate()

@@ -1196,6 +1196,11 @@ class LeaderState:
     # them sick for the rest of the turn -- see `turn/sickness.py`. Cleared at the
     # end of every turn.
     sick_this_turn: bool = False
+    # The Talent (Spy for a Spy/Trail order, Thief for a Steal tactic) that gives this
+    # character cover from being noticed for the whole turn -- see `turn/spy_cover.py`.
+    # Set when the turn's plans are collected and kept after the turn ends (the reports
+    # composed afterwards read it); overwritten at the start of the next turn.
+    cover_ability: Ability | None = None
     # Phase 477: AKGEN_reverse_engineering_report (2).md SS20.9's own
     # "Grandfather of Assassins" title-perk guard escalation -- "Ogni
     # fallimento raddoppia la guardia e dimezza la probabilità normale

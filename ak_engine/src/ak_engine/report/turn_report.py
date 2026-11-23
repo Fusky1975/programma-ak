@@ -2409,6 +2409,13 @@ def render_spy_feature_knowledge(province_name: str, feature_id: int, level: int
     return render(SPY_FEATURE_KNOWLEDGE_TEMPLATE, values, rng=rng)
 
 
+def _spy_estimate_phrases(estimate) -> list[str]:
+    """``[("Garrison" ArmyType, 2), (Fleet, 1)]`` -> ``["2 Garrison", "1 Fleet"]``, the shape of
+    the real reports' "leads approximately 2 Garrison and 1 Fleet"."""
+
+    return [f"{count} {ARMY_TYPE_NAME[army_type]}" for army_type, count in estimate]
+
+
 def describe_aspy(
     report: SpyReport,
     *,
@@ -2521,10 +2528,10 @@ def describe_aspy(
         else:
             for character in report.spotted_characters:
                 lines.append(render_spy_character_here(character.name, rng))
-                if character.army_names:
-                    lines.append(render_spy_leads(character.name, list(character.army_names), rng))
-        if report.garrison_army_names:
-            lines.append(render_spy_garrison(list(report.garrison_army_names), rng))
+                if character.army_estimate:
+                    lines.append(render_spy_leads(character.name, _spy_estimate_phrases(character.army_estimate), rng))
+        if report.garrison_estimate:
+            lines.append(render_spy_garrison(_spy_estimate_phrases(report.garrison_estimate), rng))
 
     for discovery in report.discoveries_obtained:
         lines.append(render_espionage_discovery(spy_name, province_name, discovery, rng))
