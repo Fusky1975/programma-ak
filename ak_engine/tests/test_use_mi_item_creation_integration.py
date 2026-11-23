@@ -162,7 +162,7 @@ _SEARCH_WIN_SEED = 9  # rescanned 2026-11-23: Melee now shifts the hit chance by
 # feature_id 5 (a BASILISK guarding a Druid skill book) is the
 # SKILL_BOOK-category feature this test now targets.
 _BOOK_FEATURE_ID = 5
-_BOOK_SEARCH_WIN_SEED = 248
+_BOOK_SEARCH_WIN_SEED = 527  # rescanned 2026-11-23 (Melee hit chance now depends on the skill difference)
 
 
 def _generate_game(king_count: int = 10) -> GameState:
