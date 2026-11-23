@@ -316,7 +316,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature, RaidEvent
 from ak_engine.models.game_type import GameType
 from ak_engine.models.item import ItemInstance
@@ -2125,6 +2125,10 @@ class GameState:
     # world_events()`'s own Phase 947 addendum, the same "before any
     # `compose_letter_report()` call" contract as every sibling dict here.
     plague_victim_notices_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
+    # Two summoning spells (Mirror Image, Gate Demon, Gate Angel, Illusory Hero) that met in an
+    # encounter and dissolved each other: (first caster's name, spell, second caster's name,
+    # spell, the Kingdoms of the characters involved). Narrated in those Kingdoms' ACTION REPORT.
+    summon_nullifications: list[tuple[str, Spell, str, Spell, tuple[int, ...]]] = field(default_factory=list)
     # Phase 408 -- mirrors `RUMORS.PAS`/`REPORTS.PAS`'s own `kkmet` bitmask
     # (`Check_KKSugg`, `REPORTS.PAS` ~173-202): once two kingdoms' own
     # territories have ever bordered each other, `frozenset({a, b})` is
@@ -2633,6 +2637,7 @@ class GameState:
         self.blackmail_narratives_by_kingdom.clear()
         self.tornado_victim_notices_by_kingdom.clear()
         self.plague_victim_notices_by_kingdom.clear()
+        self.summon_nullifications.clear()
 
     def record_world_event(self, coord: HexCoord, lines: list[str], *, kind: str = "") -> None:
         """Appends one ``WorldEvent`` at ``coord`` -- see that class's own
