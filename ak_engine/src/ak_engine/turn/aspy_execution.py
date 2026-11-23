@@ -427,9 +427,21 @@ def execute_aspy(
                     _army_display_name(state, army) for army in state.armies_at(neighbor_coord)
                 )
 
-    recruitable = [
-        army_type for army_type in ArmyType if is_army_type_compatible_with_race(army_type, province.race)
-    ]
+    # Rulebook [3.4]: "Ciascuna provincia offre 1 o 2 tipi di unità militari possibili"
+    # -- the province's own real slot types (``recruit_type_1``/``recruit_type_2``,
+    # the same data ``turn/recruit_execution.py`` already uses for its native/non-native
+    # test), which is what SAY.PAS's ``_LSAT`` ("Province Army Type #: |") reports.
+    # Only a province with no recorded slot data (hand-built fixtures) falls back to the
+    # race-compatibility approximation -- every type a race *could* field, not what the
+    # province actually offers.
+    if province.recruit_type_1 is not None:
+        recruitable = [province.recruit_type_1]
+        if province.recruit_type_2 is not None and province.recruit_type_2 != province.recruit_type_1:
+            recruitable.append(province.recruit_type_2)
+    else:
+        recruitable = [
+            army_type for army_type in ArmyType if is_army_type_compatible_with_race(army_type, province.race)
+        ]
 
     is_capital = False
     if province.owner_kingdom_id is not None:

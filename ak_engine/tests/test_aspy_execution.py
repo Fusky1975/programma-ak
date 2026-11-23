@@ -636,3 +636,35 @@ def test_execute_aspy_features_known_to_owner_empty_for_an_unowned_province():
     report = execute_aspy(state, LEADER_ID, _request(), caster_has_spy_expanded_spying=True)
 
     assert report.features_known_to_owner == {}
+
+
+def test_execute_aspy_reports_only_the_provinces_own_one_or_two_recruit_types():
+    # Rulebook [3.4]/[3.14]: a province offers 1 or 2 army types, not every type its race
+    # could field -- the report lists exactly the province's own slot types.
+    state = _state()
+    province = state.provinces[HOME]
+    province.recruit_type_1 = ArmyType.BOWMEN
+    province.recruit_type_2 = ArmyType.FLEET
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.recruitable_army_types == [ArmyType.BOWMEN, ArmyType.FLEET]
+
+
+def test_execute_aspy_reports_a_single_recruit_type_when_the_province_has_only_one():
+    state = _state()
+    state.provinces[HOME].recruit_type_1 = ArmyType.AXEMEN
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.recruitable_army_types == [ArmyType.AXEMEN]
+
+
+def test_execute_aspy_does_not_repeat_a_type_listed_in_both_slots():
+    state = _state()
+    state.provinces[HOME].recruit_type_1 = ArmyType.AXEMEN
+    state.provinces[HOME].recruit_type_2 = ArmyType.AXEMEN
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.recruitable_army_types == [ArmyType.AXEMEN]
