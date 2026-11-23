@@ -3411,7 +3411,10 @@ def _resolve_search_encounter(
         return _resolve_cast(monster_tactic, caster_is_leader=False, is_first_tactic=is_first_tactic)
 
     def _resolve_fire_arrow_phase(
-        *, long_range_archer: str | None = None, short_range_archer: str | None = None
+        *,
+        long_range_archer: str | None = None,
+        short_range_archer: str | None = None,
+        closing_side: str | None = None,
     ) -> SearchExecutionResult | None:
         nonlocal fire_arrow_shots, fire_arrow_resolved
         fire_arrow_resolved = True
@@ -3429,6 +3432,8 @@ def _resolve_search_encounter(
             kwargs["long_range_archer"] = long_range_archer
         if short_range_archer is not None:
             kwargs["short_range_archer"] = short_range_archer
+        if closing_side is not None:
+            kwargs["closing_side"] = closing_side
         duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng, **kwargs)
         fire_arrow_shots = duel_result.shots
         outcome = _outcome_from(duel_result)
@@ -3975,7 +3980,14 @@ def _resolve_search_encounter(
             if current_range is CombatRange.SPELL_RANGE and AdvancedAbility.LONG_RANGE_ARCHERY in leader.advanced_abilities:
                 outcome = _resolve_fire_arrow_phase(long_range_archer="a")
             else:
-                outcome = _resolve_fire_arrow_phase()
+                # [5.2]: "Se un personaggio riceve l'ordine di attaccare con armi da lancio a portata
+                # d'incantesimo, si avvicina a portata d'arco, consumando così un round e tira quindi
+                # nel round successivo" -- the same rule turn/challenge_execution.py applies: the
+                # leader spends the first round closing in (no shot of his own), the guardian fires
+                # normally from round 1.
+                outcome = _resolve_fire_arrow_phase(
+                    closing_side="a" if current_range is CombatRange.SPELL_RANGE else None
+                )
             if outcome is not None:
                 return outcome
             continue  # free attacks exhausted, nobody dead -- fall through
