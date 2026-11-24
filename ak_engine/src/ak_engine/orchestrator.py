@@ -64,6 +64,7 @@ from ak_engine.report.turn_report import (
     record_spell_world_events,
     record_sunk_cargo_world_events,
     record_uncontested_conquest_world_events,
+    record_mercenary_quality_narratives,
     record_wandering_world_events,
 )
 from ak_engine.turn.assassin_guild import resolve_pending_guild_assassination
@@ -336,6 +337,9 @@ def process_turn(
     # populates state.world_events from the wandering relocations `turn/
     # turn_processor.py run_turn()`'s own end-of-turn tail appended.
     record_wandering_world_events(state, results, rng)
+    # 2026-11-24 -- same once-per-turn requirement; populates the owning Kingdom's own ACTION REPORT
+    # (state.mercenary_quality_notices_by_kingdom) with each free mercenary band's quality change.
+    record_mercenary_quality_narratives(state, results, rng)
     # Phase 872 -- same once-per-turn requirement as every recorder
     # above (`turn/world_events.py record_kingdom_contacts()`'s own
     # docstring: "must be called once per turn"), but genuinely never

@@ -158,6 +158,7 @@ from ak_engine.report.turn_report import (
     record_spell_world_events,
     record_sunk_cargo_world_events,
     record_uncontested_conquest_world_events,
+    record_mercenary_quality_narratives,
     record_wandering_world_events,
     render_blackmail_demand,
     render_blackmail_penalty,
@@ -426,7 +427,7 @@ from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.tax_base import compute_tax_base
-from ak_engine.turn.wandering_units import WanderRelocation
+from ak_engine.turn.wandering_units import MercenaryQualityEvent, WanderRelocation
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
@@ -18131,3 +18132,57 @@ def test_describe_battle_narrates_a_commander_retreating_with_his_armies_and_one
     assert len(lines) == 2
     assert lines[0].startswith("Aldric withdrew to ") and lines[0].endswith(" together with the defeated armies.")
     assert lines[1].startswith("Borin fled to ") and lines[1].endswith(".")
+
+
+# -- 2026-11-24: record_mercenary_quality_narratives() (SAY.PAS _MInc/_MDec/_MSplut) -----
+
+
+def _quality_result(army_id: int, coord: HexCoord, kind: str, new_quality: Quality | None) -> PhaseDispatchResult:
+    return PhaseDispatchResult(
+        leader_id=army_id, segment_index=-1, phase_label="mercenary-quality", action=None,
+        result=MercenaryQualityEvent(army_id, ArmyType.BOWMEN, coord, kind, new_quality), error=None,
+    )
+
+
+def test_a_mercenary_band_rising_is_told_to_the_owner_of_its_province():
+    state, origin, _destination = _wandering_state()
+
+    record_mercenary_quality_narratives(state, [_quality_result(300, origin, "up", Quality.VETERAN)], random.Random(1))
+
+    [line] = state.mercenary_quality_notices_by_kingdom[1]
+    assert "Origin Fort" in line and "rose to Veteran quality" in line
+    assert 2 not in state.mercenary_quality_notices_by_kingdom
+
+
+def test_a_mercenary_band_sinking_and_dissolving_use_their_own_original_texts():
+    state, origin, _destination = _wandering_state()
+    results = [
+        _quality_result(300, origin, "down", Quality.GREEN),
+        _quality_result(301, origin, "dissolved", None),
+    ]
+
+    record_mercenary_quality_narratives(state, results, random.Random(1))
+
+    sinking, dissolving = state.mercenary_quality_notices_by_kingdom[1]
+    assert "Origin Fort" in sinking and "sank to Green quality" in sinking
+    assert "301st Bowmen" in dissolving and "Origin Fort" not in dissolving
+
+
+def test_a_mercenary_band_in_an_unowned_province_is_told_to_no_one():
+    state, origin, _destination = _wandering_state()
+    state.provinces[origin].owner_kingdom_id = None
+
+    record_mercenary_quality_narratives(state, [_quality_result(300, origin, "up", Quality.VETERAN)], random.Random(1))
+
+    assert state.mercenary_quality_notices_by_kingdom == {}
+
+
+def test_the_letter_report_carries_the_mercenary_quality_notice_of_its_kingdom():
+    state, _origin, _destination = _wandering_state()
+    state.mercenary_quality_notices_by_kingdom[1] = ["A free band rose in quality."]
+
+    owner_lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+    other_lines = compose_letter_report([], state, 2, ScriptedRandom([]))
+
+    assert "A free band rose in quality." in owner_lines
+    assert "A free band rose in quality." not in other_lines

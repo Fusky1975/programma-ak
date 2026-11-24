@@ -29,7 +29,8 @@ from ak_engine.turn.wandering_units import (
     _wander_step_hex,
     army_eligible_for_wander,
     hero_eligible_for_wander,
-    maybe_decay_mercenary_quality,
+    MERCENARY_QUALITY_CHANGE_CHANCE,
+    roll_mercenary_quality_change,
     resolve_army_wander,
     resolve_hero_wander,
     resolve_wandering,
@@ -378,36 +379,65 @@ def test_resolve_army_wander_continues_across_sea():
     assert army.movement_points == 1
 
 
-# -- maybe_decay_mercenary_quality() --
+# -- roll_mercenary_quality_change() (user table of 2026-11-24) --
 
 
-def test_maybe_decay_mercenary_quality_depleted_removes_silently():
+def _band(quality: Quality) -> tuple[GameState, ArmyState]:
     state = build_state()
-    army = ArmyState(1, None, ArmyType.BOWMEN, Quality.DEPLETED, HOME)
+    army = ArmyState(1, None, ArmyType.BOWMEN, quality, HOME, is_mercenary=True)
     state.add_army(army)
-    result = maybe_decay_mercenary_quality(state, army, ScriptedRandom([]))
-    assert result is True
+    return state, army
+
+
+def test_the_mercenary_quality_table_matches_the_users_percentages():
+    assert MERCENARY_QUALITY_CHANGE_CHANCE == {
+        Quality.GREEN: (0.07, 0.07),
+        Quality.AVERAGE: (0.07, 0.07),
+        Quality.VETERAN: (0.02, 0.07),
+        Quality.CRACK: (0.0, 0.05),
+    }
+
+
+def test_each_quality_rises_and_sinks_by_one_level_on_its_own_rolls():
+    expectations = [
+        (Quality.GREEN, 0.06, "up", Quality.AVERAGE),
+        (Quality.GREEN, 0.13, "down", Quality.DEPLETED),
+        (Quality.AVERAGE, 0.06, "up", Quality.VETERAN),
+        (Quality.AVERAGE, 0.13, "down", Quality.GREEN),
+        (Quality.VETERAN, 0.01, "up", Quality.CRACK),
+        (Quality.VETERAN, 0.08, "down", Quality.AVERAGE),
+        (Quality.CRACK, 0.04, "down", Quality.VETERAN),
+    ]
+    for start, roll, kind, end in expectations:
+        state, army = _band(start)
+        event = roll_mercenary_quality_change(state, army, ScriptedRandom([roll]))
+        assert (event.kind, event.new_quality, army.quality) == (kind, end, end), (start, roll)
+        assert (event.army_id, event.coord) == (1, HOME)
+
+
+def test_a_roll_above_both_chances_changes_nothing():
+    for start in (Quality.GREEN, Quality.AVERAGE, Quality.VETERAN, Quality.CRACK):
+        state, army = _band(start)
+        assert roll_mercenary_quality_change(state, army, ScriptedRandom([0.5])) is None
+        assert army.quality is start
+
+
+def test_crack_never_rises_and_veteran_needs_a_roll_under_two_percent():
+    state, army = _band(Quality.CRACK)
+    assert roll_mercenary_quality_change(state, army, ScriptedRandom([0.0])).kind == "down"  # no rise branch at all
+    state, army = _band(Quality.VETERAN)
+    assert roll_mercenary_quality_change(state, army, ScriptedRandom([0.03])).kind == "down"  # 3% is past the 2% rise
+
+
+def test_a_depleted_band_dissolves_with_twenty_percent_each_turn():
+    state, army = _band(Quality.DEPLETED)
+    event = roll_mercenary_quality_change(state, army, ScriptedRandom([0.19]))
+    assert event.kind == "dissolved" and event.new_quality is None
     assert 1 not in state.armies
 
-
-def test_maybe_decay_mercenary_quality_demotes_one_tier_on_a_hit():
-    state = build_state()
-    army = ArmyState(1, None, ArmyType.BOWMEN, Quality.VETERAN, HOME)
-    state.add_army(army)
-    # VETERAN=3 -> 100>>2=25% chance.
-    result = maybe_decay_mercenary_quality(state, army, ScriptedRandom([0.24]))
-    assert result is True
-    assert army.quality is Quality.AVERAGE
-
-
-def test_maybe_decay_mercenary_quality_no_change_on_a_miss():
-    state = build_state()
-    army = ArmyState(1, None, ArmyType.BOWMEN, Quality.VETERAN, HOME)
-    state.add_army(army)
-    result = maybe_decay_mercenary_quality(state, army, ScriptedRandom([0.99]))
-    assert result is False
-    assert army.quality is Quality.VETERAN
-    assert 1 in state.armies
+    state, army = _band(Quality.DEPLETED)
+    assert roll_mercenary_quality_change(state, army, ScriptedRandom([0.2])) is None
+    assert 1 in state.armies and army.quality is Quality.DEPLETED
 
 
 # -- resolve_wandering(): the once-per-turn dispatch loop --
@@ -466,12 +496,36 @@ def test_resolve_wandering_relocates_an_eligible_hero_and_updates_location():
     assert relocations[0].destination != HexCoord(2, 2)
 
 
-def test_resolve_wandering_army_access_roll_failure_attempts_decay():
+def test_resolve_wandering_rolls_every_free_mercenary_band_for_a_quality_change():
     state = build_state()
-    army = ArmyState(1, None, ArmyType.BOWMEN, Quality.DEPLETED, HOME)
-    state.add_army(army)
-    # int(rng.random()*6) < 3 needs a roll >= 0.5 to fail access.
-    rng = ScriptedRandom([0.9])
-    relocations = resolve_wandering(state, {}, rng)
+    band = ArmyState(1, None, ArmyType.BOWMEN, Quality.DEPLETED, HOME, is_mercenary=True)
+    state.add_army(band)
+    events: list = []
+    # access roll fails (int(0.9*6) >= 3), then the quality roll dissolves the Depleted band.
+    relocations = resolve_wandering(state, {}, ScriptedRandom([0.9, 0.1]), events)
+
     assert relocations == []
-    assert 1 not in state.armies  # DEPLETED -> removed by the decay branch
+    assert [(e.army_id, e.kind) for e in events] == [(1, "dissolved")]
+    assert 1 not in state.armies
+
+
+def test_resolve_wandering_leaves_an_unowned_native_garrison_alone():
+    # A kingdomless army that is not a mercenary band (a province's own native garrison) takes no
+    # part in the mercenary quality rule.
+    state = build_state()
+    state.add_army(ArmyState(1, None, ArmyType.BOWMEN, Quality.DEPLETED, HOME))
+    events: list = []
+
+    resolve_wandering(state, {}, ScriptedRandom([0.9]), events)  # only the access roll is drawn
+
+    assert events == [] and 1 in state.armies
+
+
+def test_resolve_wandering_skips_a_band_disbanded_this_turn():
+    state = build_state()
+    state.add_army(ArmyState(1, None, ArmyType.BOWMEN, Quality.DEPLETED, HOME, is_mercenary=True, unhireable_this_turn=True))
+    events: list = []
+
+    resolve_wandering(state, {}, ScriptedRandom([0.9]), events)
+
+    assert events == [] and 1 in state.armies

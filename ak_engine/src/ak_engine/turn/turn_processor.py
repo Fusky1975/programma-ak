@@ -332,7 +332,7 @@ from ak_engine.turn.sep_decode import decode_special_encounter_plan
 from ak_engine.turn.skeletal_decay import decompose_graveyard
 from ak_engine.turn.monster_raids import age_all_feature_guardians, maybe_dissipate_hidden_feature
 from ak_engine.turn.tax_base import apply_turn_revenue
-from ak_engine.turn.wandering_units import resolve_wandering
+from ak_engine.turn.wandering_units import MercenaryQualityEvent, resolve_wandering
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
 from ak_engine.turn.valhalla_execution import (
@@ -952,7 +952,8 @@ def run_turn(
     # resolved once here and threaded into every eligibility check.
     apply_pending_mercenary_follows(state)
     orders_flag = _kingdom_submitted_real_orders(turn_leaders, state)
-    for relocation in resolve_wandering(state, orders_flag, rng):
+    mercenary_quality_events: list[MercenaryQualityEvent] = []
+    for relocation in resolve_wandering(state, orders_flag, rng, mercenary_quality_events):
         results.append(
             PhaseDispatchResult(
                 leader_id=relocation.entity_id,
@@ -960,6 +961,17 @@ def run_turn(
                 phase_label="hero-wander" if relocation.kind == "hero" else "army-wander",
                 action=None,
                 result=relocation,
+                error=None,
+            )
+        )
+    for quality_event in mercenary_quality_events:
+        results.append(
+            PhaseDispatchResult(
+                leader_id=quality_event.army_id,
+                segment_index=-1,
+                phase_label="mercenary-quality",
+                action=None,
+                result=quality_event,
                 error=None,
             )
         )
