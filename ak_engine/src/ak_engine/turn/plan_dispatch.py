@@ -417,7 +417,9 @@ from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
+from ak_engine.models.map import Terrain
 from ak_engine.turn.leader_queries import find_king_of_kingdom, release_armies_to_garrison
+from ak_engine.turn.sea_transport import cargo_aboard
 from ak_engine.turn.move_execution import (
     MoveExecutionResult,
     execute_move,
@@ -544,6 +546,9 @@ class ArmyListExecutionResult:
     # army_type) since the army is removed from `GameState.armies`
     # before `report/turn_report.py describe_leave()` ever sees it.
     skeletal_army_lost: list[tuple[int, ArmyType]] = field(default_factory=list)
+    # Disband-only (2026-11-24 audit): why a requested army was not disbanded, army id -> reason, so
+    # the report can say so instead of the order silently doing nothing.
+    skipped_reasons: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -1408,10 +1413,15 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
     is_king = acting_leader is not None and acting_leader.is_king
 
     result = ArmyListExecutionResult(request=request)
+
+    def refuse(army_id: int, reason: str) -> None:
+        result.skipped.append(army_id)
+        result.skipped_reasons[army_id] = reason
+
     for army_id in target_ids:
         army = state.armies.get(army_id)
         if army is None:
-            result.skipped.append(army_id)
+            refuse(army_id, "there is no such army")
             continue
         # "Releases the army(s) into mercenary status" (rulebook [3.6]:
         # "A King may Disband any army of his Kingdom at any time. A
@@ -1421,10 +1431,27 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
         # own Kingdom; a Hero must additionally be co-located with the
         # army, a King (Phase 40) bypasses only that co-location check.
         if acting_leader is None or army.kingdom_id != acting_leader.kingdom_id:
-            result.skipped.append(army_id)
+            refuse(army_id, "it is not an army of their Kingdom")
             continue
         if not is_king and army.location != acting_leader.location:
-            result.skipped.append(army_id)
+            refuse(army_id, "it is not in the same province")
+            continue
+        # A carrier cannot be released with units still aboard (they would sail off with a
+        # wandering mercenary ship), and a unit carried at sea has no land to go home to.
+        if cargo_aboard(state, army_id):
+            refuse(army_id, "units are still aboard it")
+            continue
+        if army.transported_by is not None:
+            province = state.provinces.get(army.location)
+            if province is None or province.effective_terrain() is Terrain.SEA:
+                refuse(army_id, "it is at sea aboard a ship")
+                continue
+            army.transported_by = None
+        if army.is_skeletal:
+            # [4.2.5]: skeletons whose commander gives them up "si scaveranno da soli la tomba" --
+            # released, they return to their sleep rather than wander as hireable mercenaries.
+            result.skeletal_army_lost.append((army_id, army.army_type))
+            state.remove_army(army_id)
             continue
         army.kingdom_id = None
         army.commanded_by = None

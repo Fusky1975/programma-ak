@@ -2637,6 +2637,24 @@ def test_describe_disband_renders_one_line_per_succeeded_army():
     assert lines == ["Arthur disbanded Bowmen."]
 
 
+def test_describe_disband_says_why_a_disband_did_nothing_and_narrates_a_skeleton_grave():
+    state = _leave_state()
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = ArmyListExecutionResult(
+        request=None,
+        skipped_reasons={100: "it is not in the same province", 999: "there is no such army"},
+        skeletal_army_lost=[(70, ArmyType.BOWMEN)],
+    )
+
+    lines = describe_disband(result, state, leader_name="Arthur", rng=ScriptedRandom([]))
+
+    assert lines[0].startswith("Bowmen dug graves for themselves")
+    assert lines[1:] == [
+        "Arthur could not disband Bowmen: it is not in the same province.",
+        "Arthur could not disband army #999: there is no such army.",
+    ]
+
+
 def test_describe_disband_skips_army_not_found():
     state = _leave_state()
     result = ArmyListExecutionResult(request=None, succeeded=[999])
