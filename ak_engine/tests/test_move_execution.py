@@ -3023,3 +3023,44 @@ def test_under_mystic_winds_a_fleet_and_its_would_be_cargo_each_move_alone():
     )
 
     assert state.armies[102].transported_by is None  # no fleet transport takes place
+
+
+# -- [11.1]: Fleets pay the extra movement point only for a battle --
+
+
+def _landing_state(army_type: ArmyType, *, defended: bool = False) -> GameState:
+    state = base_state()
+    state.armies.clear()
+    state.provinces[ORIGIN].terrain = Terrain.SEA
+    state.add_army(ArmyState(101, 1, army_type, Quality.AVERAGE, ORIGIN, movement_points=3))
+    if defended:
+        state.add_army(ArmyState(201, 2, ArmyType.BOWMEN, Quality.GREEN, TARGET, movement_points=2))
+    return state
+
+
+@pytest.mark.parametrize("fleet_type", [ArmyType.FLEET, ArmyType.MERMEN])
+def test_a_fleet_landing_on_an_undefended_enemy_province_pays_only_the_ordinary_point(fleet_type):
+    state = _landing_state(fleet_type)
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.conquered is True
+    assert state.armies[101].movement_points == 2  # 3 - 1: no conquest surcharge
+    assert result.movement_points_spent == 1
+
+
+def test_land_units_still_pay_the_conquest_point_for_the_same_landing():
+    state = base_state()  # Bowmen walking into an undefended enemy province
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.conquered is True
+    assert state.armies[101].movement_points == 1  # 3 - 2
+
+
+def test_a_fleet_that_fights_a_battle_pays_the_extra_point():
+    state = _landing_state(ArmyType.FLEET, defended=True)
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=random.Random(1))
+
+    assert result.battle_report is not None
+    assert 101 not in state.armies or state.armies[101].movement_points == 1  # 3 - 1 - 1
