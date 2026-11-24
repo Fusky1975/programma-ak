@@ -1420,11 +1420,12 @@ def _apply_defend_reinforcements(
        simply relocates, permanently, same as before this round, modulo
        the new pursuit-on-win addendum below), so there is no return
        trip to charge a second/third move for; only the one real,
-       modeled leg (arriving to fight) is charged. March Talent's own
-       movement-point bonuses (``march_movement_point_bonus()``/
-       ``march_table_extra_movement()``) are also not threaded in here
-       -- a further, orthogonal refinement on top of the base cost
-       charged above, left for later rather than this round.
+       modeled leg (arriving to fight) is charged. **2026-11-24 (user
+       ruling)**: the general's March/Naval movement-point bonuses
+       (``grant_movement_bonuses()``) now apply to the reacting armies
+       -- they count toward whether an army can react at all, are
+       granted when it moves, and the reaction's cost is actually
+       deducted on departure (it used to be checked but never paid).
     3. **"Intelligent" splitting**: only reachable when the defender's
        own *current* province is **also** invaded this same phase (the
        rulebook's own example: "invia unità militari in una provincia
@@ -1526,8 +1527,13 @@ def _apply_defend_reinforcements(
 
         origin_province = state.provinces.get(home_location)
         eligible_armies = []
+        bonus_kwargs = _movement_bonus_kwargs(state, defender_state)
         for army in state.armies_commanded_by(defender_leader_id):
-            if army.movement_points < movement_cost_for_move(battle_occurred=True):
+            # The March/Naval movement bonuses are computed when the army moves ([6.2]): a general with a
+            # good March skill can react where the bare speed would fall short.
+            if army.movement_points + _unclaimed_flat_movement_bonus(
+                army, bonus_kwargs.get("march_skill_level", 0), bonus_kwargs.get("naval_skill_level", 0)
+            ) < movement_cost_for_move(battle_occurred=True):
                 continue
             if (
                 find_transport_illegality(
@@ -1574,6 +1580,11 @@ def _apply_defend_reinforcements(
                 continue  # not strong enough to split safely -- stays to defend the home province
 
         for army in armies_to_send:
+            # The reaction is a real move: the bonuses are granted and the movement paid on departure
+            # ([3.15] "questi movimenti costano Punti Movimento"), the same cost an ordinary LMOVE into a
+            # defended province charges.
+            grant_movement_bonuses(army, **bonus_kwargs)
+            army.movement_points -= movement_cost_for_move(battle_occurred=True)
             army.location = target
         origin = coverage.origin
         defender_state.location = target
