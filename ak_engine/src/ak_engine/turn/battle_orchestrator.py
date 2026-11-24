@@ -242,7 +242,7 @@ from ak_engine.turn.office_holder import cached_office_holder_leader_id, resolve
 from ak_engine.turn.pursuit import resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.retreat import find_retreat_destination, select_attacker_retreat_destination
-from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
+from ak_engine.turn.sea_transport import apply_battle_carrier_destruction, board_army, disembark_army
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.sep_decode import sep_accepts_challenge, sep_is_aggressive
 from ak_engine.turn.strength import (
@@ -1219,6 +1219,12 @@ def _retreat_or_disband(
 
     if destination is not None:
         army.location = destination
+        if army.transported_by is not None:
+            # A land army that retreated by sea aboard a Fleet is landed once the Fleet reaches land;
+            # at sea it stays aboard (units "left at sea" hold the province).
+            destination_province = state.provinces.get(destination)
+            if destination_province is None or destination_province.effective_terrain() is not Terrain.SEA:
+                disembark_army(state, army.army_id)
         old_quality = army.quality
         army.quality = roll_quality_change(
             army.quality, rng, is_winner=False, retreated=True,
@@ -1379,6 +1385,71 @@ def _fleet_avoids_elimination(army: ArmyState, battle_terrain: Terrain) -> bool:
     """
 
     return army.army_type is ArmyType.FLEET and battle_terrain is not Terrain.SEA
+
+
+def _retreat_hop_is_legal(state: GameState, army: ArmyState, candidate: HexCoord) -> bool:
+    """Whether ``army`` could move on its own from where it stands to ``candidate`` -- the same
+    legality ``turn/move_execution.py find_transport_illegality()`` applies to an ordinary Move:
+    a land unit cannot enter the sea (nor an Ent), a Fleet/Whale cannot go from land to land, and
+    so on. Rulebook [7.4]: a retreat is a movement, so it obeys the same terrain rules."""
+
+    from ak_engine.turn.move_execution import find_transport_illegality
+
+    origin = state.provinces.get(army.location)
+    target = state.provinces.get(candidate)
+    if target is None:
+        return False
+    return find_transport_illegality([army], [army.army_id], origin, target) is None
+
+
+def _plan_retreat_destinations(
+    armies: list[ArmyState],
+    state: GameState,
+    bounds: MapBounds,
+    province_coord: HexCoord,
+    *,
+    attacker_origin: HexCoord | None,
+) -> dict[int, HexCoord | None]:
+    """The retreat destination of every army of one losing side, honouring terrain ([7.4], and
+    the user's rulings of 2026-11-24): a retreating army only goes where it can legally move --
+    infantry cannot "retreat" into the sea, a Fleet defeated on land can only retreat into the sea
+    -- and ``None`` (no destination) otherwise, which the caller turns into a disbandment/mercenary
+    band as usual.
+
+    "Le ritirate vengono condotte separatamente per ciascun personaggio che comanda un contingente.
+    Questo è importante se l'unico percorso di ritirata è verso il mare ed un solo comandante ha
+    tutte le Flotte": a land army with no legal destination of its own may still retreat by sea
+    aboard a retreating Fleet of the *same commander* that has room for it (``can_board``) -- it is
+    seated on that Fleet and follows its destination.
+    """
+
+    destinations: dict[int, HexCoord | None] = {}
+
+    def choose(army: ArmyState) -> HexCoord | None:
+        friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
+        legal = {coord for coord in friendly if _retreat_hop_is_legal(state, army, coord)}
+        if attacker_origin is not None:
+            return select_attacker_retreat_destination(attacker_origin, army.location, bounds, legal)
+        return find_retreat_destination(army.location, bounds, legal)
+
+    carriers = [army for army in armies if army.army_type in (ArmyType.FLEET, ArmyType.WHALES)]
+    for army in carriers:
+        destinations[army.army_id] = choose(army)
+    for army in armies:
+        if army.army_id in destinations:
+            continue
+        destination = choose(army)
+        if destination is None and army.commanded_by is not None:
+            for carrier in carriers:
+                if (
+                    carrier.commanded_by == army.commanded_by
+                    and destinations.get(carrier.army_id) is not None
+                    and board_army(state, army.army_id, carrier.army_id)
+                ):
+                    destination = destinations[carrier.army_id]
+                    break
+        destinations[army.army_id] = destination
+    return destinations
 
 
 def _select_side_commander(
@@ -3241,6 +3312,20 @@ def fight_battle(
             illusory_terrain_enhanced=illusory_terrain_enhanced,
         )
 
+    retreat_bounds = MapBounds(state.board_width, state.board_height)
+    attacker_retreat_plan: dict[int, HexCoord | None] = {}
+    if attacker_clean_swept and loser_retreats:
+        attacker_retreat_plan = _plan_retreat_destinations(
+            [a for a in attacker_armies if a.army_id not in attacker_pursuit_destroyed],
+            state, retreat_bounds, province_coord, attacker_origin=attacker_origin,
+        )
+    defender_retreat_plan: dict[int, HexCoord | None] = {}
+    if defender_clean_swept and loser_retreats:
+        defender_retreat_plan = _plan_retreat_destinations(
+            [a for a in defender_armies if a.army_id not in defender_pursuit_destroyed],
+            state, retreat_bounds, province_coord, attacker_origin=None,
+        )
+
     for army in attacker_armies:
         if army.army_id in attacker_pursuit_destroyed:
             continue
@@ -3263,7 +3348,6 @@ def fight_battle(
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif attacker_clean_swept and loser_retreats:
-            bounds = MapBounds(state.board_width, state.board_height)
             # Bug fix: this used attacker_kingdom_id (the coalition's
             # own "claiming" kingdom for a united Multiple-Contingents
             # battle, turn/multiple_contingents.py) instead of this
@@ -3273,11 +3357,7 @@ def fight_battle(
             # must be filtered by its own alliances, not the claiming
             # kingdom's (which can include a kingdom this army has no
             # alliance with at all).
-            friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
-            if attacker_origin is not None:
-                destination = select_attacker_retreat_destination(attacker_origin, army.location, bounds, friendly)
-            else:
-                destination = find_retreat_destination(army.location, bounds, friendly)
+            destination = attacker_retreat_plan.get(army.army_id)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 avoid_elimination=_fleet_avoids_elimination(army, terrain),
@@ -3326,9 +3406,7 @@ def fight_battle(
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif defender_clean_swept and loser_retreats:
-            bounds = MapBounds(state.board_width, state.board_height)
-            friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
-            destination = find_retreat_destination(army.location, bounds, friendly)
+            destination = defender_retreat_plan.get(army.army_id)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 avoid_elimination=_fleet_avoids_elimination(army, terrain),
