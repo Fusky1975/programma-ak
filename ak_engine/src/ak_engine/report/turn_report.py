@@ -2135,6 +2135,16 @@ def render_retreat(retreating_name: str, destination_name: str, rng: random.Rand
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
+def render_leader_retreat(leader_name: str, destination_name: str, *, alone: bool) -> str:
+    """A commander's retreat ([7.4]: retreats are conducted per commander, so he goes with the armies
+    he leads). Project wording -- RETREAT.X only narrates armies; ``alone`` is a commander none of
+    whose armies could follow (and who would otherwise be stranded on the lost battlefield)."""
+
+    if alone:
+        return f"{leader_name} fled to {destination_name}."
+    return f"{leader_name} withdrew to {destination_name} together with the defeated armies."
+
+
 def render_uncontested_conquest(
     attacker_name: str, province_name: str, rng: random.Random, *, is_sea: bool = False
 ) -> str:
@@ -3228,6 +3238,16 @@ def describe_battle(
         destination = destination_names.get(army_id)
         if name is not None and destination is not None:
             lines.append(render_retreat(name, destination, rng, is_sea=is_sea))
+
+    for leader_id, leader_destination in battle_report.leader_retreat_destination_coord.items():
+        leader_name = _leader_name(state, leader_id)
+        if leader_name is not None:
+            lines.append(
+                render_leader_retreat(
+                    leader_name, _province_label(state, leader_destination),
+                    alone=leader_id in battle_report.leaders_retreated_alone,
+                )
+            )
 
     lines.extend(describe_quality_changes(battle_report, army_names, rng, is_sea=is_sea))
 

@@ -18109,3 +18109,25 @@ def test_a_failed_secret_spell_says_nothing():
     entry = PhaseDispatchResult(1, 0, "P1", ActionCode.CAST, failed, None)
 
     assert describe_turn_results([entry], state, random.Random(1), board_width=10) == []
+
+
+def test_describe_battle_narrates_a_commander_retreating_with_his_armies_and_one_fleeing_alone():
+    state = GameState()
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(1, 1)))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Borin", location=HexCoord(1, 1)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        leader_retreat_destination_coord={1: HexCoord(1, 1), 2: HexCoord(1, 1)},
+        leaders_retreated_alone=[2],
+    )
+
+    lines = describe_battle(
+        report, attacker_name="Attackia", defender_name="Defendia", province_name="the Field",
+        state=state, destination_names={}, rng=ScriptedRandom([0.1] * 20, choice_indices=[0, 0]),
+    )
+
+    assert len(lines) == 2
+    assert lines[0].startswith("Aldric withdrew to ") and lines[0].endswith(" together with the defeated armies.")
+    assert lines[1].startswith("Borin fled to ") and lines[1].endswith(".")

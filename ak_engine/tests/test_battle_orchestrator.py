@@ -5932,6 +5932,8 @@ def test_a_defeated_attacker_retreats_to_its_origin_with_its_commander():
     assert state.armies[101].location == origin
     assert state.armies[101].commanded_by == 7
     assert state.leaders[7].location == origin
+    assert report.leader_retreat_destination_coord == {7: origin}
+    assert report.leaders_retreated_alone == []
 
 
 def test_a_defeated_attacker_and_its_commander_move_together_to_a_neighbor_of_a_lost_origin():

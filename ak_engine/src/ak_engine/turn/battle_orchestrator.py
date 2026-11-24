@@ -352,6 +352,10 @@ class BattleReport:
     # Keyed by `army_id`, only ever populated for ids also present in
     # `retreated_army_ids`.
     retreat_destination_coord: dict[int, HexCoord] = field(default_factory=dict)
+    # The commanders who retreated (with their armies, or alone when no army of theirs could
+    # follow) and where to -- `leaders_retreated_alone` is the subset that went without armies.
+    leader_retreat_destination_coord: dict[int, HexCoord] = field(default_factory=dict)
+    leaders_retreated_alone: list[int] = field(default_factory=list)
     # Phase 712 -- SAY.PAS `_BTac`'s own real input (TACTICS.X2,
     # `report/turn_report.py render_tactical_comparison()`, already
     # sourced and render-tested since Phase 109 but never carried onto
@@ -1425,6 +1429,7 @@ class _RetreatPlan:
     destinations: dict[int, HexCoord | None] = field(default_factory=dict)
     leader_destinations: dict[int, HexCoord] = field(default_factory=dict)
     commander_after: dict[int, int | None] = field(default_factory=dict)
+    leaders_alone: set[int] = field(default_factory=set)  # retreated without any army of theirs
 
 
 def _substitute_commander(state: GameState, army: ArmyState, commanders: set[int]) -> int | None:
@@ -1440,6 +1445,11 @@ def _substitute_commander(state: GameState, army: ArmyState, commanders: set[int
         return None
     candidates.sort(key=lambda leader: (leader.leader_id not in commanders, not leader.is_king, leader.leader_id))
     return candidates[0].leader_id
+
+
+def _is_land(state: GameState, coord: HexCoord) -> bool:
+    province = state.provinces.get(coord)
+    return province is not None and province.effective_terrain() not in (Terrain.SEA, Terrain.NO_TERRAIN)
 
 
 def _plan_retreat_destinations(
@@ -1460,8 +1470,9 @@ def _plan_retreat_destinations(
     without a commander; a land army with no way over land is taken aboard a retreating Fleet of
     its commander when the Fleet has room (``can_board``).
 
-    An army whose commander is dead retreats with another Hero or the King of its Kingdom standing
-    with it; with none, it retreats alone into an adjacent friendly province, joining that
+    A commander none of whose armies can retreat flees alone to an adjacent friendly land province
+    rather than stay on the lost battlefield. An army whose commander is dead -- or an unled
+    garrison -- retreats with another Hero or the King of its Kingdom standing with it; with none, it retreats alone into an adjacent friendly province, joining that
     province's Garrison Commander; with no legal province at all, the caller disbands it (Green /
     Depleted) or turns it mercenary. Terrain rulings: infantry cannot "retreat" into the sea, a
     Fleet defeated on land retreats only into the sea."""
@@ -1489,8 +1500,8 @@ def _plan_retreat_destinations(
     for army in armies:
         if army.commanded_by is not None and army.commanded_by in state.leaders:
             contingents.setdefault(army.commanded_by, []).append(army)
-        elif army.commanded_by is not None:
-            orphans.append(army)  # the commander is dead
+        elif army.kingdom_id is not None:
+            orphans.append(army)  # the commander is dead, or it is an unled garrison
         else:
             alone.append(army)
     for army in orphans:
@@ -1549,6 +1560,16 @@ def _plan_retreat_destinations(
             alone.extend(members)
             for army in members:
                 plan.commander_after[army.army_id] = None
+            refuge = next(
+                (
+                    c for c in retreat_candidates(province_coord, bounds, invaded_from(members[0]))
+                    if (leader_friendly is None or c in leader_friendly) and _is_land(state, c)
+                ),
+                None,
+            )
+            if refuge is not None:  # he flees alone rather than staying on the lost battlefield
+                plan.leader_destinations[leader_id] = refuge
+                plan.leaders_alone.add(leader_id)
             continue
         _, destination, followers, riders = best
         for rider_id, carrier_id in riders.items():
@@ -1581,13 +1602,16 @@ def _settle_retreated_command(army: ArmyState, destination: HexCoord | None, pla
         army.commanded_by = plan.commander_after[army.army_id]
 
 
-def _move_retreating_commanders(state: GameState, plan: _RetreatPlan) -> None:
+def _move_retreating_commanders(state: GameState, plan: _RetreatPlan, report: BattleReport) -> None:
     """The commanders retreat together with the armies they lead ([7.4])."""
 
     for leader_id, destination in plan.leader_destinations.items():
         leader = state.leaders.get(leader_id)
         if leader is not None:
             leader.location = destination
+            report.leader_retreat_destination_coord[leader_id] = destination
+            if leader_id in plan.leaders_alone:
+                report.leaders_retreated_alone.append(leader_id)
 
 
 def _select_side_commander(
@@ -3577,8 +3601,8 @@ def fight_battle(
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
 
-    _move_retreating_commanders(state, attacker_retreat_plan)
-    _move_retreating_commanders(state, defender_retreat_plan)
+    _move_retreating_commanders(state, attacker_retreat_plan, report)
+    _move_retreating_commanders(state, defender_retreat_plan, report)
 
     if defender_clean_swept:
         province.owner_kingdom_id = attacker_kingdom_id
