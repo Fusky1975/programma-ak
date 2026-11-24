@@ -465,7 +465,11 @@ def run_turn(
         covered = state.leaders.get(turn_leader.leader.leader_id)
         if covered is not None:
             covered.cover_ability = compute_cover_ability(
-                turn_leader.leader.plan, tuple(covered.special_encounter_plan or ())
+                turn_leader.leader.plan,
+                tuple(covered.special_encounter_plan or ()),
+                raids_as_bandit_or_pirate=bool(
+                    covered.advanced_abilities & {AdvancedAbility.THIEF_BANDITRY, AdvancedAbility.THIEF_PIRACY}
+                ),
             )
     active_defends: dict[int, DefendCoverage] = {}  # defender leader_id -> origin + coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
@@ -1274,6 +1278,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         province.terrain_override = None
         province.tax_modifier_percent = 0
         province.earthquake_flat_reduction = 0
+        province.tax_raided_this_turn = 0
         # Plague ([4.25.3]) spreads "each phase" of the turn it was cast in;
         # the real reports show no spread in the turn after (SE3__T10 -> T11).
         province.plague_active = False
