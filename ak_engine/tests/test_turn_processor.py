@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
@@ -446,7 +446,9 @@ def test_run_turn_multi_attacker_lmove_rejects_a_mover_with_no_movement_points()
     march_4 = _skills_with(Ability.MARCH, 4, 9)
     state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=march_4))
     state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN, skills=march_4))
-    state.add_leader(LeaderState(30, kingdom_id=1, name="C", location=ORIGIN, skills=march_4))
+    # Leader 30 has no March skill: an army with 0 points left and no extra-move bonus due can't move
+    # (a March skill would owe it bonus points, which are computed when it moves).
+    state.add_leader(LeaderState(30, kingdom_id=1, name="C", location=ORIGIN))
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
     state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=20))
     state.add_army(ArmyState(103, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=0, commanded_by=30))
@@ -471,6 +473,63 @@ def test_run_turn_multi_attacker_lmove_rejects_a_mover_with_no_movement_points()
     # -= cost` applied unconditionally, driving its already-0 movement
     # points negative with no recorded error at all.
     assert isinstance(by_leader[30].error, ValueError)
+
+
+def _united_invasion_state(march_level: int) -> GameState:
+    state = _base_state()
+    skills = _skills_with(Ability.MARCH, march_level, 9)
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=skills))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN, skills=skills))
+    # Bowmen: speed 2, so the Speed 1-2 column of the March Table applies.
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.ELITE, ORIGIN, movement_points=2, commanded_by=10))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.ELITE, ORIGIN, movement_points=2, commanded_by=20))
+    return state
+
+
+def _run_united_invasion(state: GameState):
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_b = _leader_with_phase(20, "B", "P0", _lmove_phase("P0", TARGET))
+    # run_turn() resets every army's movement points at its end; keep the end-of-phase values visible.
+    with patch("ak_engine.turn.turn_processor._replenish_turn_scoped_state"):
+        return run_turn(
+            [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0)
+        )
+
+
+def test_run_turn_united_invasion_grants_the_march_table_movement_bonus():
+    # Level 2 owes a Speed 1-2 army one extra move; the lone-invader path always granted it, the united
+    # path never did.
+    state = _united_invasion_state(march_level=2)
+
+    results = _run_united_invasion(state)
+
+    assert all(isinstance(r.result, MultiAttackerMoveResult) for r in results)
+    for army_id in (101, 102):
+        army = state.armies.get(army_id)
+        if army is not None:  # an army can fall in the battle itself
+            assert army.march_table_bonus_granted == 1
+            cost = next(r.result.movement_points_spent for r in results)
+            assert army.movement_points == 2 + 1 - cost
+
+
+def test_run_turn_united_invasion_without_march_skill_grants_no_bonus():
+    state = _united_invasion_state(march_level=0)
+
+    _run_united_invasion(state)
+
+    assert all(army.march_table_bonus_granted == 0 for army in state.armies.values())
+
+
+def test_run_turn_united_invasion_credits_move_march_experience():
+    state = _united_invasion_state(march_level=2)
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        mock_add_experience.return_value = MagicMock(skill_rose=False)
+        _run_united_invasion(state)
+
+    credited = {(call.args[0].leader_id, call.args[1]) for call in mock_add_experience.call_args_list}
+    assert credited <= {(10, Ability.MARCH), (20, Ability.MARCH)}
+    assert credited, "a conquering united invasion earns March experience like a lone one"
 
 
 def test_run_turn_multi_attacker_lmove_threads_apply_fanaticism_true():

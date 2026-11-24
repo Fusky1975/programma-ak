@@ -688,6 +688,11 @@ class ArmyState:
     # own Advanced-Ability-gated bonus, not replacing it. Reset the same
     # way and at the same point as the two flags above.
     march_table_bonus_applied_this_turn: bool = False
+    # How many extra movement points that bonus has actually given this army this turn -- so an army that
+    # starts the turn under one commander and passes to another with a higher March skill gains the
+    # difference ([4.1.2]: "gode della maggiore abilità di quest'ultimo"). 0 with the flag above set means
+    # "already used" (hand-edited): never upgraded. Reset together with the flag.
+    march_table_bonus_granted: int = 0
     # Phase 714 -- Fleet/Whale cargo-capacity subsystem: the carrying
     # Fleet/Whale's own `army_id`, or `None` if this army isn't
     # currently boarded on anything. Mirrors `commanded_by`'s own
