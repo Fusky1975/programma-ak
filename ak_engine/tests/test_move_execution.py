@@ -3119,3 +3119,32 @@ def test_a_hand_set_march_table_flag_is_never_upgraded():
 
     assert state.armies[101].march_table_bonus_granted == 0
     assert state.armies[101].movement_points == 2  # 3 - 1: no bonus
+
+
+# --- White Magic audit: Part Sea ([4.2.1]) closes the Parted Sea to Fleets and Whales ---
+
+
+@pytest.mark.parametrize("army_type", [ArmyType.FLEET, ArmyType.WHALES])
+def test_fleets_and_whales_cannot_enter_a_parted_sea_from_open_sea(army_type: ArmyType):
+    army = ArmyState(1, 1, army_type, Quality.AVERAGE, ORIGIN)
+    assert find_transport_illegality([army], [1], _sea_province(ORIGIN), _part_sea_province(TARGET)) is not None
+
+
+@pytest.mark.parametrize("army_type", [ArmyType.FLEET, ArmyType.WHALES])
+def test_fleets_and_whales_cannot_leave_a_parted_sea(army_type: ArmyType):
+    army = ArmyState(1, 1, army_type, Quality.AVERAGE, ORIGIN)
+    assert find_transport_illegality([army], [1], _part_sea_province(ORIGIN), _land_province(TARGET)) is not None
+    assert find_transport_illegality([army], [1], _part_sea_province(ORIGIN), _sea_province(TARGET)) is not None
+
+
+def test_fleets_still_move_between_ordinary_sea_and_land():
+    army = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
+    assert find_transport_illegality([army], [1], _sea_province(ORIGIN), _land_province(TARGET)) is None
+
+
+def test_land_units_walk_across_a_parted_sea():
+    army = ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, ORIGIN)
+    assert find_transport_illegality([army], [1], _land_province(ORIGIN), _part_sea_province(TARGET)) is None
+    assert find_transport_illegality([army], [1], _part_sea_province(ORIGIN), _land_province(TARGET)) is None
+    assert find_transport_illegality([army], [1], _part_sea_province(ORIGIN), _part_sea_province(TARGET)) is None
+    assert find_transport_illegality([army], [1], _part_sea_province(ORIGIN), _sea_province(TARGET)) == "insufficient_water_transport"

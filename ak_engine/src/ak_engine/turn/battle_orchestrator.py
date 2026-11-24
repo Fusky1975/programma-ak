@@ -171,15 +171,16 @@ ak_engine/README.md:**
   etc. -- see `turn/retreat.py`); exposed here as ``loser_retreats: bool``,
   the caller's call.
 - **Every genuine battle death is recorded in ``GameState.battle_graveyard``**
-  (Phase 60) -- the four sites here that actually remove an army from
-  play (``_retreat_or_disband``'s no-retreat-destination disband,
-  ``_apply_pursuit``'s catch-and-destroy, and each side's own
-  clean-swept elimination) all call ``state.record_battle_death()``
+  (Phase 60) -- the sites here that actually kill an army
+  (``_apply_pursuit``'s catch-and-destroy, direct destruction and each
+  side's own clean-swept elimination) all call ``state.record_battle_death()``
   first, giving Skeletal Army and Bless's corpse-cleanup addendum
   (``turn/cast_execution.py``) something concrete to act on. A Fleet
   forced to ``DEPLETED`` in place, or a demoted-to-mercenary unit, isn't
-  a death and isn't recorded -- only actual removal from ``state.armies``
-  is.
+  a death and isn't recorded. Neither is ``_retreat_or_disband``'s
+  no-retreat-destination disband: rulebook [4.21.3] ("Armies 'Paroled
+  into population' in a battle are not eligible to become skeletons")
+  -- the army leaves play but leaves no body behind.
 """
 
 from __future__ import annotations
@@ -1252,7 +1253,8 @@ def _retreat_or_disband(
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
             return
         report.disbanded_army_ids.append(army.army_id)
-        state.record_battle_death(army.location, army.army_type, army.quality, army.kingdom_id)
+        # [4.21.3] "Armies 'Paroled into population' in a battle are not eligible to become
+        # skeletons": a routed Green/Depleted army that disperses leaves no body in the graveyard.
         state.remove_army(army.army_id)
     else:
         army.kingdom_id = None
