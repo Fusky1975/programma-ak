@@ -422,3 +422,19 @@ def test_mercenary_bands_and_other_kingdoms_armies_are_not_promoted_by_a_kingdom
     apply_turn_maintenance(state, ScriptedRandom([0.0] * 5))
 
     assert _qualities(state) == {1: Quality.GREEN, 2: Quality.GREEN}
+
+
+def test_a_deserting_hero_leaves_his_armies_to_the_kingdom_s_garrison_command():
+    state = make_state()
+    state.kingdoms[1].treasury = 0
+    king = LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
+    hero = LeaderState(3, 1, "Indra", HOME, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
+    state.add_leader(king)
+    state.add_leader(hero)
+    state.add_army(ArmyState(7, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=3))
+    state.kingdoms[1].treasury = ARMY_TABLE[ArmyType.BOWMEN].pay  # the army's upkeep leaves nothing for the hero
+
+    result = apply_turn_maintenance(state, ScriptedRandom([], choice_indices=[3]))
+
+    assert result[1].deserted_leader_ids == [3] and hero.kingdom_id is None
+    assert state.armies[7].kingdom_id == 1 and state.armies[7].commanded_by is None

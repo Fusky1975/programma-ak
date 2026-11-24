@@ -1454,7 +1454,7 @@ from ak_engine.turn.expenses import (
     leader_pay,
 )
 from ak_engine.turn.valhalla_execution import VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE, VALHALLA_VISITOR_RULES_TEMPLATE
-from ak_engine.turn.wandering_units import WanderRelocation
+from ak_engine.turn.wandering_units import MercenaryQualityEvent, WanderRelocation
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     ARMY_RANKED_OFFICES,
@@ -7234,6 +7234,15 @@ def render_hire_counter_offer(
     return render(HIRE_COUNTER_OFFER_TEMPLATE, values, rng=rng)
 
 
+_HIRE_ADMINISTRATIVE_REFUSALS = {
+    "not co-located": "they were not in the same province",
+    "hero already in service": "they already serve a Kingdom",
+    "cannot hire a King": "they rule a Kingdom of their own",
+    "hero rules his own province": "they govern their own province",
+    "insufficient treasury": "the treasury could not pay for them",
+}
+
+
 def describe_hire(
     result: HireExecutionResult,
     *,
@@ -7273,6 +7282,12 @@ def describe_hire(
         return render_hire_refused(character_name, hireling_name, king_name, rng)
     if result.reason == "offer below required pay" and result.minimum_gold is not None:
         return render_hire_counter_offer(character_name, hireling_name, result.minimum_gold, rng)
+    # Project-original one-line reasons for the administrative refusals (no sourced template exists),
+    # so a Hire order that did nothing no longer vanishes silently from the report (same stance as
+    # the blocked-Recruit lines).
+    administrative_reason = _HIRE_ADMINISTRATIVE_REFUSALS.get(result.reason or "")
+    if administrative_reason is not None:
+        return f"{character_name} could not hire {hireling_name}: {administrative_reason}."
     return None
 
 
@@ -17888,6 +17903,63 @@ def record_wandering_world_events(state: GameState, results: list[PhaseDispatchR
             state.record_world_event(relocation.destination, [line], kind="wander")
 
 
+# SAY.PAS `_MInc`/`_MDec`/`_MSplut` (RUMORS.PAS ids 4100-4102, all S_AA): what happens to a free
+# mercenary band standing in a province -- told to the province's owner. `^Q` is the quality name
+# (the double space in the original source line is where the marker sat).
+_MERCENARY_RISES_TEMPLATE = (
+    "= helped/Rwas_hired_by a local count/Rearl of @ to subdue a native_tribe/Rrebellious_baron "
+    "and rose to ^Q quality."
+)
+_MERCENARY_SINKS_TEMPLATE = (
+    "= experienced/Rsuffered_from a hard_winter/Rdisastrous_raiding_attempt in @ and sank to ^Q quality."
+)
+_MERCENARY_DISSOLVES_TEMPLATE = "= dissolved_their_company/Rlaid_down_their_swords and went_home/Rquit_the_mercenary_life."
+
+
+def render_mercenary_quality_change(
+    army_name: str, province_name: str, kind: str, quality_name: str | None, rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """The narration of one free mercenary band's quality change (``kind`` "up" or "down") or
+    dissolution ("dissolved") in ``province_name`` (SAY.PAS ``_MInc``/``_MDec``/``_MSplut``)."""
+
+    template = {
+        "up": _MERCENARY_RISES_TEMPLATE,
+        "down": _MERCENARY_SINKS_TEMPLATE,
+        "dissolved": _MERCENARY_DISSOLVES_TEMPLATE,
+    }[kind]
+    values = {"=": army_name, "@": province_name, "^Q": quality_name or ""}
+    return render(template, values, rng=rng, is_sea=is_sea)
+
+
+def record_mercenary_quality_narratives(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
+    """Populates ``state.mercenary_quality_notices_by_kingdom`` with the SAY.PAS ``_MInc``/``_MDec``/
+    ``_MSplut`` sentence of every free mercenary band whose quality changed (or that dissolved)
+    this turn (``turn/wandering_units.py roll_mercenary_quality_change()``), for the Kingdom that
+    owns the province the band stands in -- its own ACTION REPORT, not GENERAL INTELLIGENCE (the
+    messages are S_AA, below the foreign-news threshold). Same "call once per turn, before any
+    ``compose_letter_report()``" contract as the other recorders. A band with no province owner
+    has no one to tell."""
+
+    for entry in results:
+        event = entry.result
+        if entry.phase_label != "mercenary-quality" or not isinstance(event, MercenaryQualityEvent):
+            continue
+        province = state.provinces.get(event.coord)
+        if province is None or province.owner_kingdom_id not in state.kingdoms:
+            continue
+        race = MONSTROUS_ARMY_RACE.get(event.army_type, province.race)
+        quality_name = QUALITY_NAME[event.new_quality] if event.new_quality is not None else None
+        line = render_mercenary_quality_change(
+            make_army_name(event.army_id, event.army_type, race),
+            _province_label(state, event.coord),
+            event.kind,
+            quality_name,
+            rng,
+            is_sea=province.effective_terrain() is Terrain.SEA,
+        )
+        state.mercenary_quality_notices_by_kingdom.setdefault(province.owner_kingdom_id, []).append(line)
+
+
 _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
 _GENERAL_INTELLIGENCE_REPORT_NONE = "None at present"
 
@@ -19389,6 +19461,9 @@ def compose_letter_report(
     # notice -- same "both sides carry the identical, already-rendered
     # lines here" shape as the battle narrative right above.
     story_lines = story_lines + state.blackmail_narratives_by_kingdom.get(kingdom_id, [])
+    # 2026-11-24: a free mercenary band's quality change/dissolution in this Kingdom's own province
+    # (SAY.PAS `_MInc`/`_MDec`/`_MSplut`) -- already rendered at record time.
+    story_lines = story_lines + state.mercenary_quality_notices_by_kingdom.get(kingdom_id, [])
     # Phase 939: Tornado's own real S_AA bystander notice for a Kingdom
     # whose own army was destroyed by someone else's Tornado cast --
     # already fully rendered at record time, same placement reasoning as

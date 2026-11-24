@@ -4039,3 +4039,29 @@ def test_run_turn_credits_silver_tongue_merit_to_both_kings():
     # +1 allied, +2 adjacent, +5 for the one real Discovery received each way.
     assert state.leaders[10].merit_tally.diplomatic_merit_points == 8
     assert state.leaders[20].merit_tally.diplomatic_merit_points == 8
+
+
+def test_a_hired_heros_embedded_plan_starts_from_the_next_phase_not_at_once():
+    # [3.5]/[10]: "non potete dare ordini nella stessa fase in cui sono assoldati, ma a partire da
+    # quella successiva" -- the hired hero's P1 order must run in phase P1, after everyone's P0
+    # orders, not right after the Hire inside P0.
+    state = _ordering_state({10: 0, 11: 0})
+    state.kingdoms[1].treasury = 50
+    state.add_leader(LeaderState(50, None, "Wandering Hero", ORIGIN))
+    hire = PlanPhase(
+        label="P0", action=ActionCode.HIRE, obj=50, extra=[4],
+        nested_plan=ActionPlan(
+            leader_id=50,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.WAIT, 0, [0])})],
+        ),
+    )
+    hirer = Leader(10, "Hirer", ActionPlan(10, [PlanSegment(0, 0, (), {"P0": hire})]))
+    other = _leader_with_phase(11, "Other", "P0", _wait_phase("P0"))
+    turn_leaders = [TurnLeader(hirer, 1), TurnLeader(other, 1)]
+
+    results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    order = [(r.leader_id, r.phase_label) for r in results if r.leader_id in (10, 11, 50) and r.segment_index >= 0]
+    assert order == [(10, "P0"), (11, "P0"), (50, "P1")]
+    assert state.leaders[50].kingdom_id == 1
+    assert len(turn_leaders) == 2  # the caller's list is left alone

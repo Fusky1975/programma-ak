@@ -2101,6 +2101,10 @@ class GameState:
     # blackmail_narratives()`, the same "before any `compose_letter_
     # report()` call" contract as that sibling dict.
     blackmail_narratives_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
+    # 2026-11-24 -- SAY.PAS `_MInc`/`_MDec`/`_MSplut`: a free mercenary band's own quality change or
+    # dissolution, told (in their ACTION REPORT) to the Kingdom that owns the province it stands in.
+    # Populated once per turn by `report/turn_report.py record_mercenary_quality_narratives()`.
+    mercenary_quality_notices_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
     # Phase 939 -- Tornado's own real bystander notice (`SAY.PAS`
     # `_ATDestr: Sps(Tornado,S_AA)`, a separate real dispatch from the
     # caster's own `_STorn`-based view `turn/cast_execution.py
@@ -2661,6 +2665,7 @@ class GameState:
         self.battle_narratives_by_kingdom.clear()
         self.illusory_terrain_reveals_by_kingdom.clear()
         self.blackmail_narratives_by_kingdom.clear()
+        self.mercenary_quality_notices_by_kingdom.clear()
         self.tornado_victim_notices_by_kingdom.clear()
         self.plague_victim_notices_by_kingdom.clear()
         self.summon_nullifications.clear()

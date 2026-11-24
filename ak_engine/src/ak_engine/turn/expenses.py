@@ -136,7 +136,7 @@ from ak_engine.models.game_state import GameState, LeaderState, MaintenanceResul
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hire_pay import hero_liking, required_pay
-from ak_engine.turn.leader_queries import find_king_of_kingdom
+from ak_engine.turn.leader_queries import find_king_of_kingdom, release_armies_to_garrison
 
 # Phase 527: AKGEN_reverse_engineering_report (3).md SS28.1's own
 # "(IRand and 3) - 2" -- 4 equally-likely values, -2..+1.
@@ -289,6 +289,7 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
                 if hero.race is None:
                     hero.race = kingdom.race  # a hero with no kingdom keeps the race he served under
                 hero.kingdom_id = None
+                release_armies_to_garrison(state, hero.leader_id)  # he leaves alone, the Kingdom keeps the armies
                 deserted.append(hero.leader_id)
             else:
                 standby.append(hero.leader_id)

@@ -158,6 +158,7 @@ from ak_engine.report.turn_report import (
     record_spell_world_events,
     record_sunk_cargo_world_events,
     record_uncontested_conquest_world_events,
+    record_mercenary_quality_narratives,
     record_wandering_world_events,
     render_blackmail_demand,
     render_blackmail_penalty,
@@ -426,7 +427,7 @@ from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.tax_base import compute_tax_base
-from ak_engine.turn.wandering_units import WanderRelocation
+from ak_engine.turn.wandering_units import MercenaryQualityEvent, WanderRelocation
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
@@ -4157,16 +4158,34 @@ def test_describe_hire_renders_the_rare_alignment_exception_outcome_not_ordinary
     assert "King Harold the Bold" in line
 
 
-def test_describe_hire_renders_nothing_on_administrative_failure_reasons():
-    # These five real HireExecutionResult failure reasons stay
-    # administrative, with no sourced narrative template.
-    for reason in ("hero not found", "cannot hire a King", "hero already in service", "not co-located", "insufficient treasury"):
+def test_describe_hire_says_why_an_administrative_refusal_did_nothing():
+    # No sourced template exists for these, so the wording is project-original -- but a Hire order
+    # that did nothing must not vanish silently from the report.
+    expected = {
+        "cannot hire a King": "they rule a Kingdom of their own",
+        "hero already in service": "they already serve a Kingdom",
+        "not co-located": "they were not in the same province",
+        "insufficient treasury": "the treasury could not pay for them",
+        "hero rules his own province": "they govern their own province",
+    }
+    for reason, because in expected.items():
         result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=False, reason=reason)
-        rng = ScriptedRandom([])
 
-        line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+        line = describe_hire(
+            result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=ScriptedRandom([])
+        )
 
-        assert line is None
+        assert line == f"Aldric could not hire Borin: {because}."
+
+
+def test_describe_hire_stays_silent_for_an_unknown_hero():
+    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=False, reason="hero not found")
+
+    line = describe_hire(
+        result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=ScriptedRandom([])
+    )
+
+    assert line is None
 
 
 def test_describe_hire_renders_refusal_on_too_wide_an_alignment_gap():
@@ -18131,3 +18150,57 @@ def test_describe_battle_narrates_a_commander_retreating_with_his_armies_and_one
     assert len(lines) == 2
     assert lines[0].startswith("Aldric withdrew to ") and lines[0].endswith(" together with the defeated armies.")
     assert lines[1].startswith("Borin fled to ") and lines[1].endswith(".")
+
+
+# -- 2026-11-24: record_mercenary_quality_narratives() (SAY.PAS _MInc/_MDec/_MSplut) -----
+
+
+def _quality_result(army_id: int, coord: HexCoord, kind: str, new_quality: Quality | None) -> PhaseDispatchResult:
+    return PhaseDispatchResult(
+        leader_id=army_id, segment_index=-1, phase_label="mercenary-quality", action=None,
+        result=MercenaryQualityEvent(army_id, ArmyType.BOWMEN, coord, kind, new_quality), error=None,
+    )
+
+
+def test_a_mercenary_band_rising_is_told_to_the_owner_of_its_province():
+    state, origin, _destination = _wandering_state()
+
+    record_mercenary_quality_narratives(state, [_quality_result(300, origin, "up", Quality.VETERAN)], random.Random(1))
+
+    [line] = state.mercenary_quality_notices_by_kingdom[1]
+    assert "Origin Fort" in line and "rose to Veteran quality" in line
+    assert 2 not in state.mercenary_quality_notices_by_kingdom
+
+
+def test_a_mercenary_band_sinking_and_dissolving_use_their_own_original_texts():
+    state, origin, _destination = _wandering_state()
+    results = [
+        _quality_result(300, origin, "down", Quality.GREEN),
+        _quality_result(301, origin, "dissolved", None),
+    ]
+
+    record_mercenary_quality_narratives(state, results, random.Random(1))
+
+    sinking, dissolving = state.mercenary_quality_notices_by_kingdom[1]
+    assert "Origin Fort" in sinking and "sank to Green quality" in sinking
+    assert "301st Bowmen" in dissolving and "Origin Fort" not in dissolving
+
+
+def test_a_mercenary_band_in_an_unowned_province_is_told_to_no_one():
+    state, origin, _destination = _wandering_state()
+    state.provinces[origin].owner_kingdom_id = None
+
+    record_mercenary_quality_narratives(state, [_quality_result(300, origin, "up", Quality.VETERAN)], random.Random(1))
+
+    assert state.mercenary_quality_notices_by_kingdom == {}
+
+
+def test_the_letter_report_carries_the_mercenary_quality_notice_of_its_kingdom():
+    state, _origin, _destination = _wandering_state()
+    state.mercenary_quality_notices_by_kingdom[1] = ["A free band rose in quality."]
+
+    owner_lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+    other_lines = compose_letter_report([], state, 2, ScriptedRandom([]))
+
+    assert "A free band rose in quality." in owner_lines
+    assert "A free band rose in quality." not in other_lines

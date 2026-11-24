@@ -14,11 +14,12 @@ user (see the plan file's own Phase 781 section for the full reasoning):
 mercenary armies get NO ``avoid_owner`` tracking at all (unlike Heroes,
 which reuse ``LeaderState.birth_x``/``.birth_y``); the ``DS:8B52``
 King-orders-flag gate is implemented faithfully (see ``turn/turn_
-processor.py _kingdom_submitted_real_orders()``); the armies-only
-quality-decay/dissolution alternative branch is attempted despite being
-under-characterized even in the source document (``maybe_decay_
-mercenary_quality()`` below) -- a documented approximation, not a fully
-confirmed mechanic.
+processor.py _kingdom_submitted_real_orders()``). The armies-only quality
+change/dissolution (``roll_mercenary_quality_change()`` below) was first an
+approximation of an under-characterized branch of the source document; since
+2026-11-24 it follows the user's own table of per-turn chances instead
+(``MERCENARY_QUALITY_CHANGE_CHANCE``), with the original SAY.PAS texts
+(``_MInc``/``_MDec``/``_MSplut``) narrated in the report.
 
 The shared hex-stepper (``_wander_step_hex()``) is a deliberate,
 duplicated copy of ``turn/cast_execution.py _scar_terrain_step_hex()``
@@ -351,32 +352,62 @@ def resolve_army_wander(state: GameState, army: ArmyState, rng: random.Random) -
     return current
 
 
-def maybe_decay_mercenary_quality(state: GameState, army: ArmyState, rng: random.Random) -> bool:
-    """The user-confirmed-attempted alternative branch (taken by the
-    caller when an eligible army's own initial access roll fails):
-    ``army.quality is Quality.DEPLETED`` -> a documented, silent
-    removal (no invented narration text -- MERCHERO gives only the
-    message id ``_MSplut=4102``, not its real English text, matching
-    this project's own ``feedback_original_text_when_unsourced``
-    convention); else ``int(rng.random()*100) < (100 >> (int(quality)
-    - 1))`` -> demote one ``Quality`` tier.
+# User ruling 2026-11-24 (replaces the earlier MERCHERO.md "decay" approximation, which had no
+# increase branch): every turn each free mercenary band may rise or sink one quality level --
+# ``(chance to rise, chance to sink)`` per current quality. Veteran -> Crack is the ceiling of
+# this rule (a band never rises above Crack); a Depleted band can only dissolve.
+MERCENARY_QUALITY_CHANGE_CHANCE: dict[Quality, tuple[float, float]] = {
+    Quality.GREEN: (0.07, 0.07),  # -> Average / -> Depleted
+    Quality.AVERAGE: (0.07, 0.07),  # -> Veteran / -> Green
+    Quality.VETERAN: (0.02, 0.07),  # -> Crack / -> Average
+    Quality.CRACK: (0.0, 0.05),  # -> (ceiling) / -> Veteran
+}
+# A Depleted mercenary band disbands for good with this chance each turn ("_MSplut").
+DEPLETED_MERCENARY_DISSOLVE_CHANCE = 0.20
 
-    Returns ``True`` if the army was removed or demoted, ``False`` if
-    the roll simply failed and nothing changed. Both the Pascal-
-    quality-numbering-vs-``Quality``-IntEnum mapping and this branch's
-    own real trigger/effect stay a documented approximation, per the
-    user's own explicit choice to attempt it despite being under-
-    characterized even in the source document.
-    """
 
+class MercenaryQualityEvent:
+    """One free mercenary band's quality change (``kind`` "up"/"down") or dissolution
+    ("dissolved"), for the report layer -- SAY.PAS ``_MInc``/``_MDec``/``_MSplut``."""
+
+    __slots__ = ("army_id", "army_type", "coord", "kind", "new_quality")
+
+    def __init__(
+        self, army_id: int, army_type: ArmyType, coord: HexCoord, kind: str, new_quality: Quality | None
+    ) -> None:
+        self.army_id = army_id
+        self.army_type = army_type
+        self.coord = coord
+        self.kind = kind
+        self.new_quality = new_quality
+
+
+def roll_mercenary_quality_change(state: GameState, army: ArmyState, rng: random.Random) -> MercenaryQualityEvent | None:
+    """One draw decides: a Depleted band dissolves (and is removed) with
+    ``DEPLETED_MERCENARY_DISSOLVE_CHANCE``; any other band rises with its first chance, sinks with
+    the next one (see ``MERCENARY_QUALITY_CHANGE_CHANCE``), else nothing happens. Returns the
+    event, or ``None`` when nothing changed."""
+
+    roll = rng.random()
     if army.quality is Quality.DEPLETED:
-        state.remove_army(army.army_id)
-        return True
-    chance_percent = 100 >> (int(army.quality) - 1)
-    if int(rng.random() * 100) < chance_percent:
+        if roll < DEPLETED_MERCENARY_DISSOLVE_CHANCE:
+            event = MercenaryQualityEvent(army.army_id, army.army_type, army.location, "dissolved", None)
+            state.remove_army(army.army_id)
+            return event
+        return None
+    chances = MERCENARY_QUALITY_CHANGE_CHANCE.get(army.quality)
+    if chances is None:
+        return None
+    rise, sink = chances
+    if roll < rise:
+        army.quality = Quality(int(army.quality) + 1)
+        kind = "up"
+    elif roll < rise + sink:
         army.quality = Quality(int(army.quality) - 1)
-        return True
-    return False
+        kind = "down"
+    else:
+        return None
+    return MercenaryQualityEvent(army.army_id, army.army_type, army.location, kind, army.quality)
 
 
 class WanderRelocation:
@@ -394,7 +425,10 @@ class WanderRelocation:
 
 
 def resolve_wandering(
-    state: GameState, orders_flag: dict[int, bool], rng: random.Random
+    state: GameState,
+    orders_flag: dict[int, bool],
+    rng: random.Random,
+    quality_events: list[MercenaryQualityEvent] | None = None,
 ) -> list[WanderRelocation]:
     """The once-per-turn end-of-turn tail step (called from ``turn/
     turn_processor.py run_turn()``): rolls the real per-object initial-
@@ -403,8 +437,9 @@ def resolve_wandering(
     even for an object the eligibility gates will reject** (MERCHERO
     section 12.4 point 4's own RNG-fidelity warning) -- then resolves a
     real wander for whichever ones both pass the roll and are eligible.
-    An eligible army that fails its own roll attempts the quality-decay
-    branch instead (Design point 3's own user-confirmed choice).
+    Every free mercenary band also rolls its own quality change each turn
+    (``roll_mercenary_quality_change()``, user ruling 2026-11-24), appended
+    to ``quality_events`` when given.
 
     Returns only the real net displacements (initial != final
     coordinate) -- callers already apply the corresponding location
@@ -436,12 +471,13 @@ def resolve_wandering(
     )
     for army in armies:
         accessed = int(rng.random() * 6) < 3
-        eligible = army_eligible_for_wander(state, army, orders_flag)
-        if not accessed:
-            if eligible:
-                maybe_decay_mercenary_quality(state, army, rng)
-            continue
-        if not eligible:
+        if army.is_mercenary and not army.unhireable_this_turn:  # (just disbanded this turn: not yet)
+            event = roll_mercenary_quality_change(state, army, rng)
+            if event is not None and quality_events is not None:
+                quality_events.append(event)
+            if event is not None and event.kind == "dissolved":
+                continue
+        if not accessed or not army_eligible_for_wander(state, army, orders_flag):
             continue
         origin = army.location
         destination = resolve_army_wander(state, army, rng)

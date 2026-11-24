@@ -332,7 +332,7 @@ from ak_engine.turn.sep_decode import decode_special_encounter_plan
 from ak_engine.turn.skeletal_decay import decompose_graveyard
 from ak_engine.turn.monster_raids import age_all_feature_guardians, maybe_dissipate_hidden_feature
 from ak_engine.turn.tax_base import apply_turn_revenue
-from ak_engine.turn.wandering_units import resolve_wandering
+from ak_engine.turn.wandering_units import MercenaryQualityEvent, resolve_wandering
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
 from ak_engine.turn.valhalla_execution import (
@@ -453,6 +453,7 @@ def run_turn(
     """
 
     rng = rng if rng is not None else random.Random()
+    turn_leaders = list(turn_leaders)  # characters Hired/Charmed mid-turn join this copy, not the caller's list
     board_width = board_width if board_width is not None else state.board_width
     results: list[PhaseDispatchResult] = []
     bounds = MapBounds(board_width, state.board_height)
@@ -796,8 +797,20 @@ def run_turn(
         )
         for index in dispatch_order:
             tl, segment_index, phase = entries[index]
-            dispatch_results = _dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng)
+            joined_plans: list[tuple[int, ActionPlan]] = []
+            dispatch_results = _dispatch_single(
+                tl, segment_index, phase, state, board_width, explorer_skill, rng, deferred_nested_plans=joined_plans
+            )
             results.extend(dispatch_results)
+            # A character just Hired/Charmed gets his own orders from the *next* phase on: his
+            # embedded plan joins the turn here instead of being run at once and in full.
+            for joined_leader_id, joined_plan in joined_plans:
+                joined_state = state.leaders[joined_leader_id]
+                turn_leaders.append(
+                    TurnLeader(Leader(joined_leader_id, joined_state.name, joined_plan), tl.kingdom_id)
+                )
+                if joined_plan.segments:
+                    joined_state.special_encounter_plan = tuple(decode_special_encounter_plan(joined_plan.segments[0]))
             if phase.action is ActionCode.TRAIL:
                 _backfill_trail_actions(dispatch_results, action_this_phase_by_leader)
             if phase.action in (ActionCode.PURSUE, ActionCode.TRAIL):
@@ -952,7 +965,8 @@ def run_turn(
     # resolved once here and threaded into every eligibility check.
     apply_pending_mercenary_follows(state)
     orders_flag = _kingdom_submitted_real_orders(turn_leaders, state)
-    for relocation in resolve_wandering(state, orders_flag, rng):
+    mercenary_quality_events: list[MercenaryQualityEvent] = []
+    for relocation in resolve_wandering(state, orders_flag, rng, mercenary_quality_events):
         results.append(
             PhaseDispatchResult(
                 leader_id=relocation.entity_id,
@@ -960,6 +974,17 @@ def run_turn(
                 phase_label="hero-wander" if relocation.kind == "hero" else "army-wander",
                 action=None,
                 result=relocation,
+                error=None,
+            )
+        )
+    for quality_event in mercenary_quality_events:
+        results.append(
+            PhaseDispatchResult(
+                leader_id=quality_event.army_id,
+                segment_index=-1,
+                phase_label="mercenary-quality",
+                action=None,
+                result=quality_event,
                 error=None,
             )
         )
@@ -2737,6 +2762,7 @@ def _dispatch_single(
     board_width: int,
     explorer_skill: int,
     rng: random.Random,
+    deferred_nested_plans: list[tuple[int, ActionPlan]] | None = None,
 ) -> list[PhaseDispatchResult]:
     """Dispatch exactly one phase via the existing, fully-tested ``run_leader_plan`` --
     see module docstring for why this wraps rather than duplicates it.
@@ -2747,7 +2773,10 @@ def _dispatch_single(
         name=tl.leader.name,
         plan=ActionPlan(leader_id=tl.leader.leader_id, segments=[PlanSegment(0, 0, (), {phase.label: phase})]),
     )
-    return run_leader_plan(wrapper, state, tl.kingdom_id, board_width=board_width, explorer_skill=explorer_skill, rng=rng)
+    return run_leader_plan(
+        wrapper, state, tl.kingdom_id, board_width=board_width, explorer_skill=explorer_skill, rng=rng,
+        deferred_nested_plans=deferred_nested_plans,
+    )
 
 
 def _leader_explorer_skill(state: GameState, leader_id: int, base: int) -> int:
