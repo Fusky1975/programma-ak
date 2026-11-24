@@ -307,8 +307,11 @@ from ak_engine.turn.missed_deadline import build_missed_deadline_plan
 from ak_engine.turn.move_execution import (
     MoveExecutionResult,
     TransportIllegalMoveError,
+    _unclaimed_flat_movement_bonus,
     apply_pending_mercenary_follows,
+    award_move_experience,
     find_transport_illegality,
+    grant_movement_bonuses,
     record_kingdom_exploration,
     reveal_adjacent_provinces,
     wind_walking_army_ids_of,
@@ -1234,6 +1237,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         army.march_bonus_applied_this_turn = False
         army.naval_bonus_applied_this_turn = False
         army.march_table_bonus_applied_this_turn = False
+        army.march_table_bonus_granted = 0
         army.unhireable_this_turn = False
         army.recruited_this_turn = False
         army.flood_dams_exempt_at = None
@@ -2724,6 +2728,25 @@ def _leader_explorer_skill(state: GameState, leader_id: int, base: int) -> int:
     return max(base, effective_skill_level(state, leader, Ability.EXPLORER))
 
 
+def _movement_bonus_kwargs(state: GameState, leader: LeaderState | None) -> dict:
+    """The commander-dependent inputs of ``grant_movement_bonuses()`` -- the same ones
+    ``turn/plan_dispatch.py`` reads for an ordinary LMOVE (March/Naval skill, the March Advanced
+    Abilities)."""
+
+    if leader is None:
+        return {}
+    abilities = leader.advanced_abilities
+    return {
+        "march_skill_level": effective_skill_level(state, leader, Ability.MARCH),
+        "naval_skill_level": effective_skill_level(state, leader, Ability.NAVAL),
+        "has_march_cavalry": AdvancedAbility.MARCH_CAVALRY in abilities,
+        "has_march_cavalry_mastery": AdvancedAbility.MARCH_CAVALRY_MASTERY in abilities,
+        "has_march_cavalry_true_mastery": AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY in abilities,
+        "has_march_infantry": AdvancedAbility.MARCH_INFANTRY in abilities,
+        "has_march_infantry_mastery": AdvancedAbility.MARCH_INFANTRY_MASTERY in abilities,
+    }
+
+
 def _dispatch_multi_attacker_lmove(
     movers: list[tuple[TurnLeader, int, PlanPhase]],
     target: HexCoord,
@@ -2788,7 +2811,15 @@ def _dispatch_multi_attacker_lmove(
             # at (or below) 0 used to be let into the battle and then
             # have `movement_points -= cost` applied unconditionally,
             # driving it further negative with no recorded error.
-            if armies and any(army.movement_points < 1 for army in armies):
+            bonus_kwargs = _movement_bonus_kwargs(state, state.leaders.get(tl.leader.leader_id))
+            if armies and any(
+                army.movement_points
+                + _unclaimed_flat_movement_bonus(
+                    army, bonus_kwargs.get("march_skill_level", 0), bonus_kwargs.get("naval_skill_level", 0)
+                )
+                < 1
+                for army in armies
+            ):
                 raise ValueError("an army with no movement points left this gameturn can't move")
             # Phase 737: this function has its own separate movement
             # logic (never calls execute_move()), so it needs its own
@@ -2871,13 +2902,29 @@ def _dispatch_multi_attacker_lmove(
         cost = movement_cost_for_move(battle_occurred=True, conquered=conquered)
         moved = conquered
 
+        bonus_kwargs = _movement_bonus_kwargs(state, state.leaders.get(tl.leader.leader_id))
         for army_id in army_ids:
             army = state.armies.get(army_id)
             if army is None:
                 continue  # destroyed in the battle
+            # [6.2]: the March/Naval movement bonuses are computed when the armies move -- united
+            # invasions get them like a lone invader does.
+            grant_movement_bonuses(army, **bonus_kwargs)
             army.movement_points -= cost
             if moved and army.location == origin:
                 army.location = target
+
+        if moved:
+            # [3.13] "Muovere ... 10% Marcia/Navale": the same Move experience (and Advanced Ability
+            # grant) an ordinary LMOVE gives.
+            award_move_experience(
+                state,
+                tl.leader.leader_id,
+                [state.armies[army_id] for army_id in army_ids if army_id in state.armies],
+                state.provinces.get(origin),
+                target_province,
+                rng,
+            )
 
         leader_state = state.leaders.get(tl.leader.leader_id)
         if moved and leader_state is not None and leader_state.location == origin:

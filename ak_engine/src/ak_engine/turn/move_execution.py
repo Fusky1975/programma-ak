@@ -473,6 +473,21 @@ def march_table_extra_movement(march_skill_level: int, army_speed: int) -> int:
     return table[level]
 
 
+def march_table_bonus_still_due(army: ArmyState, march_skill_level: int) -> int:
+    """The extra movement points the MARCH TABLE still owes ``army`` under a commander of
+    ``march_skill_level`` this turn: the full bonus the first time, and afterwards only the
+    *difference* if the army has passed to a commander with a higher March skill ([4.1.2]: an army that
+    "passa sotto il comando di un altro con abilità di Marcia maggiore ... gode della maggiore abilità
+    di quest'ultimo"). An army whose flag was set by hand (granted amount 0) is never upgraded.
+    """
+
+    army_stats = ARMY_TABLE.get(army.army_type)
+    table_bonus = march_table_extra_movement(march_skill_level, army_stats.speed if army_stats is not None else 1)
+    if army.march_table_bonus_applied_this_turn and army.march_table_bonus_granted == 0:
+        return 0
+    return max(0, table_bonus - army.march_table_bonus_granted)
+
+
 def _unclaimed_flat_movement_bonus(army: ArmyState, march_skill_level: int, naval_skill_level: int) -> int:
     """How much ``army.movement_points`` is still due to grow this very
     call, from whichever of ``march_table_extra_movement()``/
@@ -491,10 +506,7 @@ def _unclaimed_flat_movement_bonus(army: ArmyState, march_skill_level: int, nava
     if army.army_type in SEA_ARMY_TYPES:
         return 0 if army.naval_bonus_applied_this_turn else naval_movement_point_bonus(naval_skill_level)
     if is_land_army(army.army_type):
-        if army.march_table_bonus_applied_this_turn:
-            return 0
-        army_stats = ARMY_TABLE.get(army.army_type)
-        return march_table_extra_movement(march_skill_level, army_stats.speed if army_stats is not None else 1)
+        return march_table_bonus_still_due(army, march_skill_level)
     return 0
 
 
@@ -1388,6 +1400,92 @@ _EXTRA_POINT_ON_BATTLE_ONLY = frozenset({ArmyType.FLEET, ArmyType.MERMEN})
 MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS = 10
 
 
+
+def grant_movement_bonuses(
+    army: ArmyState,
+    *,
+    march_skill_level: int = 0,
+    naval_skill_level: int = 0,
+    has_march_cavalry: bool = False,
+    has_march_cavalry_mastery: bool = False,
+    has_march_cavalry_true_mastery: bool = False,
+    has_march_infantry: bool = False,
+    has_march_infantry_mastery: bool = False,
+) -> None:
+    """The three movement-point bonuses an army gains the moment it moves under a given commander
+    (rulebook [6.2]: "il movimento esteso ... viene sempre calcolato al momento in cui esse muovono"):
+    the Advanced-Ability-gated March bonus, the Naval bonus for sea units and the MARCH TABLE's own
+    skill-level bonus. Shared by ``execute_move()`` and the multi-attacker invasion path in
+    ``turn/turn_processor.py``, so every land invasion gets them, alone or united.
+    """
+
+    if not army.march_bonus_applied_this_turn and is_land_army(army.army_type):
+        bonus = march_movement_point_bonus(
+            army.movement_points,
+            has_march_cavalry=has_march_cavalry,
+            has_march_cavalry_mastery=has_march_cavalry_mastery,
+            has_march_cavalry_true_mastery=has_march_cavalry_true_mastery,
+            has_march_infantry=has_march_infantry,
+            has_march_infantry_mastery=has_march_infantry_mastery,
+        )
+        if bonus:
+            army.movement_points += bonus
+            army.march_bonus_applied_this_turn = True
+    if not army.naval_bonus_applied_this_turn and army.army_type in SEA_ARMY_TYPES:
+        naval_bonus = naval_movement_point_bonus(naval_skill_level)
+        if naval_bonus:
+            army.movement_points += naval_bonus
+            army.naval_bonus_applied_this_turn = True
+    # Phase 764: [4.12] MARCH TABLE's own separate, raw-skill-level bonus -- stacks with
+    # march_movement_point_bonus() above, see march_table_extra_movement()'s own docstring.
+    if is_land_army(army.army_type):
+        table_bonus = march_table_bonus_still_due(army, march_skill_level)
+        if table_bonus:
+            army.movement_points += table_bonus
+            army.march_table_bonus_granted += table_bonus
+            army.march_table_bonus_applied_this_turn = True
+
+
+def award_move_experience(
+    state: GameState,
+    leader_id: int,
+    armies: list[ArmyState],
+    origin_province: ProvinceState | None,
+    target_province: ProvinceState | None,
+    rng: random.Random,
+) -> tuple[AdvancedAbility | None, AdvancedAbility | None]:
+    """Phase 768/901's Move-triggered March/Naval experience credit (and the Advanced Ability a skill
+    rise grants), shared by ``execute_move()`` and the multi-attacker invasion path: [3.13] "Muovere (via
+    terra, con unità) 10% Marcia / (via mare, con flotte) 10% Navale". Credited only for a real leader
+    commanding armies that are not mostly air units. Returns ``(naval_granted, march_granted)``.
+    """
+
+    naval_granted: AdvancedAbility | None = None
+    march_granted: AdvancedAbility | None = None
+    if not armies:
+        return naval_granted, march_granted
+    air_carrier_ids = {army.army_id for army in armies if army.army_type in OVERFLIGHT_AIR}
+    air_count = sum(1 for army in armies if army.army_type in OVERFLIGHT_AIR or army.transported_by in air_carrier_ids)
+    if 2 * air_count >= len(armies):
+        return naval_granted, march_granted
+    mover_leader = state.leaders.get(leader_id)
+    if mover_leader is None:
+        return naval_granted, march_granted
+    is_sea_move = (origin_province is not None and origin_province.effective_terrain() is Terrain.SEA) or (
+        target_province is not None and target_province.effective_terrain() is Terrain.SEA
+    )
+    move_experience_ability = Ability.NAVAL if is_sea_move else Ability.MARCH
+    outcome = add_experience(mover_leader, move_experience_ability, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, rng)
+    if move_experience_ability is Ability.NAVAL and outcome.skill_rose:
+        naval_granted = build_naval_ability_level_schedule(state.game_number).get(outcome.new_skill)
+        if naval_granted is not None:
+            mover_leader.advanced_abilities.add(naval_granted)
+    elif move_experience_ability is Ability.MARCH and outcome.skill_rose:
+        march_granted = build_march_ability_level_schedule(state.game_number).get(outcome.new_skill)
+        if march_granted is not None:
+            mover_leader.advanced_abilities.add(march_granted)
+    return naval_granted, march_granted
+
 def execute_move(
     state: GameState,
     kingdom_id: int,
@@ -2192,35 +2290,16 @@ def execute_move(
         # transported... in the same turn" -- only its carrier pays.
         carried_this_move = army.transported_by is not None and army.transported_by in army_ids
         if not carried_this_move:
-            if not army.march_bonus_applied_this_turn and is_land_army(army.army_type):
-                bonus = march_movement_point_bonus(
-                    army.movement_points,
-                    has_march_cavalry=has_march_cavalry,
-                    has_march_cavalry_mastery=has_march_cavalry_mastery,
-                    has_march_cavalry_true_mastery=has_march_cavalry_true_mastery,
-                    has_march_infantry=has_march_infantry,
-                    has_march_infantry_mastery=has_march_infantry_mastery,
-                )
-                if bonus:
-                    army.movement_points += bonus
-                    army.march_bonus_applied_this_turn = True
-            if not army.naval_bonus_applied_this_turn and army.army_type in SEA_ARMY_TYPES:
-                naval_bonus = naval_movement_point_bonus(naval_skill_level)
-                if naval_bonus:
-                    army.movement_points += naval_bonus
-                    army.naval_bonus_applied_this_turn = True
-            # Phase 764: [4.12] MARCH TABLE's own separate, raw-skill-level
-            # bonus -- stacks with march_movement_point_bonus() above, see
-            # march_table_extra_movement()'s own docstring for why the two
-            # are genuinely distinct, separately-sourced mechanics.
-            if not army.march_table_bonus_applied_this_turn and is_land_army(army.army_type):
-                army_stats = ARMY_TABLE.get(army.army_type)
-                table_bonus = march_table_extra_movement(
-                    march_skill_level, army_stats.speed if army_stats is not None else 1
-                )
-                if table_bonus:
-                    army.movement_points += table_bonus
-                    army.march_table_bonus_applied_this_turn = True
+            grant_movement_bonuses(
+                army,
+                march_skill_level=march_skill_level,
+                naval_skill_level=naval_skill_level,
+                has_march_cavalry=has_march_cavalry,
+                has_march_cavalry_mastery=has_march_cavalry_mastery,
+                has_march_cavalry_true_mastery=has_march_cavalry_true_mastery,
+                has_march_infantry=has_march_infantry,
+                has_march_infantry_mastery=has_march_infantry_mastery,
+            )
             army.movement_points -= battle_only_cost if army.army_type in _EXTRA_POINT_ON_BATTLE_ONLY else cost
             if fog_affected_move and is_illusory_fog_affected_air_unit(army.army_type, mystic_winds_active_for(army, state)):
                 army.movement_points -= ILLUSORY_FOG_EXTRA_MOVEMENT_COST
@@ -2300,54 +2379,9 @@ def execute_move(
     naval_advanced_ability_granted: AdvancedAbility | None = None
     march_advanced_ability_granted: AdvancedAbility | None = None
     if moved and leader_id is not None and armies:
-        # Phase 1044 bug fix -- this function's own Phase 768 addendum
-        # above states the exclusion is for "a majority-air-or-air-
-        # transportable force," but `air_count` used to count only
-        # armies whose own `army_type` is literally an air type, never
-        # a land army currently boarded as cargo on one of this same
-        # move's own air carriers (`army.transported_by` pointing at a
-        # carrier army_id also present in `armies`) -- so a Dragon/Eagle
-        # Wing carrying a majority-land cargo was wrongly credited
-        # ordinary ground March/Naval XP instead of being excluded.
-        air_carrier_ids = {army.army_id for army in armies if army.army_type in OVERFLIGHT_AIR}
-        air_count = sum(
-            1 for army in armies if army.army_type in OVERFLIGHT_AIR or army.transported_by in air_carrier_ids
+        naval_advanced_ability_granted, march_advanced_ability_granted = award_move_experience(
+            state, leader_id, armies, origin_province, target_province, rng
         )
-        if 2 * air_count < len(armies):
-            mover_leader = state.leaders.get(leader_id)
-            if mover_leader is not None:
-                is_sea_move = (origin_province is not None and origin_province.effective_terrain() is Terrain.SEA) or (
-                    target_province is not None and target_province.effective_terrain() is Terrain.SEA
-                )
-                move_experience_ability = Ability.NAVAL if is_sea_move else Ability.MARCH
-                outcome = add_experience(mover_leader, move_experience_ability, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, rng)
-                # Phase 787: since Phase 644, Practicing Naval no longer
-                # raises the leader's own personal Naval skill at all
-                # (routed to `execute_practice_tactical()` instead) --
-                # this Move-triggered credit is the ONLY real, reachable
-                # trigger for a Naval `AdvancedAbility` grant. See
-                # `worldgen/naval_ability_level_schedule.py`'s own module
-                # docstring for the real, empirically-verified schedule
-                # and its accepted `SA_Num`/`SA_Mod` under-count scope.
-                if move_experience_ability is Ability.NAVAL and outcome.skill_rose:
-                    naval_advanced_ability_granted = build_naval_ability_level_schedule(state.game_number).get(
-                        outcome.new_skill
-                    )
-                    if naval_advanced_ability_granted is not None:
-                        mover_leader.advanced_abilities.add(naval_advanced_ability_granted)
-                # Phase 901: the identical treatment for March, previously
-                # missing -- `Ability.MARCH` has no personal-Practice
-                # trigger either (never in `_ARMY_TRAINING_ABILITIES`),
-                # so this Move-triggered credit is its own only real,
-                # reachable trigger too. See `worldgen/march_ability_
-                # level_schedule.py`'s own module docstring for why its
-                # schedule needs no `game_number` at all.
-                elif move_experience_ability is Ability.MARCH and outcome.skill_rose:
-                    march_advanced_ability_granted = build_march_ability_level_schedule(state.game_number).get(
-                        outcome.new_skill
-                    )
-                    if march_advanced_ability_granted is not None:
-                        mover_leader.advanced_abilities.add(march_advanced_ability_granted)
 
     return MoveExecutionResult(
         moved=moved,

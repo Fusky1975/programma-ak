@@ -3064,3 +3064,58 @@ def test_a_fleet_that_fights_a_battle_pays_the_extra_point():
 
     assert result.battle_report is not None
     assert 101 not in state.armies or state.armies[101].movement_points == 1  # 3 - 1 - 1
+
+
+# -- [4.1.2]: an army passing to a commander with a higher March skill enjoys the higher skill --
+
+
+def _two_hops_state() -> tuple[GameState, HexCoord]:
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    second = HexCoord(3, 1)  # adjacent to TARGET on the odd-r grid
+    state.add_province(ProvinceState(second, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    return state, second
+
+
+def test_a_higher_march_commander_adds_the_difference_to_the_march_bonus():
+    state, second = _two_hops_state()
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=2)  # +1 (Speed 1-2, level 2)
+    assert state.armies[101].movement_points == 3  # 3 + 1 - 1
+    assert state.armies[101].march_table_bonus_granted == 1
+
+    # The army passes to a level-4 commander (+2 in total): one more point is due.
+    execute_move(state, kingdom_id=1, army_ids=[101], target=second, march_skill_level=4)
+
+    assert state.armies[101].march_table_bonus_granted == 2
+    assert state.armies[101].movement_points == 3  # 3 + 1 (difference) - 1
+
+
+def test_a_lower_march_commander_takes_nothing_back_and_adds_nothing():
+    state, second = _two_hops_state()
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=4)  # +2
+    execute_move(state, kingdom_id=1, army_ids=[101], target=second, march_skill_level=2)
+
+    assert state.armies[101].march_table_bonus_granted == 2
+    assert state.armies[101].movement_points == 3 + 2 - 1 - 1
+
+
+def test_a_level_zero_commander_first_leaves_the_whole_bonus_to_the_next_one():
+    state, second = _two_hops_state()
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=0)
+    execute_move(state, kingdom_id=1, army_ids=[101], target=second, march_skill_level=4)
+
+    assert state.armies[101].march_table_bonus_granted == 2
+    assert state.armies[101].movement_points == 3 + 2 - 1 - 1
+
+
+def test_a_hand_set_march_table_flag_is_never_upgraded():
+    state, _second = _two_hops_state()
+    state.armies[101].march_table_bonus_applied_this_turn = True  # set by a GM edit: granted amount unknown (0)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=4)
+
+    assert state.armies[101].march_table_bonus_granted == 0
+    assert state.armies[101].movement_points == 2  # 3 - 1: no bonus
