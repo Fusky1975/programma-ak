@@ -1266,3 +1266,34 @@ def test_a_partial_treasury_recruits_what_it_can_and_reports_the_rest():
 
     assert len(result.recruited) == 1
     assert result.gold_blocked == [ArmyType.LT_CAVALRY]
+
+
+def test_mercenaries_can_be_hired_in_a_province_of_a_realm_at_war_but_a_levy_cannot():
+    # [3.4]: "I mercenari invece possono essere reclutati in qualunque provincia da qualsiasi
+    # personaggio" (user, 2026-11-24: also in the provinces of realms one is at war with).
+    state = _slotted_state()
+    state.add_kingdom(KingdomState(2, "Enemia", Race.HUMAN, Alignment.EVIL, HexCoord(7, 7), treasury=0))
+    state.provinces[LOCATION].owner_kingdom_id = 2
+    assert not state.is_allied(1, 2)
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, is_mercenary=True))
+    state.add_army(ArmyState(51, None, ArmyType.WHALES, Quality.AVERAGE, LOCATION, is_mercenary=True))
+    request = RecruitRequest(None, [ArmyType.BOWMEN, ArmyType.WHALES, ArmyType.LT_CAVALRY])
+
+    result = execute_recruit(state, 1, LEADER_ID, request)
+
+    assert [(unit.army_type, unit.hired) for unit in result.recruited] == [
+        (ArmyType.BOWMEN, True),
+        (ArmyType.WHALES, True),  # even a type the province's people could never field
+    ]
+    assert result.territory_blocked == [ArmyType.LT_CAVALRY]
+    assert state.armies[50].kingdom_id == 1 and state.kingdoms[2].treasury == 0
+
+
+def test_mercenaries_can_be_hired_in_an_unowned_province_by_a_landless_king():
+    state = _slotted_state()
+    state.provinces[LOCATION].owner_kingdom_id = None
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, is_mercenary=True))
+
+    result = execute_recruit(state, 1, LEADER_ID, RecruitRequest(None, [ArmyType.BOWMEN]))
+
+    assert [unit.hired for unit in result.recruited] == [True]
