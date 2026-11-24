@@ -1886,6 +1886,64 @@ def test_run_turn_defend_does_not_reinforce_with_insufficient_movement_points():
     assert state.armies[901].location == DEFEND_HOME
 
 
+def _defend_run(state: GameState, seed: int = 9):
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    # Evenly matched Elite armies, so the reacting army has a fair chance to survive and be inspected.
+    state.add_army(ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3))
+    state.armies[901].quality = Quality.ELITE
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 902, ATTACKER_ORIGIN, COVERED, "P1")
+    # run_turn() resets every army's movement points at its end; keep the end-of-phase values visible.
+    with patch("ak_engine.turn.turn_processor._replenish_turn_scoped_state"):
+        return run_turn(
+            [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(seed)
+        )
+
+
+def test_run_turn_defend_win_pursuit_survives_an_invader_whose_armies_retreated_away():
+    # The defending general wins and pursues the invader, but the invader's beaten armies retreated to
+    # another province, leaving him behind: the pursuit used to ask fight_battle() for a battle with no
+    # defenders and abort the whole turn with a ValueError.
+    for seed in (5, 6):
+        state = _defend_state()
+        _defend_run(state, seed=seed)  # must not raise
+
+
+def test_run_turn_defend_march_bonus_lets_a_slow_army_react():
+    # Garrison speed 1 with 1 point left is one short of the reaction's cost (2) -- but a general with
+    # March 2 owes a Speed 1-2 army one extra move when it moves, so it can react.
+    state = _defend_state()
+    state.leaders[100].skills = _skills_with(Ability.MARCH, 2, 9)
+    state.armies[901].movement_points = 1
+
+    results = _defend_run(state)
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is not None  # the Garrison reacted: a real battle
+    assert state.armies[901].march_table_bonus_granted == 1
+
+
+def test_run_turn_defend_without_march_skill_a_slow_army_still_cannot_react():
+    state = _defend_state()
+    state.armies[901].movement_points = 1
+
+    results = _defend_run(state)
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is None
+    assert state.armies[901].location == DEFEND_HOME
+    assert state.armies[901].march_table_bonus_granted == 0
+
+
+def test_run_turn_defend_reaction_pays_its_movement_cost():
+    # [3.15]: "questi movimenti costano Punti Movimento". The reaction used to be checked but never paid.
+    state = _defend_state()  # Garrison with exactly the 2 points a reaction costs
+
+    _defend_run(state)
+
+    assert state.armies[901].movement_points == 0
+
+
 def test_run_turn_defend_does_not_reinforce_a_fleet_across_a_land_to_land_hop():
     # [3.15]'s own Fleet/Archers example: a Fleet can't hop directly
     # between two land provinces (find_transport_illegality()'s own

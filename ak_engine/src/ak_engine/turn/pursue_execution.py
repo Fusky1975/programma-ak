@@ -183,6 +183,7 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, snapshot_army_types
+from ak_engine.turn.diplomacy import is_attackable_at
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.challenge_execution import (
     is_encounter_accepted,
@@ -393,6 +394,17 @@ def _fight_army_pursuit_battle(
         return PursueExecutionResult(caught_up=True, reason="pursuer has no Kingdom to fight the battle under")
     if target.location not in state.provinces:
         return PursueExecutionResult(caught_up=True, reason="no province data recorded at the target's location")
+
+    # The target's own armies may no longer be where he stands (they retreated from a lost battle and
+    # left their commander behind): then there is nothing to fight at his location -- the pursuer has
+    # caught up with a general who has no troops here, not a battle (fight_battle() would refuse).
+    target_province = state.provinces[target.location]
+    if not any(
+        not army.is_mercenary and is_attackable_at(state, army.kingdom_id, pursuer.kingdom_id, target_province)
+        for army in state.armies_at(target.location)
+        if army.commanded_by != pursuer.leader_id
+    ):
+        return PursueExecutionResult(caught_up=True, reason="the target's armies are not at his location")
 
     pursuer_armies = state.armies_commanded_by(pursuer.leader_id)
     pursuer_army_ids = [army.army_id for army in pursuer_armies]
