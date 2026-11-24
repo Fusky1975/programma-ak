@@ -3056,13 +3056,16 @@ def test_run_turn_defend_battle_win_registers_a_pursuit_of_the_defeated_attacker
 
     # P2's own real Defend re-declaration is preempted -- the pursuit
     # registered by the win dispatches instead (segment_index=-1, same
-    # sentinel every other active-chase continuation uses), immediately
-    # ending in an army-leading mismatch since the loser's army was
-    # captured by the battle itself.
+    # sentinel every other active-chase continuation uses). The defeated
+    # attacker's commander retreated *with* his army ([7.4], user ruling
+    # 2026-11-24), so the pursuit finds the same leader leading the same
+    # army and catches up for a real fight (it used to end in an
+    # "army-leading mismatch" because the army retreated without him).
     p2_entry = by_label[(100, "P2")]
     assert p2_entry.segment_index == -1
     assert p2_entry.action is ActionCode.PURSUE
-    assert p2_entry.result.reason == "army-leading mismatch, order ignored"
+    assert p2_entry.result.caught_up and p2_entry.result.combat_occurred
+    assert state.leaders[200].location == state.armies[902].location
 
     # Defend never re-armed -- the P3 invasion walks in uncontested.
     assert by_label[(300, "P3")].result.battle_report is None
