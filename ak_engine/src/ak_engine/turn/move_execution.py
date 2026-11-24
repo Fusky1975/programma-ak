@@ -1367,6 +1367,9 @@ def find_transport_illegality(
                 continue
             return "mermen_air_transport"
         if army.army_type in SEA_ARMY_TYPES:  # Fleet, Whales
+            if _is_part_sea(origin_province) or _is_part_sea(target_province):
+                # [4.2.1] Part Sea: "Le Flotte e le Balene non possono più entrarvi o uscirvi."
+                return "naval_land_hop"
             if origin_is_sea or target_is_sea or is_hug_coastline_hop:
                 continue  # entering/leaving land on its own is fine, or a real, already-verified Hug Coastline hop
             return "naval_land_hop"

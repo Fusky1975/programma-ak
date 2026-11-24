@@ -671,9 +671,10 @@ def test_defender_disbands_when_no_friendly_province_to_retreat_to():
 
     assert 201 in report.disbanded_army_ids
     assert 201 not in state.armies
-    # Phase 60: a no-retreat-destination disband is also a real battle
-    # death, recorded the same as an outright clean-swept elimination.
-    assert state.battle_graveyard[FIELD][0].army_type is ArmyType.CHARIOTS
+    # [4.21.3]: "Armies 'Paroled into population' in a battle are not eligible to become
+    # skeletons" -- a no-retreat-destination disband leaves nothing in the graveyard
+    # (unlike an outright clean-swept elimination).
+    assert FIELD not in state.battle_graveyard
 
 
 # --- Whales: zero strength off-sea + guaranteed sea retreat (Phase 37) --

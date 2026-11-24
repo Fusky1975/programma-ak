@@ -2155,6 +2155,15 @@ def _execute_kill_enemy(
     return CastExecutionResult(request, applied=True)
 
 
+def _caster_is_divine_king(state: GameState, caster: LeaderState) -> bool:
+    """[4.2.1] "Re Divino": the caster is the King of a Divine kingdom."""
+
+    if not caster.is_king or caster.kingdom_id is None:
+        return False
+    kingdom = state.kingdoms.get(caster.kingdom_id)
+    return kingdom is not None and kingdom.alignment is Alignment.DIVINE
+
+
 def _execute_resurrection(
     state: GameState,
     kingdom_id: int,
@@ -2259,6 +2268,27 @@ def _execute_resurrection(
         caster.merit_tally.resurrection_bless_casts += 1
         return CastExecutionResult(request, applied=True)
 
+    resurrector_is_divine_king = _caster_is_divine_king(state, caster)
+
+    living = state.leaders.get(request.target)
+    if living is not None:
+        # [4.2.1]: "I Re Divini possono lanciare l'incantesimo di Resurrezione
+        # anche sui propri personaggi viventi per trasformare il loro
+        # allineamento in Buono (non possono invece farlo su personaggi che non
+        # controllano)."
+        if not resurrector_is_divine_king:
+            return CastExecutionResult(request, applied=False, reason="target character not found")
+        if living.kingdom_id != caster.kingdom_id:
+            return CastExecutionResult(request, applied=False, reason="target character is not controlled by the caster")
+        if living.location != caster.location:
+            return CastExecutionResult(request, applied=False, reason="not co-located")
+        succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+        if not succeeded:
+            return CastExecutionResult(request, applied=False, reason=reason)
+        living.alignment = Alignment.GOOD
+        caster.merit_tally.resurrection_bless_casts += 1
+        return CastExecutionResult(request, applied=True)
+
     target = state.dead_leaders.get(request.target)
     if target is None:
         return CastExecutionResult(request, applied=False, reason="target character not found")
@@ -2271,8 +2301,18 @@ def _execute_resurrection(
 
     del state.dead_leaders[request.target]
     target.kingdom_id = kingdom_id
-    if AdvancedAbility.ENHANCED_RESURRECTION in caster.advanced_abilities:
-        kingdom = state.kingdoms.get(kingdom_id)
+    kingdom = state.kingdoms.get(kingdom_id)
+    if resurrector_is_divine_king:
+        # [4.2.1]: "Un Eroe resuscitato da un Re Divino diventa
+        # automaticamente di allineamento Buono."
+        target.alignment = Alignment.GOOD
+    elif target.alignment is Alignment.UNDEAD and kingdom is not None:
+        # [4.2.1]: "I personaggi Non-Morti possono essere riportati in vita se
+        # muoiono e in quel caso assumono l'allineamento di chi li ha
+        # resuscitati (fanno eccezione i Re Non-Morti)" -- the Undead King's
+        # own return is the Royal-Heir branch above, which restores him verbatim.
+        target.alignment = Alignment.GOOD if kingdom.alignment is Alignment.DIVINE else kingdom.alignment
+    elif AdvancedAbility.ENHANCED_RESURRECTION in caster.advanced_abilities:
         if kingdom is not None:
             target.alignment = kingdom.alignment
     state.leaders[request.target] = target

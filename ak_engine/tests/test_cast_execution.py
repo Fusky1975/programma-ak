@@ -2620,6 +2620,40 @@ def test_bless_cleanup_chance_scales_with_white_magic_level():
     assert LOCATION not in state.battle_graveyard
 
 
+def test_bless_clears_the_graveyard_of_the_blessed_province_not_the_casters_own():
+    # "Una qualsiasi provincia della mappa (indipendentemente da dove si trova chi lancia)":
+    # the dead removed are those of the province Blessed, wherever the caster stands.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_province(ProvinceState(ELSEWHERE, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 2)
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2)]
+    state.battle_graveyard[ELSEWHERE] = [GraveyardEntry(ArmyType.BOWMEN, Quality.AVERAGE, kingdom_id=2)]
+    request = CastRequest(spell=Spell.BLESS, target=_target(ELSEWHERE))
+    rng = ScriptedRandom([0.01, 0.25, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert result.bless_graveyard_cleared == [ArmyType.BOWMEN]
+    assert ELSEWHERE not in state.battle_graveyard
+    assert LOCATION in state.battle_graveyard  # the caster's own province keeps its dead
+
+
+def test_a_failed_bless_leaves_the_graveyard_untouched():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 1)  # cast 30%
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2)]
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.99, 0.0, 0.0])  # the cast itself fails
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert LOCATION in state.battle_graveyard
+
+
 # ---------------------------------------------------------------------------
 # Skeletal Army (Phase 60) -- Regolamento AK.txt [4.25.1]
 # ---------------------------------------------------------------------------
@@ -4254,3 +4288,89 @@ def test_a_character_cannot_charm_himself():
 
     assert result.applied is False
     assert result.reason == "a character cannot charm himself"
+
+
+# ---------------------------------------------------------------------------
+# White Magic audit: Resurrection by Divine Kings / Undead characters ([4.2.1])
+# ---------------------------------------------------------------------------
+
+
+def _divine_king_state() -> GameState:
+    state = build_state()
+    state.kingdoms[1].alignment = Alignment.DIVINE
+    state.leaders[CASTER_ID].is_king = True
+    return state
+
+
+def test_a_hero_resurrected_by_a_divine_king_becomes_good():
+    state = _divine_king_state()
+    state.dead_leaders[78] = LeaderState(78, 2, "Fallen Hero", LOCATION, alignment=Alignment.EVIL)
+
+    result = execute_cast(state, 1, CASTER_ID, CastRequest(spell=Spell.RESURRECTION, target=78))
+
+    assert result.applied is True
+    assert state.leaders[78].alignment is Alignment.GOOD
+    assert state.leaders[78].kingdom_id == 1
+
+
+def test_a_hero_resurrected_by_a_divine_kingdoms_non_king_keeps_its_alignment():
+    state = _divine_king_state()
+    state.leaders[CASTER_ID].is_king = False
+    state.dead_leaders[78] = LeaderState(78, 2, "Fallen Hero", LOCATION, alignment=Alignment.EVIL)
+
+    execute_cast(state, 1, CASTER_ID, CastRequest(spell=Spell.RESURRECTION, target=78))
+
+    assert state.leaders[78].alignment is Alignment.EVIL
+
+
+def test_a_divine_king_can_resurrect_his_own_living_character_to_make_it_good():
+    state = _divine_king_state()
+    state.add_leader(LeaderState(5, 1, "Own Hero", LOCATION, alignment=Alignment.EVIL))
+
+    result = execute_cast(state, 1, CASTER_ID, CastRequest(spell=Spell.RESURRECTION, target=5))
+
+    assert result.applied is True
+    assert state.leaders[5].alignment is Alignment.GOOD
+    assert state.leaders[5].kingdom_id == 1
+
+
+def test_a_divine_king_cannot_resurrect_a_living_character_he_does_not_control():
+    state = _divine_king_state()
+    state.add_leader(LeaderState(5, 2, "Foreign Hero", LOCATION, alignment=Alignment.EVIL))
+
+    result = execute_cast(state, 1, CASTER_ID, CastRequest(spell=Spell.RESURRECTION, target=5))
+
+    assert result.applied is False
+    assert state.leaders[5].alignment is Alignment.EVIL
+    assert state.leaders[5].kingdom_id == 2
+
+
+def test_a_non_divine_king_cannot_resurrect_a_living_character():
+    state = build_state()
+    state.leaders[CASTER_ID].is_king = True
+    state.add_leader(LeaderState(5, 1, "Own Hero", LOCATION, alignment=Alignment.EVIL))
+
+    result = execute_cast(state, 1, CASTER_ID, CastRequest(spell=Spell.RESURRECTION, target=5))
+
+    assert result.applied is False
+    assert state.leaders[5].alignment is Alignment.EVIL
+
+
+def test_a_resurrected_undead_character_takes_the_resurrectors_alignment():
+    state = build_state()  # kingdom 1 is Good
+    state.dead_leaders[78] = LeaderState(78, 2, "Fallen Vampire", LOCATION, alignment=Alignment.UNDEAD)
+
+    result = execute_cast(state, 1, CASTER_ID, CastRequest(spell=Spell.RESURRECTION, target=78))
+
+    assert result.applied is True
+    assert state.leaders[78].alignment is Alignment.GOOD
+
+
+def test_a_resurrected_undead_character_of_a_divine_resurrector_becomes_good():
+    state = _divine_king_state()
+    state.leaders[CASTER_ID].is_king = False
+    state.dead_leaders[78] = LeaderState(78, 2, "Fallen Vampire", LOCATION, alignment=Alignment.UNDEAD)
+
+    execute_cast(state, 1, CASTER_ID, CastRequest(spell=Spell.RESURRECTION, target=78))
+
+    assert state.leaders[78].alignment is Alignment.GOOD
