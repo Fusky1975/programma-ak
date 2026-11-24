@@ -1372,10 +1372,13 @@ def _fleet_avoids_elimination(army: ArmyState, battle_terrain: Terrain) -> bool:
 
     A different, separate special case from Whales' own (Phase 37):
     Fleets don't get a forced retreat, just quality-forced-to-DEPLETED
-    survival in place -- so this only ever needs to intercept the two
-    branches that actually remove an army from ``state`` (the outright
-    "clean-swept, not retreating" destroy, and ``_retreat_or_disband``'s
-    "no retreat destination, GREEN/DEPLETED" disband). A successful
+    survival in place -- so this only ever needs to intercept the
+    branch that removes a non-retreating army from ``state`` (the outright
+    "clean-swept, not retreating" destroy). **User ruling 2026-11-24**: a
+    Fleet that *is* forced to retreat but has no legal destination (it
+    can only retreat into the sea) now disbands instead of surviving
+    Depleted in place -- the retreat branches no longer pass this
+    function's result as ``avoid_elimination``. A successful
     ordinary retreat already avoids elimination on its own (no special
     casing needed), and becoming a mercenary already isn't elimination
     either. Like Whales, this is **not** extended to Pursuit ([7.3]) --
@@ -3360,7 +3363,6 @@ def fight_battle(
             destination = attacker_retreat_plan.get(army.army_id)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
-                avoid_elimination=_fleet_avoids_elimination(army, terrain),
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif attacker_clean_swept and _fleet_avoids_elimination(army, terrain):
@@ -3409,7 +3411,6 @@ def fight_battle(
             destination = defender_retreat_plan.get(army.army_id)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
-                avoid_elimination=_fleet_avoids_elimination(army, terrain),
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif defender_clean_swept and _fleet_avoids_elimination(army, terrain):

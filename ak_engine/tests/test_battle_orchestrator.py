@@ -762,7 +762,10 @@ def test_defender_fleet_on_land_reduced_to_depleted_instead_of_destroyed():
     assert report.quality_changes[201] == QualityChange(old=Quality.AVERAGE, new=Quality.DEPLETED)
 
 
-def test_defender_fleet_on_land_reduced_to_depleted_instead_of_disbanding():
+def test_defender_fleet_on_land_with_no_sea_to_retreat_to_disbands():
+    # User ruling 2026-11-24: a Fleet defeated on land can only retreat into the sea; if it cannot, it
+    # disbands (the rulebook 7.2 "Depleted instead of eliminated" now only covers a Fleet that is not
+    # forced to retreat).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
     state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
@@ -781,9 +784,8 @@ def test_defender_fleet_on_land_reduced_to_depleted_instead_of_disbanding():
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
-    assert 201 not in report.disbanded_army_ids
-    assert 201 in state.armies
-    assert state.armies[201].quality == Quality.DEPLETED
+    assert 201 in report.disbanded_army_ids
+    assert 201 not in state.armies
 
 
 def test_fleet_retreats_normally_when_a_destination_exists():
