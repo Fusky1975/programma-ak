@@ -830,6 +830,7 @@ def _resolve_personal_combat_cast(
     melee_swings: list[MeleeSwing] | None = None,
     summon_probe: bool = False,
     opponent_summon_counter: "Callable[[], Spell | None] | None" = None,
+    combat_range: CombatRange = CombatRange.SPELL_RANGE,
 ) -> str | None:
     """Leader-vs-leader Personal-Combat spell dispatch -- see module
     docstring's own Phase 290 addendum for how this was re-derived
@@ -1222,7 +1223,7 @@ def _resolve_personal_combat_cast(
 
     if spell is Spell.TELEK_STORM:
         target.hit_points -= roll_telekinetic_storm_victim_damage(rng, target_is_immune=False)
-        caster.hit_points -= roll_telekinetic_storm_caster_damage(CombatRange.SPELL_RANGE, rng, target_is_immune=False)
+        caster.hit_points -= roll_telekinetic_storm_caster_damage(combat_range, rng, target_is_immune=False)
         # Phase 1042 -- reviewed and confirmed intentional (user-decided):
         # on a genuine double-KO (both target and caster drop to <= 0 HP
         # from this same cast), the target's own death is checked first
@@ -2287,6 +2288,7 @@ def resolve_challenge_combat(
             melee_setup_done=setup_box,
             melee_swings=melee_swings,
             opponent_summon_counter=_caster_counters_summon,
+            combat_range=current_range,
         )
         melee_setup_done = setup_box[0]
         if outcome == "fled":
@@ -2600,6 +2602,7 @@ def resolve_challenge_combat(
                 melee_setup_done=setup_box,
                 melee_swings=melee_swings,
                 opponent_summon_counter=_target_counters_summon,
+                combat_range=current_range,
             )
             # Phase 1042 bug fix -- see _resolve_personal_combat_cast()'s
             # own Phase 1042 docstring addendum and _resolve_target_cast()'s

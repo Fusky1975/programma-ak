@@ -2560,7 +2560,7 @@ def _resolve_search_encounter(
             target_is_immune = target_is_monster and monster_species in SUBMARINE_MONSTERS
             target.hit_points -= roll_telekinetic_storm_victim_damage(rng, target_is_immune=target_is_immune)
             caster.hit_points -= roll_telekinetic_storm_caster_damage(
-                CombatRange.SPELL_RANGE, rng, target_is_immune=target_is_immune
+                current_range, rng, target_is_immune=target_is_immune
             )
             # Phase 1042 -- reviewed and confirmed intentional (user-decided,
             # same review as turn/challenge_execution.py's own identical
