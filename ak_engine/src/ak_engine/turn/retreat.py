@@ -43,10 +43,24 @@ from ak_engine.turn.movement import MapBounds, neighbors
 def find_retreat_destination(current: HexCoord, bounds: MapBounds, friendly_provinces: set[HexCoord]) -> HexCoord | None:
     """First adjacent province the retreating side owns/is friendly with, or None."""
 
-    for candidate in neighbors(current, bounds):
+    for candidate in retreat_candidates(current, bounds):
         if candidate in friendly_provinces:
             return candidate
     return None
+
+
+def retreat_candidates(current: HexCoord, bounds: MapBounds, invaded_from: HexCoord | None = None) -> list[HexCoord]:
+    """Every province a force defeated at ``current`` may retreat to, in order of preference:
+    for an attacker (``invaded_from`` given) the province it invaded from, then that province's
+    neighbors ([7.4]), and in every case the neighbors of the battlefield itself. ``current`` is
+    never a candidate and no province is listed twice."""
+
+    ordered = attacker_retreat_candidates(invaded_from, bounds) if invaded_from is not None else []
+    candidates: list[HexCoord] = []
+    for candidate in (*ordered, *neighbors(current, bounds)):
+        if candidate != current and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
 
 
 def attacker_retreat_candidates(invaded_from: HexCoord, bounds: MapBounds) -> list[HexCoord]:
@@ -108,7 +122,7 @@ def select_attacker_retreat_destination(
     the one path that hadn't been.
     """
 
-    for candidate in attacker_retreat_candidates(invaded_from, bounds):
-        if candidate != current and candidate in friendly_provinces:
+    for candidate in retreat_candidates(current, bounds, invaded_from):
+        if candidate in friendly_provinces:
             return candidate
-    return find_retreat_destination(current, bounds, friendly_provinces)
+    return None
