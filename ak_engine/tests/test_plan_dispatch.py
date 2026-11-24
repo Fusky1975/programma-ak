@@ -3355,3 +3355,80 @@ def test_a_skeletal_army_abandoned_with_leave_also_goes_back_to_the_graveyard():
 
     assert army_id not in state.armies
     assert [(e.army_type, e.quality) for e in state.battle_graveyard[location]] == [(ArmyType.BOWMEN, Quality.AVERAGE)]
+
+
+# -- Explore audit of 2026-11-24 ---------------------------------------
+
+
+def test_dispatch_explore_reports_the_exploring_kingdoms_own_level_not_the_shared_scalar():
+    # Another Kingdom having explored the province first must not make this Kingdom's own Explore read
+    # "already fully explored": what is reported is the Kingdom's own cumulative exploration.
+    location = HexCoord(3, 9)
+    state, _army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Second", Race.HUMAN, Alignment.EVIL, HexCoord(7, 7)))
+    state.add_leader(LeaderState(60, 2, "Explorer2", location))
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[0])
+
+    first = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(1))
+    second = dispatch_phase(phase, state, kingdom_id=2, leader_id=60, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert (first.new_percent, first.delta_applied, first.fully_explored) == (50, 50, False)
+    assert (second.new_percent, second.delta_applied, second.fully_explored) == (50, 50, False)  # Plains 50, skill 0
+    assert state.provinces[location].explored_percent_by_kingdom == {1: 50, 2: 50}
+
+
+def test_dispatch_explore_uncovers_a_battlefield_and_tells_which_soldiers_fell():
+    # [3.2]: "Exploration also may uncover battlefields, in which case you will be informed which soldiers
+    # have fallen in the province" -- certain once the Kingdom has explored 100%.
+    location = HexCoord(3, 9)
+    state, _army_id = _state_with_army(location, {})
+    state.record_battle_death(location, ArmyType.BOWMEN, Quality.AVERAGE, 2)
+    state.record_battle_death(location, ArmyType.LEGION, Quality.VETERAN, 2)
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[0])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, explorer_skill=1, rng=random.Random(0)
+    )  # Plains 50 x 2 = 100%
+
+    assert result.battlefield_fallen == [(ArmyType.BOWMEN, Quality.AVERAGE), (ArmyType.LEGION, Quality.VETERAN)]
+    assert state.battle_graveyard[location]  # learning of the dead does not raise them
+
+
+def test_dispatch_explore_may_miss_the_battlefield_when_little_is_explored_and_rolls_nothing_without_one():
+    location = HexCoord(3, 9)
+    state, _army_id = _state_with_army(location, {})
+    state.record_battle_death(location, ArmyType.BOWMEN, Quality.AVERAGE, 2)
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[0])
+
+    missed = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.99] * 40)
+    )  # Plains 50 at skill 0: a 0.99 roll is past the 50%
+
+    assert missed.battlefield_fallen == []
+
+    other, _ = _state_with_army(HexCoord(4, 9), {})
+    quiet = dispatch_phase(
+        PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[0]),
+        other, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(0),
+    )
+    assert quiet.battlefield_fallen == []
+
+
+def test_dispatch_lmove_tells_the_special_place_its_partial_exploration_turned_up():
+    # [3.1]: a Move is a partial exploration of the entered province; what it finds is now told (and
+    # credited to the Chancellor merit) instead of being recorded silently.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    feature = Feature(feature_id=1, coord=target, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH,
+        explorer_skill=4, rng=random.Random(0),  # Plains 50 x 5 / 2 -> 100%: discovery is guaranteed
+    )
+
+    assert result.discovered_features == [feature]
+    assert feature.discovery_level(1) == 3
+    assert state.leaders[LEADER_ID].merit_tally.features_discovered_first == 1

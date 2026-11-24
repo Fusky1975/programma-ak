@@ -10162,6 +10162,12 @@ def describe_turn_results(
             for feature in entry.result.discovered_features:
                 province_name = _province_label(state, feature.coord)
                 lines.extend(describe_feature_discovery(feature, caster_name, province_name, rng))
+            if entry.result.battlefield_fallen and explore_coord is not None:
+                lines.append(
+                    render_battlefield_discovery(
+                        caster_name, explore_province_name, entry.result.battlefield_fallen, rng, is_sea=explore_is_sea
+                    )
+                )
             continue
         elif isinstance(entry.result, RandomEncounterResult):
             # Phase 709 -- the Phase 708 random-encounter sentinel always
@@ -10254,6 +10260,9 @@ def describe_turn_results(
                 lines.append(line)
             lines.extend(describe_cargo_boarded(entry.result, state, character_name=caster_name, rng=rng))
             lines.extend(describe_sensed_magic_items(entry.result, character_name=caster_name, rng=rng))
+            # A Special Place turned up by the partial exploration of the entered province.
+            for feature in entry.result.discovered_features:
+                lines.extend(describe_feature_discovery(feature, caster_name, _province_label(state, feature.coord), rng))
             continue
         elif entry.action is None and isinstance(entry.result, MoveExecutionResult):
             # Phase 766: the Naval Hug Coastline stragglers sentinel
@@ -12506,6 +12515,42 @@ def render_monster_description(monster: Monster) -> str:
     """
 
     return MONSTER_DESCRIPTION[monster]
+
+
+# SAY.PAS `_ABFList`/`_ABFArmy` (RUMORS.PAS ids 4023-4025, S_Red): an Explore that uncovers an old
+# battlefield tells which soldiers fell there. The original lists the fallen armies after "=" with no
+# surviving list-format source, so the composition below ("2 Bowmen, 1 Legion and ...") is
+# project-original; the wording is SAY.PAS's own.
+_BATTLEFIELD_HEADER_TEMPLATE = "< discovered/Rfound also that @ has been the site of terrible/Rhard-fought battles."
+_BATTLEFIELD_FALLEN_TEMPLATE = (
+    "brave_and/Rmany renowned/Rintrepid warriors/Rsoldiers have perished/Rgiven_their_lives on its "
+    "soil:/Rfields: ="
+)
+
+
+def render_battlefield_discovery(
+    character_name: str,
+    province_name: str,
+    fallen: list[tuple[ArmyType, Quality]],
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """The battlefield disclosure of an Explore (SAY.PAS ``_ABFList``/``_ABFArmy``): who discovered
+    it, where, and the fallen armies by type and rank ("2 Average Bowmen and 1 Veteran Legion") --
+    what a Skeletal Armies caster needs to know, since a risen army is identical to the dead one."""
+
+    counts: dict[tuple[ArmyType, Quality], int] = {}
+    for key in fallen:
+        counts[key] = counts.get(key, 0) + 1
+    parts = [
+        f"{count} {QUALITY_NAME[quality]} {ARMY_TYPE_DESIGNATION[army_type]}"
+        for (army_type, quality), count in counts.items()
+    ]
+    listing = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    header = render(_BATTLEFIELD_HEADER_TEMPLATE, {"<": character_name, "@": province_name}, rng=rng, is_sea=is_sea)
+    body = render(_BATTLEFIELD_FALLEN_TEMPLATE, {"=": listing}, rng=rng, is_sea=is_sea)
+    return f"{header} {body}."
 
 
 def describe_feature_discovery(feature: Feature, character_name: str, province_name: str, rng: random.Random) -> list[str]:

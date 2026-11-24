@@ -5983,3 +5983,31 @@ def test_the_army_of_a_dead_attacking_commander_without_a_hero_joins_the_garriso
 
     assert state.armies[101].location == origin
     assert state.armies[101].commanded_by is None
+
+
+def test_a_battles_dead_are_shown_by_a_later_explore_of_the_province():
+    # End to end: armies destroyed in a battle lie in the province's graveyard, and an Explore of it
+    # (certain at 100%) tells which soldiers fell -- type and rank -- for whoever wants to raise them.
+    from ak_engine.models.enums import ActionCode
+    from ak_engine.models.plan import PlanPhase
+    from ak_engine.report.turn_report import describe_turn_results
+    from ak_engine.turn.plan_dispatch import PhaseDispatchResult, dispatch_phase
+
+    state = build_state()
+    state.add_leader(LeaderState(10, 1, "Explorer", FIELD))
+    fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        loser_retreats=False, rng=no_luck_overwhelming_attacker_rng(),
+    )
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[0])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=10, board_width=30, explorer_skill=1, rng=random.Random(0)
+    )  # Plains 50 x 2 = 100%
+    lines = describe_turn_results(
+        [PhaseDispatchResult(10, 0, "P0", ActionCode.EXPLORE, result, None)],
+        state, ScriptedRandom([0.1] * 40, choice_indices=[0] * 40), board_width=30,
+    )
+
+    assert result.battlefield_fallen == [(ArmyType.GARRISON, Quality.GREEN)]
+    assert any("site of terrible battles" in line and "1 Green Garrison" in line for line in lines)

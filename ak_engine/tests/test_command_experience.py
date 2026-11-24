@@ -179,15 +179,28 @@ def test_an_explore_order_that_explores_something_credits_explorer_at_ten():
     ]
 
 
-def test_exploring_a_fully_explored_province_credits_nothing():
+def test_exploring_a_province_the_kingdom_has_fully_explored_credits_nothing():
     state = _state()
     state.provinces[PLACE].explored_percent = 100
+    state.provinces[PLACE].explored_percent_by_kingdom[1] = 100  # this Kingdom's own exploration is complete
     phase = PlanPhase(label="P1", action=ActionCode.EXPLORE, obj=0, extra=[0])
 
     with patch("ak_engine.turn.command_experience.add_experience", side_effect=_no_rise) as mocked:
         dispatch_phase(phase, state, kingdom_id=1, leader_id=1, board_width=10)
 
     assert mocked.call_count == 0
+
+
+def test_exploring_a_province_only_another_kingdom_has_explored_still_credits_experience():
+    # What counts is the exploring Kingdom's own cumulative exploration, not the shared scalar.
+    state = _state()
+    state.provinces[PLACE].explored_percent = 100  # explored by someone else
+    phase = PlanPhase(label="P1", action=ActionCode.EXPLORE, obj=0, extra=[0])
+
+    with patch("ak_engine.turn.command_experience.add_experience", side_effect=_no_rise) as mocked:
+        dispatch_phase(phase, state, kingdom_id=1, leader_id=1, board_width=10)
+
+    assert mocked.call_count == 1
 
 
 def test_an_explorer_rise_grants_the_explorer_advanced_ability_of_the_new_level():
