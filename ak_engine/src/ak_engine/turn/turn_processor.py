@@ -453,6 +453,7 @@ def run_turn(
     """
 
     rng = rng if rng is not None else random.Random()
+    turn_leaders = list(turn_leaders)  # characters Hired/Charmed mid-turn join this copy, not the caller's list
     board_width = board_width if board_width is not None else state.board_width
     results: list[PhaseDispatchResult] = []
     bounds = MapBounds(board_width, state.board_height)
@@ -796,8 +797,20 @@ def run_turn(
         )
         for index in dispatch_order:
             tl, segment_index, phase = entries[index]
-            dispatch_results = _dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng)
+            joined_plans: list[tuple[int, ActionPlan]] = []
+            dispatch_results = _dispatch_single(
+                tl, segment_index, phase, state, board_width, explorer_skill, rng, deferred_nested_plans=joined_plans
+            )
             results.extend(dispatch_results)
+            # A character just Hired/Charmed gets his own orders from the *next* phase on: his
+            # embedded plan joins the turn here instead of being run at once and in full.
+            for joined_leader_id, joined_plan in joined_plans:
+                joined_state = state.leaders[joined_leader_id]
+                turn_leaders.append(
+                    TurnLeader(Leader(joined_leader_id, joined_state.name, joined_plan), tl.kingdom_id)
+                )
+                if joined_plan.segments:
+                    joined_state.special_encounter_plan = tuple(decode_special_encounter_plan(joined_plan.segments[0]))
             if phase.action is ActionCode.TRAIL:
                 _backfill_trail_actions(dispatch_results, action_this_phase_by_leader)
             if phase.action in (ActionCode.PURSUE, ActionCode.TRAIL):
@@ -2749,6 +2762,7 @@ def _dispatch_single(
     board_width: int,
     explorer_skill: int,
     rng: random.Random,
+    deferred_nested_plans: list[tuple[int, ActionPlan]] | None = None,
 ) -> list[PhaseDispatchResult]:
     """Dispatch exactly one phase via the existing, fully-tested ``run_leader_plan`` --
     see module docstring for why this wraps rather than duplicates it.
@@ -2759,7 +2773,10 @@ def _dispatch_single(
         name=tl.leader.name,
         plan=ActionPlan(leader_id=tl.leader.leader_id, segments=[PlanSegment(0, 0, (), {phase.label: phase})]),
     )
-    return run_leader_plan(wrapper, state, tl.kingdom_id, board_width=board_width, explorer_skill=explorer_skill, rng=rng)
+    return run_leader_plan(
+        wrapper, state, tl.kingdom_id, board_width=board_width, explorer_skill=explorer_skill, rng=rng,
+        deferred_nested_plans=deferred_nested_plans,
+    )
 
 
 def _leader_explorer_skill(state: GameState, leader_id: int, base: int) -> int:

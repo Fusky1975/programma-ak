@@ -1883,6 +1883,46 @@ def test_dispatch_hire_assigns_independent_hero_and_debits_treasury():
     assert result.minimum_gold == 2
 
 
+def test_dispatch_hire_refuses_a_lord_who_governs_his_own_province():
+    # [3.5]: "Un Eroe che governa la propria provincia non può essere assoldato" -- an independent
+    # lord governs it through the armies he commands there.
+    location = HexCoord(3, 9)
+    state, _army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, None, "Lord", location))
+    state.add_army(ArmyState(900, None, ArmyType.BOWMEN, Quality.AVERAGE, location, commanded_by=32))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[4])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False and result.reason == "hero rules his own province"
+    assert state.leaders[32].kingdom_id is None
+    assert state.kingdoms[1].treasury == 100
+
+
+def test_dispatch_hire_accepts_a_lord_whose_province_was_conquered_and_whose_armies_are_gone():
+    location = HexCoord(3, 9)
+    state, _army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, None, "Dispossessed lord", location))  # commands nothing any more
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[4])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is True
+
+
+def test_dispatch_fire_leaves_the_firing_kingdom_the_hero_s_armies_under_the_garrison_commander():
+    location = HexCoord(3, 9)
+    state, _army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(33, 1, "Employed", location))
+    state.add_army(ArmyState(901, 1, ArmyType.BOWMEN, Quality.AVERAGE, location, commanded_by=33))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=33, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.fired is True and state.leaders[33].kingdom_id is None
+    assert state.armies[901].kingdom_id == 1 and state.armies[901].commanded_by is None
+
+
 def test_dispatch_hire_fails_when_hero_not_colocated():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     state.add_leader(LeaderState(32, None, "Wandering Hero", HexCoord(9, 9)))

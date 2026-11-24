@@ -7234,6 +7234,15 @@ def render_hire_counter_offer(
     return render(HIRE_COUNTER_OFFER_TEMPLATE, values, rng=rng)
 
 
+_HIRE_ADMINISTRATIVE_REFUSALS = {
+    "not co-located": "they were not in the same province",
+    "hero already in service": "they already serve a Kingdom",
+    "cannot hire a King": "they rule a Kingdom of their own",
+    "hero rules his own province": "they govern their own province",
+    "insufficient treasury": "the treasury could not pay for them",
+}
+
+
 def describe_hire(
     result: HireExecutionResult,
     *,
@@ -7273,6 +7282,12 @@ def describe_hire(
         return render_hire_refused(character_name, hireling_name, king_name, rng)
     if result.reason == "offer below required pay" and result.minimum_gold is not None:
         return render_hire_counter_offer(character_name, hireling_name, result.minimum_gold, rng)
+    # Project-original one-line reasons for the administrative refusals (no sourced template exists),
+    # so a Hire order that did nothing no longer vanishes silently from the report (same stance as
+    # the blocked-Recruit lines).
+    administrative_reason = _HIRE_ADMINISTRATIVE_REFUSALS.get(result.reason or "")
+    if administrative_reason is not None:
+        return f"{character_name} could not hire {hireling_name}: {administrative_reason}."
     return None
 
 

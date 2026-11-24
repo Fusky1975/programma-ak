@@ -4158,16 +4158,34 @@ def test_describe_hire_renders_the_rare_alignment_exception_outcome_not_ordinary
     assert "King Harold the Bold" in line
 
 
-def test_describe_hire_renders_nothing_on_administrative_failure_reasons():
-    # These five real HireExecutionResult failure reasons stay
-    # administrative, with no sourced narrative template.
-    for reason in ("hero not found", "cannot hire a King", "hero already in service", "not co-located", "insufficient treasury"):
+def test_describe_hire_says_why_an_administrative_refusal_did_nothing():
+    # No sourced template exists for these, so the wording is project-original -- but a Hire order
+    # that did nothing must not vanish silently from the report.
+    expected = {
+        "cannot hire a King": "they rule a Kingdom of their own",
+        "hero already in service": "they already serve a Kingdom",
+        "not co-located": "they were not in the same province",
+        "insufficient treasury": "the treasury could not pay for them",
+        "hero rules his own province": "they govern their own province",
+    }
+    for reason, because in expected.items():
         result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=False, reason=reason)
-        rng = ScriptedRandom([])
 
-        line = describe_hire(result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=rng)
+        line = describe_hire(
+            result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=ScriptedRandom([])
+        )
 
-        assert line is None
+        assert line == f"Aldric could not hire Borin: {because}."
+
+
+def test_describe_hire_stays_silent_for_an_unknown_hero():
+    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=False, reason="hero not found")
+
+    line = describe_hire(
+        result, character_name="Aldric", hireling_name="Borin", king_name="King Harold the Bold", rng=ScriptedRandom([])
+    )
+
+    assert line is None
 
 
 def test_describe_hire_renders_refusal_on_too_wide_an_alignment_gap():

@@ -417,7 +417,7 @@ from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
-from ak_engine.turn.leader_queries import find_king_of_kingdom
+from ak_engine.turn.leader_queries import find_king_of_kingdom, release_armies_to_garrison
 from ak_engine.turn.move_execution import (
     MoveExecutionResult,
     execute_move,
@@ -1469,6 +1469,12 @@ def _dispatch_hire(
         # as a side effect -- that only works if the King happens to
         # have a kingdom_id set, which isn't guaranteed by is_king alone.
         return HireExecutionResult(request, hired=False, reason="cannot hire a King")
+    if hero.kingdom_id is None and state.armies_commanded_by(hero.leader_id):
+        # rulebook [3.5]: "Un Eroe che governa la propria provincia non può essere assoldato" -- an
+        # independent lord governs his province through the armies he commands there (the model's
+        # own convention, `worldgen/generate_new_game.py`); a lord whose province was conquered
+        # lost them and is an ordinary, dearer to hire, free Hero again ([7.6]).
+        return HireExecutionResult(request, hired=False, reason="hero rules his own province")
     # Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT -- "If a foreign king
     # tries to hire the Spy, the hiring will appear to be successful,
     # but the spy will continue to execute the orders you give him."
@@ -1606,6 +1612,7 @@ def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireEx
     if hero.race is None and hero.kingdom_id in state.kingdoms:
         hero.race = state.kingdoms[hero.kingdom_id].race  # a hero with no kingdom keeps the race he served under
     hero.kingdom_id = None
+    release_armies_to_garrison(state, hero.leader_id)  # the Kingdom keeps his armies, under the Garrison Commander
     return FireExecutionResult(request, fired=True)
 
 
@@ -1618,8 +1625,16 @@ def run_leader_plan(
     board_width: int,
     explorer_skill: int = 0,
     rng: random.Random | None = None,
+    deferred_nested_plans: list[tuple[int, ActionPlan]] | None = None,
 ) -> list[PhaseDispatchResult]:
     """Attempt every phase (in order, across all segments) of ``leader``'s plan.
+
+    ``deferred_nested_plans`` (2026-11-24): by default a newly Hired/Charmed character's own
+    embedded plan is dispatched here, at once and in full. A caller that sequences the turn phase
+    by phase (``turn/turn_processor.py run_turn()``) passes a list instead: each triggered plan is
+    appended to it as ``(character id, plan)`` and *not* dispatched, so the caller can start the
+    character's orders from the next phase ("non potete dare ordini nella stessa fase in cui sono
+    assoldati, ma a partire da quella successiva").
 
     ``army_ids`` defaults to whatever ``leader.leader_id`` currently
     commands in ``state`` (re-evaluated fresh for each phase, so a
@@ -1721,9 +1736,15 @@ def run_leader_plan(
 
             if phase.nested_plan is not None and _nested_plan_triggered(phase.action, result):
                 nested_leader_id = _resolve_nested_plan_leader_id(phase.action, phase.nested_plan, result)
-                results.extend(
-                    _dispatch_nested_plan(phase.nested_plan, nested_leader_id, state, kingdom_id, board_width, explorer_skill, rng)
-                )
+                if deferred_nested_plans is not None:
+                    if nested_leader_id is not None and nested_leader_id in state.leaders:
+                        deferred_nested_plans.append((nested_leader_id, phase.nested_plan))
+                else:
+                    results.extend(
+                        _dispatch_nested_plan(
+                            phase.nested_plan, nested_leader_id, state, kingdom_id, board_width, explorer_skill, rng
+                        )
+                    )
     return results
 
 

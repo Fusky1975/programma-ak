@@ -25,3 +25,15 @@ def find_king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | Non
         if leader.kingdom_id == kingdom_id and leader.is_king:
             return leader
     return None
+
+
+def release_armies_to_garrison(state: GameState, leader_id: int) -> list[int]:
+    """The armies a leader commands pass to the Garrison Commander of where they stand
+    (``commanded_by = None``) -- what happens when a Hero leaves a Kingdom's service (Fire,
+    desertion): he wanders off alone and the Kingdom keeps its armies. Returns their ids."""
+
+    released: list[int] = []
+    for army in state.armies_commanded_by(leader_id):
+        army.commanded_by = None
+        released.append(army.army_id)
+    return released
