@@ -5113,3 +5113,38 @@ def test_execute_challenge_archery_experience_is_for_the_attempt_melee_only_for_
 
     credited = [(call.args[0].leader_id, call.args[1]) for call in mock_add_experience.call_args_list]
     assert credited == [(1, Ability.ARCHERY)]
+
+
+@pytest.mark.parametrize("combat_range_name", ["SPELL_RANGE", "BOW_RANGE", "MELEE_RANGE"])
+def test_telekinetic_storm_hurts_the_caster_according_to_the_range_it_is_cast_from(combat_range_name):
+    # [4.22.5]: "se egli si trova in zona di mischia, riceve da 4 a 16 punti danno; da 2 a 8 se è a
+    # portata d'arco e da 1 a 4 se è a portata di incantesimo."
+    from ak_engine.turn.encounter import CombatRange
+
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.TELEK_STORM.value)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_telekinetic_storm_victim_damage", return_value=0
+    ), patch("ak_engine.turn.challenge_execution.roll_telekinetic_storm_caster_damage", return_value=0) as mock_self_damage:
+        _resolve_personal_combat_cast(
+            caster,
+            caster_leader,
+            target,
+            target_leader,
+            tactic,
+            state,
+            ScriptedRandom([0.1]),
+            is_first_tactic=True,
+            cast_slots_used={},
+            cast_spells_attempted=set(),
+            combat_range=CombatRange[combat_range_name],
+        )
+
+    assert mock_self_damage.call_args.args[0] is CombatRange[combat_range_name]
