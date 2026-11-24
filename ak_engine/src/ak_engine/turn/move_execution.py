@@ -1381,6 +1381,10 @@ def find_transport_illegality(
 # cites for `Add_Experience` (Phase 456, already wired for Melee/
 # Archery, Phase 686). Treated as the identical, already-proven
 # routine/call-convention rather than a second, unrelated mechanic.
+# [11.1]: Fleets pay the extra movement point only when they fight a battle in the province; Mermen
+# "move as Fleets" ([6.x]), so the same.
+_EXTRA_POINT_ON_BATTLE_ONLY = frozenset({ArmyType.FLEET, ArmyType.MERMEN})
+
 MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS = 10
 
 
@@ -2172,6 +2176,11 @@ def execute_move(
         (origin_province is not None and is_flooded_province(origin_province)) or is_flooded_province(target_province)
     )
 
+    # [11.1]: "Le Flotte devono spendere questo Punto Movimento solo quando combattono una battaglia
+    # nella provincia" -- a Fleet (and Mermen, who "muovono come le Flotte") owes the extra point for a
+    # battle only, never for taking an undefended province, land or sea.
+    battle_only_cost = movement_cost_for_move(battle_occurred=occupied_by_enemy, conquered=False)
+
     for army_id in army_ids:
         army = state.armies.get(army_id)
         if army is None:
@@ -2212,7 +2221,7 @@ def execute_move(
                 if table_bonus:
                     army.movement_points += table_bonus
                     army.march_table_bonus_applied_this_turn = True
-            army.movement_points -= cost
+            army.movement_points -= battle_only_cost if army.army_type in _EXTRA_POINT_ON_BATTLE_ONLY else cost
             if fog_affected_move and is_illusory_fog_affected_air_unit(army.army_type, mystic_winds_active_for(army, state)):
                 army.movement_points -= ILLUSORY_FOG_EXTRA_MOVEMENT_COST
             if flood_affected_move and is_land_army(army.army_type):
@@ -2344,7 +2353,14 @@ def execute_move(
         moved=moved,
         battle_report=battle_report,
         exploration=move_result.exploration,
-        movement_points_spent=cost,
+        movement_points_spent=(
+            battle_only_cost
+            if army_ids and all(
+                army_id in state.armies and state.armies[army_id].army_type in _EXTRA_POINT_ON_BATTLE_ONLY
+                for army_id in army_ids
+            )
+            else cost
+        ),
         new_location=actual_target if moved else None,
         reached_target=reached_target,
         stopped_chasing=False,
