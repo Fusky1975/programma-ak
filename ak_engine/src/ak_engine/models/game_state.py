@@ -2424,6 +2424,11 @@ class GameState:
         # pre-death one.
         leader.merit_tally.apply_death_penalty()
         self.dead_leaders[leader_id] = leader
+        # [5.9]: "Se il defunto comandava unità militari, quest'ultime vengono trasferite al locale Comando
+        # di Guarnigione" -- the armies must not stay "commanded" by a character who no longer exists.
+        for army in self.armies.values():
+            if army.commanded_by == leader_id:
+                army.commanded_by = None
         if leader.is_king and leader.kingdom_id is not None:
             self.pending_king_successions.add(leader_id)
 
