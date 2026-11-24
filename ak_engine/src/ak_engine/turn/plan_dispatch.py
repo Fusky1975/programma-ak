@@ -1256,7 +1256,7 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
             and AdvancedAbility.ENHANCED_SKELETAL_UNITS not in acting_leader.advanced_abilities
         ):
             result.skeletal_army_lost.append((army_id, army.army_type))
-            state.remove_army(army_id)
+            _skeletal_army_returns_to_its_grave(state, army)
             continue
         army.commanded_by = request.target_leader_id
         if target_leader is not None:
@@ -1279,6 +1279,15 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
         result.succeeded.append(army_id)
 
     return result
+
+
+def _skeletal_army_returns_to_its_grave(state: GameState, army: ArmyState) -> None:
+    """[4.2.5]: a Skeletal Army given up by its commander "si scaverà da sola la tomba": it leaves
+    play and goes back to the province's graveyard (user ruling 2026-11-24), where another
+    successful Skeletal Armies spell can raise it again."""
+
+    state.record_battle_death(army.location, army.army_type, army.quality, army.kingdom_id)
+    state.remove_army(army.army_id)
 
 
 def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListExecutionResult:
@@ -1451,7 +1460,7 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
             # [4.2.5]: skeletons whose commander gives them up "si scaveranno da soli la tomba" --
             # released, they return to their sleep rather than wander as hireable mercenaries.
             result.skeletal_army_lost.append((army_id, army.army_type))
-            state.remove_army(army_id)
+            _skeletal_army_returns_to_its_grave(state, army)
             continue
         army.kingdom_id = None
         army.commanded_by = None

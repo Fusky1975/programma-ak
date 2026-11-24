@@ -3314,3 +3314,44 @@ def test_compass_and_telescope_raise_the_exploration_rate():
     state.kingdoms[1].discoveries.update({Discovery.COMPASS, Discovery.TELESCOPE})
 
     assert _explore(state, location) == 100  # effective Explorer level 2, capped by the province at 100
+
+
+def test_a_given_up_skeletal_army_returns_to_the_graveyard_and_a_new_spell_can_raise_it_again():
+    # [4.2.5] + user ruling 2026-11-24: skeletons that dig their own grave (Disband or Leave) go back
+    # to the province's graveyard, where another successful Skeletal Armies spell raises them.
+    from ak_engine.turn.cast_decode import CastRequest
+    from ak_engine.turn.cast_execution import execute_cast
+    from test_cast_execution import _skills_with
+
+    location = HexCoord(3, 9)
+    state, _army_id = _state_with_army(location, {})
+    state.add_army(
+        ArmyState(70, 1, ArmyType.LEGION, Quality.VETERAN, location, commanded_by=LEADER_ID, is_skeletal=True)
+    )
+
+    dispatch_phase(_disband_phase(70), state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert 70 not in state.armies
+    assert [(e.army_type, e.quality) for e in state.battle_graveyard[location]] == [(ArmyType.LEGION, Quality.VETERAN)]
+
+    state.leaders[LEADER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    result = execute_cast(state, kingdom_id=1, leader_id=LEADER_ID, request=request, rng=ScriptedRandom([0.01, 0.5, 0.5]))
+
+    assert result.applied is True
+    assert [(a.army_type, a.quality, a.is_skeletal) for a in result.skeletal_army_raised] == [
+        (ArmyType.LEGION, Quality.VETERAN, True)
+    ]
+    assert location not in state.battle_graveyard
+
+
+def test_a_skeletal_army_abandoned_with_leave_also_goes_back_to_the_graveyard():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].is_skeletal = True
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, army_id, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert army_id not in state.armies
+    assert [(e.army_type, e.quality) for e in state.battle_graveyard[location]] == [(ArmyType.BOWMEN, Quality.AVERAGE)]
