@@ -59,7 +59,7 @@ def test_garrison_limit_is_one_in_non_humanoid_non_home_province():
     assert recruit_limit(ArmyType.GARRISON, is_home_province=False, province_race=Race.DRAGONS) == 1
 
 
-def test_former_home_province_now_allied_allows_four():
+def test_former_home_province_now_allied_allows_two_per_type():
     assert (
         recruit_limit(
             ArmyType.BOWMEN,
@@ -68,7 +68,7 @@ def test_former_home_province_now_allied_allows_four():
             is_former_home_province_now_allied=True,
         )
         == FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT
-        == 4
+        == 2  # "quattro unità (due per tipo)": four in a two-type province
     )
 
 

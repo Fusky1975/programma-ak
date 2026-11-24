@@ -54,8 +54,11 @@ DEFAULT_RECRUIT_LIMIT = 1
 HOME_PROVINCE_RECRUIT_LIMIT = 2
 GARRISON_HUMANOID_PROVINCE_LIMIT = 2
 # RULES.AK [3.4]: "if you are recruiting in your former home province
-# which is now your ally's province, you can recruit 4 units."
-FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT = 4
+# which is now your ally's province, you can recruit 4 units" -- the Italian
+# rulebook's own note spells it out: "quattro unità (due per tipo)". Two per
+# type, i.e. four in the usual two-type province (audit of 2026-11-24: this
+# used to be 4 *per type*).
+FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT = 2
 
 
 class IncompatibleRaceError(ValueError):

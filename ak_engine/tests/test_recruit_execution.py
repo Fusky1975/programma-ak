@@ -285,24 +285,25 @@ def test_mercenary_hire_still_works_in_hostile_territory_where_a_levy_would_be_b
     assert state.armies[50].kingdom_id == 1
 
 
-def test_former_home_province_now_allied_allows_four_units():
-    # Rulebook [3.4]: "if you are recruiting in your former home
-    # province which is now your ally's province, you can recruit 4
-    # units" -- more generous than either the ordinary 1-per-type ally
-    # territory limit or the ordinary 2-per-type home province limit.
+def test_former_home_province_now_allied_allows_four_units_two_per_type():
+    # Rulebook [3.4]: "if you are recruiting in your former home province which is now your ally's
+    # province, you can recruit 4 units" -- "quattro unità (due per tipo)" in the Italian rulebook,
+    # and they start as Average.
     state = build_state(treasury=1000, is_home_province=True)
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.BOWMEN
+    state.provinces[LOCATION].recruit_type_2 = ArmyType.LT_CAVALRY
     state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5), treasury=0))
     state.allied_kingdoms.add(frozenset({1, 2}))
     state.provinces[LOCATION].owner_kingdom_id = 2  # an ally now holds it
     state.treat_permissions.add((2, 1))
-    request = RecruitRequest(
-        leader_id=None, army_types=[ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.BOWMEN, ArmyType.BOWMEN]
-    )
+    types = [ArmyType.BOWMEN] * 3 + [ArmyType.LT_CAVALRY] * 3
+    request = RecruitRequest(leader_id=None, army_types=types)
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
 
     assert len(result.recruited) == 4
-    assert result.limit_blocked == []
+    assert result.limit_blocked == [ArmyType.BOWMEN, ArmyType.LT_CAVALRY]
+    assert all(state.armies[unit.army_id].quality is Quality.AVERAGE for unit in result.recruited)
 
 
 def test_former_home_province_now_allied_still_gated_by_treat_permission():
@@ -874,7 +875,9 @@ def test_neutral_king_discount_does_not_apply_to_a_fresh_levy():
     assert result.total_gold_spent == 3
 
 
-def test_neutral_king_discount_still_adds_the_ally_fee_in_ally_territory():
+def test_neutral_king_mercenary_hire_in_ally_territory_pays_no_ally_fee():
+    # Mercenaries "can be Recruited in any province by any character": they are not the ally's
+    # troops, so no 1-gold fee goes to him (user ruling 2026-11-24).
     state = build_neutral_king_state()
     # A second, Testia-owned province supplies the real Tax_Base (LOCATION
     # itself gets reassigned to the ally below, so it can't supply it).
@@ -888,7 +891,9 @@ def test_neutral_king_discount_still_adds_the_ally_fee_in_ally_territory():
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
 
-    assert result.total_gold_spent == 2  # 1 gold flat + 1 gold ally fee
+    assert result.total_gold_spent == 1  # the flat 1 gold, no fee
+    assert result.recruited[0].ally_fee_paid == 0
+    assert state.kingdoms[2].treasury == 0
 
 
 # Phase 691: Dinosaur armies (`AdvancedAbility.DRUIDIC_DINOSAURS`).
@@ -1130,3 +1135,134 @@ def test_execute_recruit_by_a_dead_leader_is_a_clean_no_op_not_a_crash():
     assert result.total_gold_spent == 0
     assert state.kingdoms[1].treasury == 100  # untouched
     assert state.armies == {}  # nothing recruited
+
+
+# -- audit of 2026-11-24: quality, shared allowance, mercenaries ----------
+
+
+def _slotted_state(*, home: bool = False, types=(ArmyType.BOWMEN, ArmyType.LT_CAVALRY), treasury: int = 1000):
+    state = build_state(treasury=treasury, is_home_province=home)
+    province = state.provinces[LOCATION]
+    province.recruit_type_1, province.recruit_type_2 = types
+    return state
+
+
+def _quality_of(state, result):
+    return state.armies[result.recruited[0].army_id].quality
+
+
+def test_a_fresh_levy_outside_the_home_province_starts_green():
+    # [6.1]: "Le unità militari appena costituite partono come Reclute (Green), tranne quelle
+    # reclutate nella provincia natale che cominciano come Medie."
+    state = _slotted_state()
+    result = execute_recruit(state, 1, LEADER_ID, RecruitRequest(None, [ArmyType.BOWMEN]))
+
+    assert _quality_of(state, result) is Quality.GREEN
+
+
+def test_a_fresh_levy_in_the_home_province_starts_average():
+    state = _slotted_state(home=True)
+    result = execute_recruit(state, 1, LEADER_ID, RecruitRequest(None, [ArmyType.BOWMEN]))
+
+    assert _quality_of(state, result) is Quality.AVERAGE
+
+
+def test_a_hired_mercenary_keeps_its_own_quality():
+    state = _slotted_state()
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
+    result = execute_recruit(state, 1, LEADER_ID, RecruitRequest(None, [ArmyType.BOWMEN]))
+
+    assert result.recruited[0].hired and _quality_of(state, result) is Quality.VETERAN
+
+
+def _lead_one_of_each(state, *types):
+    for offset, army_type in enumerate(types):
+        state.add_army(ArmyState(500 + offset, 1, army_type, Quality.AVERAGE, LOCATION, commanded_by=LEADER_ID))
+
+
+def test_non_native_units_share_the_allowance_of_the_native_slots():
+    # [3.4]: "You still only recruit the same number of armies: if there is only 1 army type in
+    # the province, you can recruit only 1 army. If there are 2 types, you can recruit 2 armies."
+    state = _slotted_state(types=(ArmyType.BOWMEN, None))
+    _lead_one_of_each(state, ArmyType.HVY_CAVALRY, ArmyType.LEGION, ArmyType.PHALANX)
+    request = RecruitRequest(LEADER_ID, [ArmyType.HVY_CAVALRY, ArmyType.LEGION, ArmyType.PHALANX, ArmyType.BOWMEN])
+
+    result = execute_recruit(state, 1, LEADER_ID, request)
+
+    assert [unit.army_type for unit in result.recruited] == [ArmyType.HVY_CAVALRY]  # the one army
+    assert result.limit_blocked == [ArmyType.LEGION, ArmyType.PHALANX, ArmyType.BOWMEN]
+
+
+def test_in_a_two_type_province_two_non_native_units_fill_the_allowance():
+    state = _slotted_state()
+    _lead_one_of_each(state, ArmyType.HVY_CAVALRY, ArmyType.LEGION)
+    request = RecruitRequest(LEADER_ID, [ArmyType.HVY_CAVALRY, ArmyType.LEGION, ArmyType.BOWMEN])
+
+    result = execute_recruit(state, 1, LEADER_ID, request)
+
+    assert [unit.army_type for unit in result.recruited] == [ArmyType.HVY_CAVALRY, ArmyType.LEGION]
+    assert result.limit_blocked == [ArmyType.BOWMEN]  # no native slot left either
+
+
+def test_home_province_four_armies_the_last_two_at_double_cost():
+    # [3.4]: "in your home province, you could recruit 4 armies of one native army-type, and the
+    # second two armies would be double-cost (but still Average quality.)"
+    state = _slotted_state(home=True)
+    _lead_one_of_each(state, ArmyType.HVY_CAVALRY)
+    request = RecruitRequest(LEADER_ID, [ArmyType.BOWMEN] * 2 + [ArmyType.HVY_CAVALRY] * 3)
+
+    result = execute_recruit(state, 1, LEADER_ID, request)
+
+    assert [unit.army_type for unit in result.recruited] == [ArmyType.BOWMEN] * 2 + [ArmyType.HVY_CAVALRY] * 2
+    assert [unit.gold_paid for unit in result.recruited] == [2, 2, 6, 6]
+    assert result.limit_blocked == [ArmyType.HVY_CAVALRY]
+    assert all(state.armies[unit.army_id].quality is Quality.AVERAGE for unit in result.recruited)
+
+
+def test_garrison_has_its_own_allowance_outside_the_shared_one():
+    state = _slotted_state(home=True)
+    request = RecruitRequest(None, [ArmyType.BOWMEN] * 2 + [ArmyType.LT_CAVALRY] * 2 + [ArmyType.GARRISON] * 3)
+
+    result = execute_recruit(state, 1, LEADER_ID, request)
+
+    assert len(result.recruited) == 4 + 2  # four of the slot types plus two Garrisons
+    assert result.limit_blocked == [ArmyType.GARRISON]
+
+
+def test_mercenaries_are_hired_on_top_of_the_levy_limits():
+    # [3.4] example: "due unità per ciascuno dei tipi disponibili, più due Guarnigioni e tutti i
+    # mercenari presenti" (user ruling 2026-11-24).
+    state = _slotted_state()
+    for army_id in (50, 51, 52):
+        state.add_army(ArmyState(army_id, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, is_mercenary=True))
+    request = RecruitRequest(None, [ArmyType.BOWMEN] * 4)
+
+    result = execute_recruit(state, 1, LEADER_ID, request)
+
+    assert [unit.hired for unit in result.recruited] == [True, True, True, False]  # then the levy slot
+    assert result.limit_blocked == []
+    assert state.provinces[LOCATION].recruited_this_turn == {ArmyType.BOWMEN: 1}
+
+
+def test_mercenaries_can_be_hired_in_an_allys_province_without_treat_but_a_levy_cannot():
+    state = _slotted_state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5), treasury=0))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.provinces[LOCATION].owner_kingdom_id = 2  # no Treat order from the owner
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, is_mercenary=True))
+    request = RecruitRequest(None, [ArmyType.BOWMEN, ArmyType.LT_CAVALRY])
+
+    result = execute_recruit(state, 1, LEADER_ID, request)
+
+    assert [unit.hired for unit in result.recruited] == [True]
+    assert result.treat_blocked == [ArmyType.LT_CAVALRY]
+    assert state.kingdoms[2].treasury == 0  # no fee for the mercenary
+
+
+def test_a_partial_treasury_recruits_what_it_can_and_reports_the_rest():
+    # The RE order is never cancelled as a whole: 3 gold buys one Light Cavalry (3), not two.
+    state = _slotted_state(home=True, treasury=3)
+    result = execute_recruit(state, 1, LEADER_ID, RecruitRequest(None, [ArmyType.LT_CAVALRY] * 2))
+
+    assert len(result.recruited) == 1
+    assert result.gold_blocked == [ArmyType.LT_CAVALRY]

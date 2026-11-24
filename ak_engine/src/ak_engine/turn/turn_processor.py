@@ -2577,6 +2577,27 @@ def _order_phase_entries_by_initiative(
         if j != i:
             must_precede.setdefault(i, set()).add(j)
 
+    # [3.4]: "When you recruit units in an ally's territory, the computer always makes sure that in
+    # any given phase, the owner of the territory has the right to recruit there before you do."
+    for guest_position, (guest_tl, _segment_index, guest_phase) in enumerate(base_order):
+        if guest_phase.action is not ActionCode.RECRUIT:
+            continue
+        guest = state.leaders.get(guest_tl.leader.leader_id)
+        province = state.provinces.get(guest.location) if guest is not None else None
+        owner_id = province.owner_kingdom_id if province is not None else None
+        if owner_id is None or owner_id == guest_tl.kingdom_id:
+            continue
+        for host_position, (host_tl, _host_segment, host_phase) in enumerate(base_order):
+            host = state.leaders.get(host_tl.leader.leader_id)
+            if (
+                host_phase.action is ActionCode.RECRUIT
+                and host is not None
+                and host_tl.kingdom_id == owner_id
+                and host.location == guest.location
+                and host_position != guest_position
+            ):
+                must_precede.setdefault(host_position, set()).add(guest_position)
+
     if not must_precede:
         return base_order
 
