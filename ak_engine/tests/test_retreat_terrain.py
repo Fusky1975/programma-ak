@@ -256,3 +256,44 @@ def test_the_armies_of_a_dead_commander_with_nowhere_to_go_have_no_destination()
     infantry = _army(state, 1, ArmyType.BOWMEN, commander=99)
 
     assert _full_plan(state, infantry).destinations == {1: None}
+
+
+def test_a_commander_none_of_whose_armies_can_retreat_flees_alone_to_a_land_province():
+    state = _state(sea=False)
+    state.add_leader(LeaderState(7, 2, "Admiral", FIELD))
+    fleet = _army(state, 1, ArmyType.FLEET, commander=7)  # a Fleet cannot go from land to land
+
+    plan = _full_plan(state, fleet)
+
+    assert plan.destinations == {1: None}
+    assert plan.leader_destinations == {7: LAND_NEIGHBOR}
+    assert plan.leaders_alone == {7}
+
+
+def test_a_commander_with_no_legal_province_at_all_stays():
+    state = _state(land=False)
+    state.add_leader(LeaderState(7, 2, "General", FIELD))
+    infantry = _army(state, 1, ArmyType.BOWMEN, commander=7)
+
+    assert _full_plan(state, infantry).leader_destinations == {}
+
+
+def test_an_unled_garrison_retreats_with_a_hero_standing_with_it():
+    state = _state()
+    state.add_leader(LeaderState(8, 2, "Hero", FIELD))
+    garrison = _army(state, 1, ArmyType.GARRISON)
+
+    plan = _full_plan(state, garrison)
+
+    assert plan.destinations == {1: LAND_NEIGHBOR}
+    assert plan.leader_destinations == {8: LAND_NEIGHBOR}
+    assert plan.commander_after == {1: 8}
+
+
+def test_a_mercenary_band_does_not_follow_an_independent_hero():
+    state = _state()
+    state.add_leader(LeaderState(8, None, "Wandering hero", FIELD))
+    band = ArmyState(1, None, ArmyType.BOWMEN, Quality.AVERAGE, FIELD)
+    state.add_army(band)
+
+    assert _full_plan(state, band).leader_destinations == {}
