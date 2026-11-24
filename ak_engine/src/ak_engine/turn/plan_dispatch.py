@@ -413,7 +413,14 @@ from ak_engine.turn.cast_execution import CastExecutionResult, execute_cast
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult, execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.discovery_effects import effective_skill_level
-from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive_society_maps, resolve_explore
+from ak_engine.turn.exploration import (
+    EXPLORATION_CAP,
+    SOCIETY_MAPS_EXPLORE_COUNT_RANGE,
+    ExploreResult,
+    discover_battlefield,
+    receive_society_maps,
+    resolve_explore,
+)
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
@@ -700,6 +707,11 @@ def dispatch_phase(
         # (a repelled/contested battle can leave ``new_location`` unset).
         if result.moved and result.new_location is not None:
             result.sensed_magic_items = sense_magic_items_in_province(state, leader_id, result.new_location)
+        if leader is not None:
+            # Chancellor Merit ("+2 per Special Place discovered first"), same credit as an Explore.
+            for feature in result.discovered_features:
+                if len(feature.discovered_by_kingdom) == 1:
+                    leader.merit_tally.features_discovered_first += 1
         return result
 
     if action is ActionCode.EXPLORE:
@@ -717,16 +729,19 @@ def dispatch_phase(
         if leader is None:
             return NoOpResult(action=action)
         province = state.provinces[leader.location]
-        result = resolve_explore(
+        # The shared scalar (`explored_percent`) keeps its own bookkeeping, but what this Explore
+        # *reports* -- the level reached, whether it explored anything, the experience earned -- is
+        # the exploring Kingdom's own cumulative exploration of the province: another Kingdom having
+        # explored it first must not make this one's order read "already fully explored".
+        shared = resolve_explore(
             province.explored_percent,
             province.effective_terrain(),
             explorer_skill,
             has_military_maps=has_military_maps,
             has_difficult_terrain=has_difficult_terrain,
         )
-        province.explored_percent = result.new_percent
-        if result.delta_applied > 0:
-            award_explore_experience(state, leader_id)
+        province.explored_percent = shared.new_percent
+        prior_percent = province.explored_percent_by_kingdom.get(kingdom_id, 0)
         exploration = record_kingdom_exploration(
             province,
             kingdom_id,
@@ -738,6 +753,16 @@ def dispatch_phase(
             has_difficult_terrain=has_difficult_terrain,
             has_find_mines=has_find_mines,
             leader_id=leader_id,
+        )
+        result = ExploreResult(
+            new_percent=exploration.new_percent,
+            delta_applied=exploration.new_percent - prior_percent,
+            fully_explored=exploration.new_percent >= EXPLORATION_CAP,
+        )
+        if result.delta_applied > 0:
+            award_explore_experience(state, leader_id)
+        result.battlefield_fallen = discover_battlefield(
+            state, province.coord, exploration.new_percent, rng if rng is not None else random.Random()
         )
         reveal_adjacent_provinces(state, province, kingdom_id, MapBounds(board_width, state.board_height))
         result.discovered_features = exploration.discovered_features

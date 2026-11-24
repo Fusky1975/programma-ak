@@ -89,6 +89,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState, record_newly_known_column
@@ -115,6 +116,10 @@ class ExploreResult:
     # resolve_explore() itself (a pure percent-only function that has no
     # GameState/rng to roll discovery with) -- see turn/plan_dispatch.py.
     discovered_features: list[Feature] = field(default_factory=list)
+    # 2026-11-24 -- [3.2]: "Exploration also may uncover battlefields, in which case you will be informed
+    # which soldiers have fallen in the province" (useful for the Skeletal Armies spell): the types of
+    # the armies lying in this province's graveyard, when this Explore uncovered it; empty otherwise.
+    battlefield_fallen: list[ArmyType] = field(default_factory=list)
 
 
 EXPLORATION_CAP = 100
@@ -281,6 +286,24 @@ def receive_society_maps(state: GameState, kingdom_id: int, count: int, rng: ran
         if kingdom is not None:
             record_newly_known_column(kingdom, coord.x, state.board_width)
     return revealed
+
+
+def discover_battlefield(
+    state: GameState, coord: HexCoord, exploration_percent: int, rng: random.Random
+) -> list[ArmyType]:
+    """[3.2]: an Explore "may uncover battlefields" -- told which soldiers have fallen there. No
+    formula survives, so (the same project design as feature discovery above) the chance is the
+    Kingdom's own cumulative exploration of the province: certain at 100%, which is why the rulebook
+    says one may go on exploring a fully explored province to learn about the fallen. Rolls only
+    when something lies in the province's graveyard (no draw otherwise). Returns the fallen army
+    types, empty when nothing was uncovered."""
+
+    fallen = state.battle_graveyard.get(coord)
+    if not fallen:
+        return []
+    if rng.random() * 100 < exploration_percent:
+        return [entry.army_type for entry in fallen]
+    return []
 
 
 def has_true_seeing(state: GameState, kingdom_id: int) -> bool:

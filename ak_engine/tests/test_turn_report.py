@@ -92,6 +92,7 @@ from ak_engine.report.turn_report import (
     describe_diplomacy_change_notices,
     describe_diplomacy_report,
     describe_feature_discovery,
+    render_battlefield_discovery,
     describe_finances_report,
     describe_home_province_neighbors,
     describe_letter_reports,
@@ -18222,3 +18223,38 @@ def test_the_letter_report_carries_the_mercenary_quality_notice_of_its_kingdom()
 
     assert "A free band rose in quality." in owner_lines
     assert "A free band rose in quality." not in other_lines
+
+
+# -- Explore audit of 2026-11-24: battlefield disclosure and Move discoveries ------------
+
+
+def test_render_battlefield_discovery_lists_the_fallen_by_type():
+    line = render_battlefield_discovery(
+        "Aldric", "Ancient Valley", [ArmyType.BOWMEN, ArmyType.LEGION, ArmyType.BOWMEN], ScriptedRandom([0.1] * 20, choice_indices=[0] * 10)
+    )
+
+    assert line.startswith("Aldric discovered also that Ancient Valley has been the site of terrible battles.")
+    assert line.endswith("2 Bowmen and 1 Legion.")
+
+
+def test_describe_turn_results_tells_which_soldiers_fell_on_a_battlefield_the_explore_uncovered():
+    state = _leave_state()
+    explore = ExploreResult(new_percent=100, delta_applied=50, fully_explored=True, battlefield_fallen=[ArmyType.LEGION])
+    entry = PhaseDispatchResult(1, 0, "P0", ActionCode.EXPLORE, explore, None)
+
+    lines = describe_turn_results([entry], state, ScriptedRandom([0.1] * 30, choice_indices=[0] * 30), board_width=20)
+
+    assert any("site of terrible battles" in line and "1 Legion" in line for line in lines)
+
+
+def test_describe_turn_results_tells_the_special_place_a_move_turned_up():
+    state = _leave_state()
+    feature = Feature(feature_id=1, coord=HexCoord(3, 9), kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    move = _move_result()
+    move.discovered_features.append(feature)
+    entry = PhaseDispatchResult(1, 0, "P0", ActionCode.LMOVE, move, None)
+
+    lines = describe_turn_results([entry], state, ScriptedRandom([0.1] * 30, choice_indices=[0] * 30), board_width=20)
+
+    assert any("Dungeon" in line and "Archer" in line for line in lines)

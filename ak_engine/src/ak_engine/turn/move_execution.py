@@ -656,6 +656,10 @@ class MoveExecutionResult:
     # Phase 634 addendum for why the caller can't safely reconstruct
     # this after the fact from the leader's own current flag value.
     wind_walking: bool = False
+    # 2026-11-24 -- the Special Places this Move's own partial exploration of the entered province
+    # turned up ([3.1]: "Moving into a province also counts as a partial exploration"); they used to
+    # be marked known to the Kingdom silently, never told to the player.
+    discovered_features: list[Feature] = field(default_factory=list)
     # Phase 715 -- Fleet/Whale cargo-capacity subsystem's own Phase B:
     # every army id `_auto_board_transport_group()` actually boarded
     # this call (empty when `auto_board` is `False`, the default).
@@ -2133,7 +2137,7 @@ def execute_move(
         require_adjacent=not is_hug_coastline_hop,
     )
     target_province.explored_percent = move_result.exploration.new_percent
-    record_kingdom_exploration(
+    entry_exploration = record_kingdom_exploration(
         target_province,
         kingdom_id,
         explorer_skill,
@@ -2400,6 +2404,7 @@ def execute_move(
         stopped_chasing=False,
         conquered=conquered,
         wind_walking=wind_walking,
+        discovered_features=entry_exploration.discovered_features,
         boarded_army_ids=boarded_army_ids,
         followed_mercenary_army_ids=followed_mercenary_army_ids,
         entered_foreign_illusory_fog=entered_foreign_illusory_fog,
