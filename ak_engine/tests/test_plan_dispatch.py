@@ -3390,7 +3390,7 @@ def test_dispatch_explore_uncovers_a_battlefield_and_tells_which_soldiers_fell()
         phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, explorer_skill=1, rng=random.Random(0)
     )  # Plains 50 x 2 = 100%
 
-    assert result.battlefield_fallen == [ArmyType.BOWMEN, ArmyType.LEGION]
+    assert result.battlefield_fallen == [(ArmyType.BOWMEN, Quality.AVERAGE), (ArmyType.LEGION, Quality.VETERAN)]
     assert state.battle_graveyard[location]  # learning of the dead does not raise them
 
 

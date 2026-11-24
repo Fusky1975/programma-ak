@@ -12529,15 +12529,24 @@ _BATTLEFIELD_FALLEN_TEMPLATE = (
 
 
 def render_battlefield_discovery(
-    character_name: str, province_name: str, fallen: list[ArmyType], rng: random.Random, *, is_sea: bool = False
+    character_name: str,
+    province_name: str,
+    fallen: list[tuple[ArmyType, Quality]],
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
 ) -> str:
     """The battlefield disclosure of an Explore (SAY.PAS ``_ABFList``/``_ABFArmy``): who discovered
-    it, where, and the fallen units by type."""
+    it, where, and the fallen armies by type and rank ("2 Average Bowmen and 1 Veteran Legion") --
+    what a Skeletal Armies caster needs to know, since a risen army is identical to the dead one."""
 
-    counts: dict[ArmyType, int] = {}
-    for army_type in fallen:
-        counts[army_type] = counts.get(army_type, 0) + 1
-    parts = [f"{count} {ARMY_TYPE_DESIGNATION[army_type]}" for army_type, count in counts.items()]
+    counts: dict[tuple[ArmyType, Quality], int] = {}
+    for key in fallen:
+        counts[key] = counts.get(key, 0) + 1
+    parts = [
+        f"{count} {QUALITY_NAME[quality]} {ARMY_TYPE_DESIGNATION[army_type]}"
+        for (army_type, quality), count in counts.items()
+    ]
     listing = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
     header = render(_BATTLEFIELD_HEADER_TEMPLATE, {"<": character_name, "@": province_name}, rng=rng, is_sea=is_sea)
     body = render(_BATTLEFIELD_FALLEN_TEMPLATE, {"=": listing}, rng=rng, is_sea=is_sea)

@@ -95,6 +95,7 @@ from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import GameState, record_newly_known_column
 from ak_engine.models.map import TERRAIN_EXPLORATION_NUMBER, HexCoord, Terrain
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.combat import Quality
 
 MIN_EXPLORER_SKILL = 0
 MAX_EXPLORER_SKILL = 9  # CTBOTH.PAS `skillrange = 0..9`
@@ -118,8 +119,9 @@ class ExploreResult:
     discovered_features: list[Feature] = field(default_factory=list)
     # 2026-11-24 -- [3.2]: "Exploration also may uncover battlefields, in which case you will be informed
     # which soldiers have fallen in the province" (useful for the Skeletal Armies spell): the types of
-    # the armies lying in this province's graveyard, when this Explore uncovered it; empty otherwise.
-    battlefield_fallen: list[ArmyType] = field(default_factory=list)
+    # the armies lying in this province's graveyard (type and rank -- a risen skeleton is "identical to
+    # the dead army"), when this Explore uncovered it; empty otherwise.
+    battlefield_fallen: list[tuple[ArmyType, Quality]] = field(default_factory=list)
 
 
 EXPLORATION_CAP = 100
@@ -290,19 +292,19 @@ def receive_society_maps(state: GameState, kingdom_id: int, count: int, rng: ran
 
 def discover_battlefield(
     state: GameState, coord: HexCoord, exploration_percent: int, rng: random.Random
-) -> list[ArmyType]:
+) -> list[tuple[ArmyType, Quality]]:
     """[3.2]: an Explore "may uncover battlefields" -- told which soldiers have fallen there. No
     formula survives, so (the same project design as feature discovery above) the chance is the
     Kingdom's own cumulative exploration of the province: certain at 100%, which is why the rulebook
     says one may go on exploring a fully explored province to learn about the fallen. Rolls only
-    when something lies in the province's graveyard (no draw otherwise). Returns the fallen army
-    types, empty when nothing was uncovered."""
+    when something lies in the province's graveyard (no draw otherwise). Returns the fallen armies as
+    ``(type, rank)``, empty when nothing was uncovered."""
 
     fallen = state.battle_graveyard.get(coord)
     if not fallen:
         return []
     if rng.random() * 100 < exploration_percent:
-        return [entry.army_type for entry in fallen]
+        return [(entry.army_type, entry.quality) for entry in fallen]
     return []
 
 

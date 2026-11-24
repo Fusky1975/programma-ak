@@ -18230,21 +18230,24 @@ def test_the_letter_report_carries_the_mercenary_quality_notice_of_its_kingdom()
 
 def test_render_battlefield_discovery_lists_the_fallen_by_type():
     line = render_battlefield_discovery(
-        "Aldric", "Ancient Valley", [ArmyType.BOWMEN, ArmyType.LEGION, ArmyType.BOWMEN], ScriptedRandom([0.1] * 20, choice_indices=[0] * 10)
+        "Aldric",
+        "Ancient Valley",
+        [(ArmyType.BOWMEN, Quality.AVERAGE), (ArmyType.LEGION, Quality.VETERAN), (ArmyType.BOWMEN, Quality.AVERAGE)],
+        ScriptedRandom([0.1] * 20, choice_indices=[0] * 10),
     )
 
     assert line.startswith("Aldric discovered also that Ancient Valley has been the site of terrible battles.")
-    assert line.endswith("2 Bowmen and 1 Legion.")
+    assert line.endswith("2 Average Bowmen and 1 Veteran Legion.")
 
 
 def test_describe_turn_results_tells_which_soldiers_fell_on_a_battlefield_the_explore_uncovered():
     state = _leave_state()
-    explore = ExploreResult(new_percent=100, delta_applied=50, fully_explored=True, battlefield_fallen=[ArmyType.LEGION])
+    explore = ExploreResult(new_percent=100, delta_applied=50, fully_explored=True, battlefield_fallen=[(ArmyType.LEGION, Quality.VETERAN)])
     entry = PhaseDispatchResult(1, 0, "P0", ActionCode.EXPLORE, explore, None)
 
     lines = describe_turn_results([entry], state, ScriptedRandom([0.1] * 30, choice_indices=[0] * 30), board_width=20)
 
-    assert any("site of terrible battles" in line and "1 Legion" in line for line in lines)
+    assert any("site of terrible battles" in line and "1 Veteran Legion" in line for line in lines)
 
 
 def test_describe_turn_results_tells_the_special_place_a_move_turned_up():
