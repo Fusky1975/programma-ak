@@ -570,6 +570,7 @@ from ak_engine.turn.discovery_effects import (
     holds_monster_command_item_for,
 )
 from ak_engine.turn.encounter import (
+    resolve_refusal_to_meet,
     SUMMON_SPELLS,
     CHARACTER_HIT_POINTS,
     DAMP_MAGIC_CAST_CHANCE_MULTIPLIER,
@@ -733,6 +734,10 @@ GATE_ANGEL_KNOWN_ABILITY_LEVEL = 5
 
 # Rulebook [5.6] Flee, transcribed verbatim -- see this module's own
 # docstring addendum and models/monster.py's own [5.6] quote.
+# [3.2]: "Powerful: 30-44 hit points" -- from here up a guardian counts as the strong opponent a
+# Cautious/Cowardly searcher may refuse to face (see `_resolve_search_encounter()`).
+POWERFUL_GUARDIAN_MIN_HIT_POINTS = 30
+
 FLEE_CHANCE: dict[MonsterSpeed, float] = {
     MonsterSpeed.FAST: 0.20,
     MonsterSpeed.MEDIUM: 0.50,
@@ -974,6 +979,9 @@ class SearchExecutionResult:
     feature_looted: bool = False
     leader_killed: bool = False
     fled: bool = False
+    # 2026-11-24 -- [3.3]: "You can Search a feature to Scout it even after you've killed the monster": a
+    # Search that only scouted a feature whose guardian was already dead (no encounter took place).
+    scouted_dead_guardian_feature: bool = False
     # Phase 175: per-shot Fire Arrow detail (empty unless a Shoot tactic
     # actually fired), plus the guardian's own species -- both needed by
     # report/turn_report.py's own Phase 175 addendum to dispatch each shot
@@ -1184,7 +1192,8 @@ def execute_search(
             if any(s.shooter == "a" for s in result.fire_arrow_shots):
                 add_experience(leader, Ability.ARCHERY, 10, rng)
         _apply_scout(state, leader_id, request, result, rng)
-        _apply_talk_language_failure(state, leader, request, result)
+        if not result.scouted_dead_guardian_feature:
+            _apply_talk_language_failure(state, leader, request, result)
     return result
 
 
@@ -1837,7 +1846,16 @@ def _resolve_search_encounter(
         return SearchExecutionResult(accepted=False, reason="feature not found")
 
     if feature.looted:
-        return SearchExecutionResult(accepted=False, reason="feature already looted")
+        # [3.3]: "Si può ispezionare un Luogo Speciale anche se il mostro-guardiano è stato già ucciso" --
+        # to Scout it ([5.8]: "if you've attacked and looted some features already, try Scouting them to
+        # see what special function you might get"). With a Scout tactic in the plan there is no monster to
+        # face and the Scout resolves on its own (a dead guardian guarantees the discovery, see
+        # `_apply_scout()`); without one there is nothing to do ("had already been looted").
+        scouts = any(tactic.maneuver is Maneuver.SCOUT for tactic in request.tactics)
+        if not scouts or leader.location != feature.coord:
+            reason = "feature already looted" if not scouts else "not co-located with feature"
+            return SearchExecutionResult(accepted=False, reason=reason)
+        return SearchExecutionResult(accepted=True, combat_resolved=False, feature_looted=True, scouted_dead_guardian_feature=True)
 
     if feature.guardian_monster is None:
         return SearchExecutionResult(accepted=False, reason="feature has no guardian recorded")
@@ -1866,6 +1884,21 @@ def _resolve_search_encounter(
         is_undead_or_anti_holy=feature.guardian_monster in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
         is_humanoid=feature.guardian_monster in HUMANOID_MONSTERS,
     )
+    # [5.6] / Temper Table: a Cautious or Cowardly character who is not a King "may even refuse your
+    # command to encounter a character or monster, depending on how strong the opponent is" (the Table's
+    # Refusal column: Cautious 1-50%, Cowardly 51-100%). The strength-to-percentage mapping is the user's
+    # own choice (2026-11-24): a guardian "Powerful" or stronger by hit points ([3.2]: 30+ PF) takes the
+    # high end of the range, a weaker one the low end -- the same binary signal the character-versus-
+    # character refusals use. A refusal means the Search never takes place.
+    if resolve_refusal_to_meet(
+        leader.temper,
+        is_king=leader.is_king,
+        opponent_leads_army=monster_combatant.hit_points >= POWERFUL_GUARDIAN_MIN_HIT_POINTS,
+        rng=rng,
+    ):
+        return SearchExecutionResult(
+            accepted=False, reason="refused to face the guardian", guardian_monster=feature.guardian_monster
+        )
     # [5.0]: a Neutral Kingdom's Order of Duelists (+1 Melee/Archery) counts "negli scontri con Eroi
     # o mostri umanoidi, come ad esempio gli Spadaccini Rinnegati" -- so against a humanoid guardian.
     leader_kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None

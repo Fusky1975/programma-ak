@@ -12616,6 +12616,20 @@ SEARCH_FEATURE_ALREADY_SACKED_TEMPLATE = (
 )
 
 
+# HostAK/TP/SAY.PAS `_LScout` (S_Adv): the opening of a Search that only scouts a feature -- here one
+# whose guardian is already dead, so there is no monster to approach.
+SEARCH_SCOUT_LOOTED_TEMPLATE = (
+    "< searched/Rentered the & to see/Rfind what special magic/Rpower it_might_possess/Rmight_be_present."
+)
+
+
+def render_search_scout_looted(character_name: str, feature_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders ``_LScout``'s sentence for scouting a feature whose guardian is already dead."""
+
+    values = {"<": character_name, "&": feature_name}
+    return render(SEARCH_SCOUT_LOOTED_TEMPLATE, values, rng=rng, is_sea=is_sea)
+
+
 def render_search_feature_already_sacked(character_name: str, feature_name: str, rng: random.Random) -> str:
     """Renders ``_LSacked``'s sentence for attempting to Search a feature
     that's already been looted (``turn/search_execution.py
@@ -12853,9 +12867,17 @@ def describe_search(
     if not result.accepted:
         if result.reason == "feature already looted":
             return [render_search_feature_already_sacked(character_name, feature_name, rng)]
+        if result.reason == "refused to face the guardian":
+            # Project-original (no sourced template): a Cautious/Cowardly searcher declined the order.
+            guardian = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
+            return [f"{character_name} lost heart and would not face the {guardian} of the {feature_name}."]
         return []
 
-    lines = [render_search_attempt(character_name, feature_name, rng, is_sea=is_sea)]
+    if result.scouted_dead_guardian_feature:
+        opening = render_search_scout_looted(character_name, feature_name, rng, is_sea=is_sea)
+    else:
+        opening = render_search_attempt(character_name, feature_name, rng, is_sea=is_sea)
+    lines = [opening]
 
     monster_name = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
     weapon = MONSTER_RANGED_WEAPON.get(result.guardian_monster) if result.guardian_monster is not None else None

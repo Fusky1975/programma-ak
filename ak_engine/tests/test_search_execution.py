@@ -1135,7 +1135,9 @@ def test_execute_search_flee_tactic_cowardly_temper_gets_the_same_bonus_as_cauti
         feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
     )
 
-    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.35] * 20))
+    # (This is about the Flee bonus, not the refusal to face the guardian -- patched out.)
+    with patch("ak_engine.turn.search_execution.resolve_refusal_to_meet", return_value=False):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.35] * 20))
 
     assert result.fled is True
     assert result.combat_resolved is False
@@ -3928,7 +3930,9 @@ def test_execute_search_cast_augur_combat_not_first_tactic_flee_succeeds():
     # whichever one lands on the Flee-check roll still succeeds.
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
-    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.resolve_refusal_to_meet", return_value=False
+    ):
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.01] * 20))
 
     assert result.fled is True
@@ -3990,7 +3994,7 @@ def test_execute_search_cast_augur_combat_simulated_win_never_shirks():
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel"
-    ) as mock_melee:
+    ) as mock_melee, patch("ak_engine.turn.search_execution.resolve_refusal_to_meet", return_value=False):
         mock_melee.side_effect = [
             EncounterCombatResult(winner="a", rounds=2),  # the silent simulation: caster wins
             EncounterCombatResult(winner="a", rounds=1),  # the plan's own real, following Melee
@@ -7001,7 +7005,7 @@ def test_execute_search_non_last_melee_trailing_fallback_skips_temper_setup_alre
     ) as mock_duel:
         mock_round.return_value = MeleeRoundOutcome(result=None)
         mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
-        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5]))  # hit points, then the refusal roll
 
     assert mock_duel.call_args.kwargs["skip_temper_setup"] is True
 
@@ -7121,3 +7125,103 @@ def test_execute_search_does_not_reregister_an_already_known_feature():
 
     assert result.target_newly_registered is False
     assert feature.discovered_by_kingdom == {1: 2}
+
+
+# -- 2026-11-24: scouting a feature whose guardian is already dead ([3.3]/[5.8]) --------
+
+
+def test_a_looted_feature_can_still_be_searched_to_scout_it():
+    # [3.3]: "Si può ispezionare un Luogo Speciale anche se il mostro-guardiano è stato già ucciso"; [5.8]:
+    # "if you've attacked and looted some features already, try Scouting them".
+    state = _state_with_leader()
+    state.add_feature(
+        Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE, looted=True)
+    )
+
+    result = execute_search(state, LEADER_ID, _scout_request(1, Maneuver.SCOUT), ScriptedRandom([]))
+
+    assert result.accepted is True
+    assert result.scouted_dead_guardian_feature is True
+    assert result.combat_resolved is False and result.winner is None
+    assert result.scout_orders_given == 1
+    assert state.features[1].discovery_level(1) == 3  # a dead guardian guarantees the discovery
+
+
+def test_a_looted_feature_searched_without_scout_is_still_just_looted():
+    state = _state_with_leader()
+    state.add_feature(
+        Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE, looted=True)
+    )
+
+    result = execute_search(state, LEADER_ID, _scout_request(1, Maneuver.MELEE, Maneuver.TALK), ScriptedRandom([]))
+
+    assert result.accepted is False and result.reason == "feature already looted"
+
+
+def test_scouting_a_looted_feature_still_needs_the_searcher_to_be_there():
+    state = _state_with_leader()
+    state.add_feature(
+        Feature(feature_id=1, coord=HexCoord(9, 9), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE, looted=True)
+    )
+
+    result = execute_search(state, LEADER_ID, _scout_request(1, Maneuver.SCOUT), ScriptedRandom([]))
+
+    assert result.accepted is False and result.reason == "not co-located with feature"
+
+
+def test_a_leader_who_dies_leaves_his_armies_to_the_garrison_command():
+    # [5.9]: "Se il defunto comandava unità militari, quest'ultime vengono trasferite al locale Comando di
+    # Guarnigione".
+    state = _state_with_leader()
+    state.add_army(ArmyState(5, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=LEADER_ID))
+    state.add_army(ArmyState(6, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=None))
+
+    state.remove_leader(LEADER_ID)
+
+    assert state.armies[5].commanded_by is None and state.armies[5].kingdom_id == 1
+    assert state.armies[6].commanded_by is None
+
+
+# -- 2026-11-24: Cautious/Cowardly refusal to face the guardian ([5.6] / Temper Table) ------
+
+
+def _guarded_feature(state, monster):
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=monster))
+
+
+def test_a_cowardly_searcher_refuses_to_face_a_powerful_guardian():
+    # Powerful (30+ hit points: Roc 30-35) -> the high end of the Cowardly range, 100%.
+    state = _state_with_leader(temper=Temper.COWARDLY)
+    _guarded_feature(state, Monster.ROC)
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5, 0.99]))  # hit points, refusal
+
+    assert result.accepted is False and result.reason == "refused to face the guardian"
+    assert result.guardian_monster is Monster.ROC
+    assert state.features[1].discovery_level(1) == 0  # he never went there, nothing registered
+    assert not state.features[1].looted
+
+
+def test_a_cautious_searcher_faces_a_weak_guardian_unless_the_one_percent_roll_hits():
+    state = _state_with_leader(temper=Temper.CAUTIOUS)
+    _guarded_feature(state, Monster.GARGOYLE)  # 10-20 hit points: the low end, 1%
+
+    refused = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5, 0.005]))
+    assert refused.accepted is False and refused.reason == "refused to face the guardian"
+
+    state2 = _state_with_leader(temper=Temper.CAUTIOUS)
+    _guarded_feature(state2, Monster.GARGOYLE)
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        faced = execute_search(state2, LEADER_ID, _melee_request(1), ScriptedRandom([0.5] * 30))
+    assert faced.accepted is True and faced.reason != "refused to face the guardian"
+
+
+def test_a_king_of_any_temper_never_refuses_to_search():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, 1, "King", LOCATION, temper=Temper.COWARDLY, is_king=True))
+    _guarded_feature(state, Monster.ROC)
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5] * 40))
+
+    assert result.reason != "refused to face the guardian"

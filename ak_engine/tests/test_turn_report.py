@@ -10972,7 +10972,8 @@ def test_describe_armies_report_unled_army_shows_garrison():
     ]
 
 
-def test_describe_armies_report_names_a_commander_who_died_earlier_this_same_turn():
+def test_describe_armies_report_lists_the_armies_of_a_commander_who_died_this_turn_under_the_garrison():
+    # [5.9]: the dead commander's armies pass to the local Garrison Command.
     state = _armies_state()
     state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(0, 0)))
     state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=1))
@@ -10985,7 +10986,7 @@ def test_describe_armies_report_names_a_commander_who_died_earlier_this_same_tur
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
         "",
-        "Capital City      Sir Aldric     1st Bowmen            Human  Average  Veteran",
+        "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
     ]
 
 
@@ -18261,3 +18262,22 @@ def test_describe_turn_results_tells_the_special_place_a_move_turned_up():
     lines = describe_turn_results([entry], state, ScriptedRandom([0.1] * 30, choice_indices=[0] * 30), board_width=20)
 
     assert any("Dungeon" in line and "Archer" in line for line in lines)
+
+
+def test_describe_search_of_a_looted_feature_opens_with_the_scouting_sentence():
+    # SAY.PAS `_LScout`: "< searched/entered the & to see/find what special magic/power it might possess...".
+    result = SearchExecutionResult(accepted=True, scouted_dead_guardian_feature=True, feature_looted=True)
+
+    lines = describe_search(
+        result, character_name="Aldric", feature_name="Ancient Ruins", rng=ScriptedRandom([0.1] * 20, choice_indices=[0] * 20)
+    )
+
+    assert lines[0].startswith("Aldric searched the Ancient Ruins to see what special magic")
+
+
+def test_describe_search_says_a_cowardly_searcher_would_not_face_the_guardian():
+    result = SearchExecutionResult(accepted=False, reason="refused to face the guardian", guardian_monster=Monster.ROC)
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=ScriptedRandom([]))
+
+    assert lines == ["Aldric lost heart and would not face the Roc of the Ancient Ruins."]
