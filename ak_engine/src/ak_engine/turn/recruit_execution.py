@@ -273,7 +273,7 @@ from dataclasses import dataclass, field
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import ArmyState, GameState
+from ak_engine.models.game_state import ArmyState, GameState, ProvinceState
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.combat import Quality
@@ -349,6 +349,33 @@ class RecruitExecutionResult:
     # one-field-per-distinct-block-reason convention.
     non_native_type_not_owned: list[ArmyType] = field(default_factory=list)
     total_gold_spent: int = 0
+
+
+# Units that have a levy allowance of their own, outside the shared one below.
+_OWN_ALLOWANCE_TYPES = frozenset({ArmyType.GARRISON, ArmyType.DINOSAURS})
+
+
+def _levy_slot_available(
+    province: ProvinceState, army_type: ArmyType, per_type_limit: int, is_native: bool, office_bonus: int
+) -> bool:
+    """Whether one more levy of ``army_type`` fits in this province's allowance this turn ([3.4]).
+
+    A native type is limited per type (``per_type_limit``, plus an Office bonus). A province
+    "has 1 or 2 army types" and "You still only recruit the same number of armies": the levies of
+    *all* its types -- native or not, Garrison and Dinosaurs apart -- together never exceed the
+    per-type limit times the number of native types (home province, two types: four armies, "the
+    second two double-cost"). A non-native type has no per-type limit of its own, only that
+    shared total. Without real per-province slot data the shared total cannot be known and only
+    the per-type limit applies."""
+
+    already = province.recruited_this_turn.get(army_type, 0)
+    if is_native and already >= per_type_limit + office_bonus:
+        return False
+    if army_type in _OWN_ALLOWANCE_TYPES or province.recruit_type_1 is None:
+        return is_native or army_type in _OWN_ALLOWANCE_TYPES
+    native_types = {t for t in (province.recruit_type_1, province.recruit_type_2) if t is not None}
+    shared_total = sum(n for t, n in province.recruited_this_turn.items() if t not in _OWN_ALLOWANCE_TYPES)
+    return shared_total < per_type_limit * len(native_types) + (office_bonus if is_native else 0)
 
 
 def _leader_holds_office(state: GameState, office: Office, leader_id: int) -> bool:
@@ -431,9 +458,10 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
 
     result = RecruitExecutionResult(request=request)
 
-    if in_ally_territory and not state.has_treat_permission(province.owner_kingdom_id, kingdom_id):
-        result.treat_blocked.extend(request.army_types)
-        return result
+    # [3.4]: "In order for you to Recruit in your ally's territory, he MUST issue a 'Treat' order" --
+    # a levy from his populace; mercenaries "can be Recruited in any province by any character"
+    # (user ruling 2026-11-24), so a mercenary hire needs no permission and pays no fee.
+    treat_missing = in_ally_territory and not state.has_treat_permission(province.owner_kingdom_id, kingdom_id)
 
     leader_is_wingman = _leader_holds_office(state, Office.WINGMAN, leader_id)
     leader_is_marshal = _leader_holds_office(state, Office.MARSHAL, leader_id)
@@ -555,13 +583,16 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             ),
             None,
         )
+        if treat_missing and mercenary is None:
+            result.treat_blocked.append(army_type)
+            continue
         try:
             resolution = resolve_recruit(
                 army_type,
                 province.race,
                 is_home_province=is_home_province,
                 is_native_to_province=is_native,
-                in_ally_territory=in_ally_territory,
+                in_ally_territory=in_ally_territory and mercenary is None,
                 is_former_home_province_now_allied=is_former_home_province_now_allied,
                 chief_of_staff_discount=leader_is_chief_of_staff,
                 commander_already_has_type=commander_already_has_type,
@@ -607,7 +638,11 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         marshal_bonus = 1 if leader_is_marshal and is_land_army(army_type) and is_native else 0
         admiral_bonus = 1 if leader_is_admiral and army_type in SEA_ARMY_TYPES and is_native else 0
         already_this_turn = province.recruited_this_turn.get(army_type, 0)
-        if already_this_turn >= resolution.max_units + wingman_bonus + marshal_bonus + admiral_bonus:
+        # [3.4]: mercenaries are hired on top of the levy limits ("più due Guarnigioni e tutti i
+        # mercenari presenti", user ruling 2026-11-24): they neither need nor use up a slot.
+        if mercenary is None and not _levy_slot_available(
+            province, army_type, resolution.max_units, is_native, wingman_bonus + marshal_bonus + admiral_bonus
+        ):
             result.limit_blocked.append(army_type)
             continue
 
@@ -647,10 +682,16 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             hired = True
         else:
             army_id = state.new_army_id()
-            if army_type is ArmyType.DINOSAURS and effective_skill_level(state, leader, Ability.DRUID) < DINOSAUR_FULL_QUALITY_DRUID_SKILL:
-                fresh_levy_quality = Quality.GREEN
-            else:
+            if army_type is ArmyType.DINOSAURS:
+                full_quality = effective_skill_level(state, leader, Ability.DRUID) >= DINOSAUR_FULL_QUALITY_DRUID_SKILL
+                fresh_levy_quality = Quality.AVERAGE if full_quality else Quality.GREEN
+            elif is_home_province or is_former_home_province_now_allied:
                 fresh_levy_quality = Quality.AVERAGE
+            else:
+                # [6.1]: "Le unità militari appena costituite partono come Reclute, tranne quelle
+                # reclutate nella provincia natale che cominciano come Medie" (a former home
+                # province now an ally's: "iniziano come rango Medio", [3.4]).
+                fresh_levy_quality = Quality.GREEN
             state.add_army(
                 ArmyState(
                     army_id=army_id,
@@ -664,9 +705,10 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                 )
             )
             hired = False
-        province.recruited_this_turn[army_type] = already_this_turn + 1
-        if army_type is ArmyType.DINOSAURS:
-            province.recruit_locked_this_turn = True
+        if not hired:
+            province.recruited_this_turn[army_type] = already_this_turn + 1
+            if army_type is ArmyType.DINOSAURS:
+                province.recruit_locked_this_turn = True
 
         result.recruited.append(
             RecruitedUnit(

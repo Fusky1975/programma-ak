@@ -379,3 +379,46 @@ def test_apply_turn_maintenance_missing_king_pays_unconditionally_no_roll_consum
     assert result[1].standby_leader_ids == []
     assert hero.kingdom_id == 1
     assert state.kingdoms[1].treasury == -1
+
+
+# -- [6.1] "Reclute o Demoralizzate passano sempre al livello successivo alla fine del turno" --
+
+
+def _qualities(state: GameState) -> dict[int, Quality]:
+    return {army.army_id: army.quality for army in state.armies.values()}
+
+
+def test_green_and_depleted_armies_improve_one_level_at_the_end_of_a_paid_turn():
+    state = make_state()
+    state.kingdoms[1].treasury = 100
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.DEPLETED, HOME))
+    state.add_army(ArmyState(2, 1, ArmyType.BOWMEN, Quality.GREEN, HOME))
+    state.add_army(ArmyState(3, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME))
+    state.add_army(ArmyState(4, 1, ArmyType.BOWMEN, Quality.ELITE, HOME))
+
+    apply_turn_maintenance(state, ScriptedRandom([0.0] * 5))
+
+    assert _qualities(state) == {1: Quality.GREEN, 2: Quality.AVERAGE, 3: Quality.AVERAGE, 4: Quality.ELITE}
+
+
+def test_unpaid_armies_do_not_improve():
+    # "(solo se pagate regolarmente però)": the treasury cannot cover the upkeep.
+    state = make_state()
+    state.kingdoms[1].treasury = 0
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.GREEN, HOME))
+
+    apply_turn_maintenance(state, ScriptedRandom([0.0] * 5))
+
+    assert state.armies[1].quality is Quality.GREEN
+
+
+def test_mercenary_bands_and_other_kingdoms_armies_are_not_promoted_by_a_kingdom():
+    state = make_state()
+    state.kingdoms[1].treasury = 100
+    state.kingdoms[2].treasury = 0  # cannot pay
+    state.add_army(ArmyState(1, None, ArmyType.BOWMEN, Quality.GREEN, HOME, is_mercenary=True))
+    state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.GREEN, HOME))
+
+    apply_turn_maintenance(state, ScriptedRandom([0.0] * 5))
+
+    assert _qualities(state) == {1: Quality.GREEN, 2: Quality.GREEN}

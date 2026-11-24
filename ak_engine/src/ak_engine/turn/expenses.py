@@ -134,6 +134,7 @@ import random
 from ak_engine.models.army_type import ARMY_TABLE
 from ak_engine.models.game_state import GameState, LeaderState, MaintenanceResult
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.hire_pay import hero_liking, required_pay
 from ak_engine.turn.leader_queries import find_king_of_kingdom
 
@@ -207,6 +208,27 @@ def compute_expected_expenses(state: GameState, kingdom_id: int) -> int:
     return compute_army_maintenance(state, kingdom_id) + compute_leader_maintenance(state, kingdom_id)
 
 
+def promote_recruits_and_depleted_armies(state: GameState, kingdom_id: int) -> list[int]:
+    """[6.1]: "Le unità militari Reclute o Demoralizzate passano sempre al livello successivo alla
+    fine del turno (solo se pagate regolarmente però)" -- Depleted becomes Green and Green becomes
+    Average, automatically, for every army of a kingdom whose army upkeep the treasury covered. A
+    freshly levied Green unit is therefore Average again by the next turn. Returns the promoted
+    army ids. (Audit of 2026-11-24: this rule had no turn-boundary hook anywhere.)"""
+
+    promoted: list[int] = []
+    for army in state.armies.values():
+        if army.kingdom_id != kingdom_id or army.is_mercenary:
+            continue
+        if army.quality is Quality.DEPLETED:
+            army.quality = Quality.GREEN
+        elif army.quality is Quality.GREEN:
+            army.quality = Quality.AVERAGE
+        else:
+            continue
+        promoted.append(army.army_id)
+    return promoted
+
+
 def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -> dict[int, MaintenanceResult]:
     """Debits every kingdom's own per-turn upkeep from its treasury, once per
     turn -- see module docstring's Phase 404 section for the original
@@ -234,6 +256,8 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
     for kingdom_id, kingdom in state.kingdoms.items():
         debited = compute_army_maintenance(state, kingdom_id)
         kingdom.treasury -= debited
+        if kingdom.treasury >= 0:
+            promote_recruits_and_depleted_armies(state, kingdom_id)
 
         king = find_king_of_kingdom(state, kingdom_id)
         heroes = sorted(

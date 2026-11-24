@@ -1181,6 +1181,22 @@ def test_collect_phase_entries_recruit_for_another_waits_despite_higher_initiati
     assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [20, 21]
 
 
+def test_collect_phase_entries_the_owner_of_the_territory_recruits_before_his_ally():
+    # [3.4]: "in any given phase, the owner of the territory has the right to recruit there before you do."
+    state = _ordering_state({60: 3, 61: 0}, kingdom_id=1)  # the guest (60) has far higher Initiative
+    state.add_kingdom(KingdomState(2, "Hostia", Race.HUMAN, Alignment.GOOD, ORIGIN))
+    state.add_province(ProvinceState(ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.leaders[61].kingdom_id = 2
+    turn_leaders = _turn_leaders(
+        (60, 1, "P1", _recruit_phase("P1", target_leader_id=60)),
+        (61, 2, "P1", _recruit_phase("P1", target_leader_id=61)),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P1", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [61, 60]
+
+
 def test_collect_phase_entries_give_waits_despite_higher_initiative():
     state = _ordering_state({30: 0, 31: 3})
     turn_leaders = _turn_leaders(
