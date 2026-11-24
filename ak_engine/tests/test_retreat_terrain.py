@@ -38,7 +38,7 @@ def _army(state: GameState, army_id: int, army_type: ArmyType, *, commander: int
 
 
 def _plan(state: GameState, *armies: ArmyState) -> dict[int, HexCoord | None]:
-    return _plan_retreat_destinations(list(armies), state, BOUNDS, FIELD, attacker_origin=None)
+    return _plan_retreat_destinations(list(armies), state, BOUNDS, FIELD, attacker_origin=None).destinations
 
 
 def test_infantry_does_not_retreat_into_the_sea():
@@ -132,3 +132,127 @@ def test_a_fleet_with_no_sea_to_go_to_leaves_its_cargo_behind():
     assert plan[1] is None
     assert plan[2] == LAND_NEIGHBOR  # the infantry simply walks away over land
     assert infantry.transported_by is None
+
+
+# -- the commander retreats with his armies (user ruling 2026-11-24) --
+
+
+def _full_plan(state: GameState, *armies: ArmyState, attacker_origin: HexCoord | None = None):
+    return _plan_retreat_destinations(list(armies), state, BOUNDS, FIELD, attacker_origin=attacker_origin)
+
+
+def test_the_commander_retreats_with_his_armies():
+    state = _state()
+    state.add_leader(LeaderState(7, 2, "General", FIELD))
+    infantry = _army(state, 1, ArmyType.BOWMEN, commander=7)
+
+    plan = _full_plan(state, infantry)
+
+    assert plan.destinations == {1: LAND_NEIGHBOR}
+    assert plan.leader_destinations == {7: LAND_NEIGHBOR}
+    assert plan.commander_after == {}  # he keeps his commander
+
+
+def test_the_commander_goes_by_sea_aboard_his_fleet():
+    state = _state(land=False)
+    state.add_leader(LeaderState(7, 2, "Admiral", FIELD))
+    fleet = _army(state, 1, ArmyType.FLEET, commander=7)
+    infantry = _army(state, 2, ArmyType.BOWMEN, commander=7)
+
+    plan = _full_plan(state, fleet, infantry)
+
+    assert plan.leader_destinations == {7: SEA_NEIGHBOR}
+    assert infantry.transported_by == 1
+
+
+def test_a_commander_with_no_legal_destination_stays_put():
+    state = _state(land=False)
+    state.add_leader(LeaderState(7, 2, "General", FIELD))
+    infantry = _army(state, 1, ArmyType.BOWMEN, commander=7)
+
+    plan = _full_plan(state, infantry)
+
+    assert plan.destinations == {1: None}
+    assert plan.leader_destinations == {}
+
+
+def test_an_army_that_cannot_follow_its_commander_goes_alone_without_him():
+    state = _state(sea=False)
+    state.add_leader(LeaderState(7, 2, "Admiral", FIELD))
+    fleet = _army(state, 1, ArmyType.FLEET, commander=7)
+    infantry = _army(state, 2, ArmyType.BOWMEN, commander=7)
+
+    plan = _full_plan(state, fleet, infantry)
+
+    assert plan.leader_destinations == {7: LAND_NEIGHBOR}  # he follows the infantry over land
+    assert plan.destinations == {1: None, 2: LAND_NEIGHBOR}
+    assert plan.commander_after[1] is None
+
+
+def test_an_attacker_retreats_to_the_province_it_invaded_from_and_the_commander_with_it():
+    origin = _NEIGHBORS[2]
+    state = _state()
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_leader(LeaderState(7, 2, "General", origin))
+    # An attacker's army still stands in its province of origin while the battle is resolved.
+    army = ArmyState(1, 2, ArmyType.BOWMEN, Quality.AVERAGE, origin, commanded_by=7)
+    state.add_army(army)
+
+    plan = _full_plan(state, army, attacker_origin=origin)
+
+    assert plan.destinations == {1: origin}  # not LAND_NEIGHBOR, which comes first among the field's neighbours
+    assert plan.leader_destinations == {7: origin}
+
+
+def test_the_armies_of_a_dead_commander_retreat_with_another_hero_of_the_kingdom():
+    state = _state()
+    state.add_leader(LeaderState(8, 2, "Hero", FIELD))
+    state.add_leader(LeaderState(9, 3, "Foreign hero", FIELD))
+    infantry = _army(state, 1, ArmyType.BOWMEN, commander=99)  # 99 is dead
+
+    plan = _full_plan(state, infantry)
+
+    assert plan.destinations == {1: LAND_NEIGHBOR}
+    assert plan.leader_destinations == {8: LAND_NEIGHBOR}
+    assert plan.commander_after == {1: 8}
+
+
+def test_the_armies_of_a_dead_commander_prefer_the_king_then_a_leader_already_retreating():
+    state = _state()
+    hero = LeaderState(8, 2, "Hero", FIELD)
+    king = LeaderState(5, 2, "King", FIELD, is_king=True)
+    state.add_leader(hero)
+    state.add_leader(king)
+    orphan = _army(state, 1, ArmyType.BOWMEN, commander=99)
+
+    assert _full_plan(state, orphan).commander_after == {1: 5}
+
+    state2 = _state()
+    state2.add_leader(LeaderState(8, 2, "Hero", FIELD))
+    state2.add_leader(LeaderState(5, 2, "King", FIELD, is_king=True))
+    led = _army(state2, 2, ArmyType.BOWMEN, commander=8)
+    orphan2 = _army(state2, 1, ArmyType.BOWMEN, commander=99)
+
+    plan = _full_plan(state2, led, orphan2)
+
+    assert plan.commander_after == {1: 8}  # joins the hero who is already leading a contingent away
+    assert plan.leader_destinations == {8: LAND_NEIGHBOR}
+
+
+def test_the_armies_of_a_dead_commander_with_no_hero_retreat_to_the_garrison_of_an_adjacent_province():
+    state = _state()
+    state.add_leader(LeaderState(9, 3, "Foreign hero", FIELD))
+    infantry = _army(state, 1, ArmyType.BOWMEN, commander=99)
+
+    plan = _full_plan(state, infantry)
+
+    assert plan.destinations == {1: LAND_NEIGHBOR}
+    assert plan.leader_destinations == {}
+    assert plan.commander_after == {1: None}  # unled: the Garrison Commander of that province
+
+
+def test_the_armies_of_a_dead_commander_with_nowhere_to_go_have_no_destination():
+    state = _state(land=False)
+    infantry = _army(state, 1, ArmyType.BOWMEN, commander=99)
+
+    assert _full_plan(state, infantry).destinations == {1: None}

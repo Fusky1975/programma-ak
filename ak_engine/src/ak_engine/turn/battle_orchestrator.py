@@ -241,8 +241,14 @@ from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_b
 from ak_engine.turn.office_holder import cached_office_holder_leader_id, resolve_office_holder
 from ak_engine.turn.pursuit import resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
-from ak_engine.turn.retreat import find_retreat_destination, select_attacker_retreat_destination
-from ak_engine.turn.sea_transport import apply_battle_carrier_destruction, board_army, disembark_army
+from ak_engine.turn.retreat import find_retreat_destination, retreat_candidates
+from ak_engine.turn.sea_transport import (
+    apply_battle_carrier_destruction,
+    board_army,
+    can_board,
+    cargo_aboard,
+    disembark_army,
+)
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.sep_decode import sep_accepts_challenge, sep_is_aggressive
 from ak_engine.turn.strength import (
@@ -1390,19 +1396,50 @@ def _fleet_avoids_elimination(army: ArmyState, battle_terrain: Terrain) -> bool:
     return army.army_type is ArmyType.FLEET and battle_terrain is not Terrain.SEA
 
 
-def _retreat_hop_is_legal(state: GameState, army: ArmyState, candidate: HexCoord) -> bool:
-    """Whether ``army`` could move on its own from where it stands to ``candidate`` -- the same
+def _retreat_hop_is_legal(state: GameState, army: ArmyState, battlefield: HexCoord, candidate: HexCoord) -> bool:
+    """Whether ``army`` could move on its own from the battlefield to ``candidate`` -- the same
     legality ``turn/move_execution.py find_transport_illegality()`` applies to an ordinary Move:
     a land unit cannot enter the sea (nor an Ent), a Fleet/Whale cannot go from land to land, and
-    so on. Rulebook [7.4]: a retreat is a movement, so it obeys the same terrain rules."""
+    so on. Rulebook [7.4]: a retreat is a movement, so it obeys the same terrain rules. (An
+    attacker's army still stands in its province of origin while the battle is resolved, so the
+    hop is measured from the battlefield, not from ``army.location``.)"""
 
     from ak_engine.turn.move_execution import find_transport_illegality
 
-    origin = state.provinces.get(army.location)
+    origin = state.provinces.get(battlefield)
     target = state.provinces.get(candidate)
     if target is None:
         return False
     return find_transport_illegality([army], [army.army_id], origin, target) is None
+
+
+@dataclass(slots=True)
+class _RetreatPlan:
+    """Where every army of one losing side retreats to, and who goes with it.
+
+    ``destinations``: army id -> destination (``None``: no legal destination, the army disbands or
+    turns mercenary). ``leader_destinations``: the commanders who retreat with their armies.
+    ``commander_after``: army id -> the commander an army has once it has retreated (a substitute
+    leader, or ``None`` = it joins the Garrison Commander of the province it retreats to)."""
+
+    destinations: dict[int, HexCoord | None] = field(default_factory=dict)
+    leader_destinations: dict[int, HexCoord] = field(default_factory=dict)
+    commander_after: dict[int, int | None] = field(default_factory=dict)
+
+
+def _substitute_commander(state: GameState, army: ArmyState, commanders: set[int]) -> int | None:
+    """The leader an army whose commander is dead retreats with (user ruling 2026-11-24): another
+    Hero or the King of the same Kingdom standing with it -- preferably one who already leads a
+    retreating contingent, else the King, else the lowest id. ``None`` if there is none."""
+
+    candidates = [
+        leader for leader in state.leaders.values()
+        if leader.kingdom_id == army.kingdom_id and leader.location == army.location
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda leader: (leader.leader_id not in commanders, not leader.is_king, leader.leader_id))
+    return candidates[0].leader_id
 
 
 def _plan_retreat_destinations(
@@ -1412,47 +1449,145 @@ def _plan_retreat_destinations(
     province_coord: HexCoord,
     *,
     attacker_origin: HexCoord | None,
-) -> dict[int, HexCoord | None]:
-    """The retreat destination of every army of one losing side, honouring terrain ([7.4], and
-    the user's rulings of 2026-11-24): a retreating army only goes where it can legally move --
-    infantry cannot "retreat" into the sea, a Fleet defeated on land can only retreat into the sea
-    -- and ``None`` (no destination) otherwise, which the caller turns into a disbandment/mercenary
-    band as usual.
+) -> _RetreatPlan:
+    """The retreat of one losing side, honouring [7.4] and the user's rulings of 2026-11-24.
 
-    "Le ritirate vengono condotte separatamente per ciascun personaggio che comanda un contingente.
-    Questo è importante se l'unico percorso di ritirata è verso il mare ed un solo comandante ha
-    tutte le Flotte": a land army with no legal destination of its own may still retreat by sea
-    aboard a retreating Fleet of the *same commander* that has room for it (``can_board``) -- it is
-    seated on that Fleet and follows its destination.
-    """
+    "Le ritirate vengono condotte separatamente per ciascun personaggio che comanda un contingente":
+    every commander retreats *with* his armies -- one destination for the whole contingent, the
+    first (in the order of [7.4]: for an attacker the province it invaded from, then its
+    neighbours, then the battlefield's neighbours) that every army of the contingent can reach, or
+    else the one the most of them can. An army that cannot follow (terrain) goes its own way
+    without a commander; a land army with no way over land is taken aboard a retreating Fleet of
+    its commander when the Fleet has room (``can_board``).
 
-    destinations: dict[int, HexCoord | None] = {}
+    An army whose commander is dead retreats with another Hero or the King of its Kingdom standing
+    with it; with none, it retreats alone into an adjacent friendly province, joining that
+    province's Garrison Commander; with no legal province at all, the caller disbands it (Green /
+    Depleted) or turns it mercenary. Terrain rulings: infantry cannot "retreat" into the sea, a
+    Fleet defeated on land retreats only into the sea."""
 
-    def choose(army: ArmyState) -> HexCoord | None:
-        friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
-        legal = {coord for coord in friendly if _retreat_hop_is_legal(state, army, coord)}
-        if attacker_origin is not None:
-            return select_attacker_retreat_destination(attacker_origin, army.location, bounds, legal)
-        return find_retreat_destination(army.location, bounds, legal)
+    plan = _RetreatPlan()
+    friendly_cache: dict[int | None, set[HexCoord]] = {}
 
-    carriers = [army for army in armies if army.army_type in (ArmyType.FLEET, ArmyType.WHALES)]
-    for army in carriers:
-        destinations[army.army_id] = choose(army)
+    def friendly(kingdom_id: int | None) -> set[HexCoord]:
+        if kingdom_id not in friendly_cache:
+            friendly_cache[kingdom_id] = state.friendly_provinces_for(kingdom_id)
+        return friendly_cache[kingdom_id]
+
+    def invaded_from(army: ArmyState) -> HexCoord | None:
+        # An attacker's army still stands in its own province of origin during the battle.
+        if attacker_origin is None:
+            return None
+        return army.location if army.location != province_coord else attacker_origin
+
+    def reaches(army: ArmyState, candidate: HexCoord) -> bool:
+        return candidate in friendly(army.kingdom_id) and _retreat_hop_is_legal(state, army, province_coord, candidate)
+
+    contingents: dict[int, list[ArmyState]] = {}
+    alone: list[ArmyState] = []
+    orphans: list[ArmyState] = []
     for army in armies:
-        if army.army_id in destinations:
-            continue
-        destination = choose(army)
-        if destination is None and army.commanded_by is not None:
+        if army.commanded_by is not None and army.commanded_by in state.leaders:
+            contingents.setdefault(army.commanded_by, []).append(army)
+        elif army.commanded_by is not None:
+            orphans.append(army)  # the commander is dead
+        else:
+            alone.append(army)
+    for army in orphans:
+        substitute = _substitute_commander(state, army, set(contingents))
+        if substitute is None:
+            alone.append(army)
+            plan.commander_after[army.army_id] = None
+        else:
+            contingents.setdefault(substitute, []).append(army)
+            plan.commander_after[army.army_id] = substitute
+
+    def followers_at(members: list[ArmyState], candidate: HexCoord) -> tuple[list[ArmyState], dict[int, int]]:
+        carriers = [
+            army for army in members
+            if army.army_type in (ArmyType.FLEET, ArmyType.WHALES) and reaches(army, candidate)
+        ]
+        carrier_ids = {carrier.army_id for carrier in carriers}
+        cargo = {carrier.army_id: [a.army_type for a in cargo_aboard(state, carrier.army_id)] for carrier in carriers}
+        followers = list(carriers)
+        riders: dict[int, int] = {}
+        for army in members:
+            if army.army_id in carrier_ids:
+                continue
+            if army.transported_by in carrier_ids or reaches(army, candidate):
+                followers.append(army)
+                continue
+            if army.transported_by is not None:
+                continue
             for carrier in carriers:
-                if (
-                    carrier.commanded_by == army.commanded_by
-                    and destinations.get(carrier.army_id) is not None
-                    and board_army(state, army.army_id, carrier.army_id)
+                if carrier.location == army.location and can_board(
+                    state, carrier, army.army_type, current_cargo_types=cargo[carrier.army_id]
                 ):
-                    destination = destinations[carrier.army_id]
+                    cargo[carrier.army_id].append(army.army_type)
+                    riders[army.army_id] = carrier.army_id
+                    followers.append(army)
                     break
-        destinations[army.army_id] = destination
-    return destinations
+        return followers, riders
+
+    for leader_id, members in contingents.items():
+        leader = state.leaders[leader_id]
+        leader_friendly = friendly(leader.kingdom_id) if leader.kingdom_id is not None else None
+        best: tuple[int, HexCoord, list[ArmyState], dict[int, int]] | None = None
+        for candidate in retreat_candidates(province_coord, bounds, invaded_from(members[0])):
+            if leader_friendly is not None and candidate not in leader_friendly:
+                continue
+            followers, riders = followers_at(members, candidate)
+            target = state.provinces.get(candidate)
+            at_sea = target is not None and target.effective_terrain() is Terrain.SEA
+            if not followers or (at_sea and not any(f.army_type in (ArmyType.FLEET, ArmyType.WHALES) for f in followers)):
+                continue  # a leader cannot walk into the sea without a ship
+            if best is None or len(followers) > best[0]:
+                best = (len(followers), candidate, followers, riders)
+            if len(followers) == len(members):
+                break
+        if best is None:
+            alone.extend(members)
+            for army in members:
+                plan.commander_after[army.army_id] = None
+            continue
+        _, destination, followers, riders = best
+        for rider_id, carrier_id in riders.items():
+            board_army(state, rider_id, carrier_id)
+        follower_ids = {army.army_id for army in followers}
+        for army in members:
+            if army.army_id in follower_ids:
+                plan.destinations[army.army_id] = destination
+                if army.commanded_by != leader_id:
+                    plan.commander_after[army.army_id] = leader_id
+            else:
+                alone.append(army)
+                plan.commander_after[army.army_id] = None
+        plan.leader_destinations[leader_id] = destination
+
+    for army in alone:
+        plan.commander_after.setdefault(army.army_id, None)
+        plan.destinations[army.army_id] = next(
+            (c for c in retreat_candidates(province_coord, bounds, invaded_from(army)) if reaches(army, c)), None
+        )
+    return plan
+
+
+def _settle_retreated_command(army: ArmyState, destination: HexCoord | None, plan: _RetreatPlan) -> None:
+    """After an army has retreated: it keeps its commander, takes the substitute that led it away,
+    or -- its commander being dead or unable to follow -- is left to the Garrison Commander of the
+    province it reached."""
+
+    if destination is not None and army.army_id in plan.commander_after:
+        army.commanded_by = plan.commander_after[army.army_id]
+
+
+def _move_retreating_commanders(state: GameState, plan: _RetreatPlan) -> None:
+    """The commanders retreat together with the armies they lead ([7.4])."""
+
+    for leader_id, destination in plan.leader_destinations.items():
+        leader = state.leaders.get(leader_id)
+        if leader is not None:
+            leader.location = destination
 
 
 def _select_side_commander(
@@ -3316,16 +3451,22 @@ def fight_battle(
         )
 
     retreat_bounds = MapBounds(state.board_width, state.board_height)
-    attacker_retreat_plan: dict[int, HexCoord | None] = {}
+    attacker_retreat_plan = _RetreatPlan()
     if attacker_clean_swept and loser_retreats:
         attacker_retreat_plan = _plan_retreat_destinations(
-            [a for a in attacker_armies if a.army_id not in attacker_pursuit_destroyed],
+            [
+                a for a in attacker_armies
+                if a.army_id not in attacker_pursuit_destroyed and not _whale_forced_retreat_applies(a, terrain)
+            ],
             state, retreat_bounds, province_coord, attacker_origin=attacker_origin,
         )
-    defender_retreat_plan: dict[int, HexCoord | None] = {}
+    defender_retreat_plan = _RetreatPlan()
     if defender_clean_swept and loser_retreats:
         defender_retreat_plan = _plan_retreat_destinations(
-            [a for a in defender_armies if a.army_id not in defender_pursuit_destroyed],
+            [
+                a for a in defender_armies
+                if a.army_id not in defender_pursuit_destroyed and not _whale_forced_retreat_applies(a, terrain)
+            ],
             state, retreat_bounds, province_coord, attacker_origin=None,
         )
 
@@ -3360,11 +3501,12 @@ def fight_battle(
             # must be filtered by its own alliances, not the claiming
             # kingdom's (which can include a kingdom this army has no
             # alliance with at all).
-            destination = attacker_retreat_plan.get(army.army_id)
+            destination = attacker_retreat_plan.destinations.get(army.army_id)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
+            _settle_retreated_command(army, destination, attacker_retreat_plan)
         elif attacker_clean_swept and _fleet_avoids_elimination(army, terrain):
             old_quality = army.quality
             army.quality = Quality.DEPLETED
@@ -3408,11 +3550,12 @@ def fight_battle(
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
         elif defender_clean_swept and loser_retreats:
-            destination = defender_retreat_plan.get(army.army_id)
+            destination = defender_retreat_plan.destinations.get(army.army_id)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
             )
+            _settle_retreated_command(army, destination, defender_retreat_plan)
         elif defender_clean_swept and _fleet_avoids_elimination(army, terrain):
             old_quality = army.quality
             army.quality = Quality.DEPLETED
@@ -3433,6 +3576,9 @@ def fight_battle(
                 score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
+
+    _move_retreating_commanders(state, attacker_retreat_plan)
+    _move_retreating_commanders(state, defender_retreat_plan)
 
     if defender_clean_swept:
         province.owner_kingdom_id = attacker_kingdom_id

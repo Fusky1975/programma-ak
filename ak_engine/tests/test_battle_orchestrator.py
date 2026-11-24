@@ -5895,3 +5895,89 @@ def test_qual_modfr_score_by_army_id_allows_a_kingdomless_mercenary():
     )
 
     assert 102 in scores
+
+
+# -- the commander retreats with the armies he leads ([7.4], user ruling 2026-11-24) --
+
+
+def _retreat_state(*, origin: HexCoord, neighbor_of_origin: HexCoord | None = None, origin_owner: int = 1) -> GameState:
+    """Same duel as test_attacker_forced_retreat_uses_the_origin_when_supplied (seed 1: a decisive
+    defender win), but the attacker's army stands in its province of origin, as it does while a
+    Move's battle is resolved."""
+
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=origin_owner))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    if neighbor_of_origin is not None:
+        state.add_province(ProvinceState(neighbor_of_origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    return state
+
+
+def test_a_defeated_attacker_retreats_to_its_origin_with_its_commander():
+    origin = HexCoord(0, 1)
+    state = _retreat_state(origin=origin)
+    state.add_leader(LeaderState(7, 1, "General", origin))
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, origin, commanded_by=7))
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        attacker_origin=origin, rng=random.Random(1),
+    )
+
+    assert 101 in report.retreated_army_ids
+    assert state.armies[101].location == origin
+    assert state.armies[101].commanded_by == 7
+    assert state.leaders[7].location == origin
+
+
+def test_a_defeated_attacker_and_its_commander_move_together_to_a_neighbor_of_a_lost_origin():
+    origin = HexCoord(0, 1)
+    safe = HexCoord(0, 0)
+    state = _retreat_state(origin=origin, neighbor_of_origin=safe, origin_owner=1)
+    state.provinces[origin].owner_kingdom_id = None  # lost: not friendly any more
+    state.add_leader(LeaderState(7, 1, "General", origin))
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, origin, commanded_by=7))
+
+    fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        attacker_origin=origin, rng=random.Random(1),
+    )
+
+    assert state.armies[101].location == safe
+    assert state.leaders[7].location == safe
+
+
+def test_the_army_of_a_dead_attacking_commander_retreats_with_another_hero():
+    origin = HexCoord(0, 1)
+    safe = HexCoord(0, 0)
+    state = _retreat_state(origin=origin, neighbor_of_origin=safe)
+    state.provinces[origin].owner_kingdom_id = None
+    state.add_leader(LeaderState(8, 1, "Hero", origin))
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, origin, commanded_by=99))  # 99 is dead
+
+    fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        attacker_origin=origin, rng=random.Random(1),
+    )
+
+    assert state.armies[101].location == safe
+    assert state.armies[101].commanded_by == 8
+    assert state.leaders[8].location == safe
+
+
+def test_the_army_of_a_dead_attacking_commander_without_a_hero_joins_the_garrison_of_a_friendly_province():
+    origin = HexCoord(0, 1)
+    state = _retreat_state(origin=origin)
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, origin, commanded_by=99))
+
+    fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        attacker_origin=origin, rng=random.Random(1),
+    )
+
+    assert state.armies[101].location == origin
+    assert state.armies[101].commanded_by is None
