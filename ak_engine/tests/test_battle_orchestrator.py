@@ -791,6 +791,8 @@ def test_fleet_retreats_normally_when_a_destination_exists():
     # -- no special-casing needed or applied.
     state = build_state()
     state.armies[201].army_type = ArmyType.FLEET
+    # A Fleet defeated on land can only retreat into the sea (user ruling 2026-11-24).
+    state.provinces[DEFENDER_HOME].terrain = Terrain.SEA
     # Phase 906: Fleet's own pursuit speed (2) doesn't guarantee an escape
     # from a front-line Heavy Cavalry pursuer the way build_state()'s own
     # original Garrison target's speed (1) always fails to -- forcing
