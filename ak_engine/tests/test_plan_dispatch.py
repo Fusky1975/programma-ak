@@ -2189,6 +2189,67 @@ def test_dispatch_fire_unknown_hero_id_reports_the_real_failure():
 # --- King/Hero distinction (Phase 40) ------------------------------------
 
 
+def _disband_phase(*army_ids: int) -> PlanPhase:
+    return PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, *army_ids, -1])
+
+
+def test_dispatch_disband_says_why_a_requested_army_was_not_disbanded():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Foreign", Race.HUMAN, Alignment.EVIL, HexCoord(7, 7)))
+    state.add_army(ArmyState(60, 2, ArmyType.BOWMEN, Quality.AVERAGE, location))
+    state.add_leader(LeaderState(50, 1, "A Hero", HexCoord(9, 9), is_king=False))
+    state.add_army(ArmyState(61, 1, ArmyType.BOWMEN, Quality.AVERAGE, location))
+
+    result = dispatch_phase(_disband_phase(60, 61, 999), state, kingdom_id=1, leader_id=50, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert result.succeeded == []
+    assert result.skipped_reasons == {
+        60: "it is not an army of their Kingdom",
+        61: "it is not in the same province",
+        999: "there is no such army",
+    }
+
+
+def test_dispatch_disband_of_a_skeletal_army_makes_it_dig_its_grave_not_wander_as_a_mercenary():
+    # [4.2.5]: skeletons given up by their commander dig their own grave.
+    location = HexCoord(3, 9)
+    state, _army_id = _state_with_army(location, {})
+    state.add_army(ArmyState(70, 1, ArmyType.BOWMEN, Quality.AVERAGE, location, commanded_by=LEADER_ID, is_skeletal=True))
+
+    result = dispatch_phase(_disband_phase(70), state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [] and result.skeletal_army_lost == [(70, ArmyType.BOWMEN)]
+    assert 70 not in state.armies
+
+
+def test_dispatch_disband_refuses_a_ship_with_units_still_aboard():
+    sea = HexCoord(4, 9)
+    state, _army_id = _state_with_army(HexCoord(3, 9), {sea: Terrain.SEA})
+    state.add_army(ArmyState(80, 1, ArmyType.FLEET, Quality.AVERAGE, sea, commanded_by=LEADER_ID))
+    state.add_army(ArmyState(81, 1, ArmyType.BOWMEN, Quality.AVERAGE, sea, commanded_by=LEADER_ID, transported_by=80))
+
+    result = dispatch_phase(_disband_phase(80), state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert result.skipped_reasons == {80: "units are still aboard it"}
+    assert state.armies[80].kingdom_id == 1 and state.armies[81].transported_by == 80
+
+
+def test_dispatch_disband_refuses_a_unit_carried_at_sea_but_releases_one_in_port():
+    sea = HexCoord(4, 9)
+    port = HexCoord(3, 9)
+    state, _army_id = _state_with_army(port, {sea: Terrain.SEA})
+    state.add_army(ArmyState(80, 1, ArmyType.FLEET, Quality.AVERAGE, sea, commanded_by=LEADER_ID))
+    state.add_army(ArmyState(81, 1, ArmyType.BOWMEN, Quality.AVERAGE, sea, commanded_by=LEADER_ID, transported_by=80))
+    state.add_army(ArmyState(82, 1, ArmyType.BOWMEN, Quality.AVERAGE, port, commanded_by=LEADER_ID, transported_by=80))
+
+    result = dispatch_phase(_disband_phase(81, 82), state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert result.skipped_reasons == {81: "it is at sea aboard a ship"}
+    assert result.succeeded == [82]
+    assert state.armies[82].is_mercenary and state.armies[82].transported_by is None
+
+
 def test_dispatch_disband_by_a_hero_skips_a_noncolocated_army():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})

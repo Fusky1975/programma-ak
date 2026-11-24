@@ -7716,6 +7716,14 @@ def describe_disband(
         if army is None:
             continue
         lines.append(render_disband_unit(leader_name, ARMY_TYPE_DESIGNATION[army.army_type], rng))
+    for _army_id, army_type in result.skeletal_army_lost:
+        lines.append(render_skeletal_army_dug_grave(ARMY_TYPE_DESIGNATION[army_type], rng))
+    # Project-original reasons for a request that could not be carried out (no sourced template), so
+    # a Disband order that did nothing no longer vanishes silently from the report.
+    for army_id, reason in result.skipped_reasons.items():
+        army = state.armies.get(army_id)
+        designation = ARMY_TYPE_DESIGNATION[army.army_type] if army is not None else f"army #{army_id}"
+        lines.append(f"{leader_name} could not disband {designation}: {reason}.")
     return lines
 
 
