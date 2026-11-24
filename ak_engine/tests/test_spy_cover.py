@@ -171,3 +171,19 @@ def test_run_turn_records_the_cover_and_clears_it_for_idle_leaders():
 
     assert state.leaders[1].cover_ability is Ability.SPY
     assert state.leaders[2].cover_ability is None
+
+
+def test_a_thief_with_banditry_or_piracy_gets_spy_cover_from_a_practice_thief_order():
+    # "This action also counts as a normal 'Spy' action in all respects" (Banditry/Piracy text).
+    thievery = PlanPhase(label="P0", action=ActionCode.PRACTICE, obj=Ability.THIEF.value, extra=[0])
+    plan = ActionPlan(1, [PlanSegment(0, 0, (), {"P0": thievery})])
+
+    assert compute_cover_ability(plan) is None
+    assert compute_cover_ability(plan, raids_as_bandit_or_pirate=True) is Ability.SPY
+
+
+def test_banditry_cover_does_not_apply_to_practising_another_talent():
+    melee = PlanPhase(label="P0", action=ActionCode.PRACTICE, obj=Ability.MELEE.value, extra=[0])
+    plan = ActionPlan(1, [PlanSegment(0, 0, (), {"P0": melee})])
+
+    assert compute_cover_ability(plan, raids_as_bandit_or_pirate=True) is None

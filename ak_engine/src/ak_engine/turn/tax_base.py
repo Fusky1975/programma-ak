@@ -170,7 +170,7 @@ from ak_engine.turn.blackmail import resolve_unpaid_blackmail
 from ak_engine.turn.monster_raids import resolve_province_raids
 
 
-def province_tax_yield(province: ProvinceState) -> int | None:
+def province_tax_yield(province: ProvinceState, *, include_raids: bool = True) -> int | None:
     """This province's own real expected tax revenue this turn, or ``None``
     if its base ``tax`` was never recorded -- see module docstring for the
     exact scar-reduction-then-percent-modifier formula and why an unknown
@@ -190,7 +190,9 @@ def province_tax_yield(province: ProvinceState) -> int | None:
     after_scar_and_mines = max(0, province.tax - province.scar_terrain_gold_reduction + province.mine_gold_bonus)
     after_modifier = after_scar_and_mines * (100 + province.tax_modifier_percent) // 100
     after_earthquake_flat = after_modifier - province.earthquake_flat_reduction
-    return max(0, after_earthquake_flat)
+    # What a Thief with Banditry/Piracy has raided this turn is no longer the owner's to collect.
+    raided = province.tax_raided_this_turn if include_raids else 0
+    return max(0, after_earthquake_flat - raided)
 
 
 def compute_tax_base(state: GameState, kingdom_id: int) -> int:

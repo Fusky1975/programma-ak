@@ -53,9 +53,27 @@ def _phase_has_steal_tactic(phase: PlanPhase) -> bool:
     return any(tactic.maneuver is Maneuver.STEAL for tactic in tactics)
 
 
-def compute_cover_ability(plan: ActionPlan | None, special_plan: tuple = ()) -> Ability | None:
+def _is_practice_thief(phase: PlanPhase) -> bool:
+    from ak_engine.turn.practice_decode import decode_practice_phase
+
+    if phase.action is not ActionCode.PRACTICE:
+        return False
+    try:
+        return decode_practice_phase(phase).ability is Ability.THIEF
+    except Exception:  # noqa: BLE001 -- a malformed phase is some other code's error to report
+        return False
+
+
+def compute_cover_ability(
+    plan: ActionPlan | None, special_plan: tuple = (), *, raids_as_bandit_or_pirate: bool = False
+) -> Ability | None:
     """The Talent giving ``plan`` its cover this turn: ``Ability.SPY`` for a Spy/Trail order,
     ``Ability.THIEF`` for a Steal tactic, the last of them in plan order; ``None`` for neither.
+
+    ``raids_as_bandit_or_pirate``: a Thief holding Banditry/Piracy who practices thievery acts as a
+    bandit/pirate, and "this action also counts as a normal 'Spy' action in all respects" -- so a
+    Practice Thief order gives Spy cover too (the plan alone cannot say where he will be, so holding the
+    ability is what counts).
     """
 
     cover: Ability | None = None
@@ -64,6 +82,8 @@ def compute_cover_ability(plan: ActionPlan | None, special_plan: tuple = ()) -> 
             for label in sorted(segment.phases):
                 phase = segment.phases[label]
                 if phase.action in (ActionCode.ASPY, ActionCode.TRAIL):
+                    cover = Ability.SPY
+                elif raids_as_bandit_or_pirate and _is_practice_thief(phase):
                     cover = Ability.SPY
                 elif _phase_has_steal_tactic(phase):
                     cover = Ability.THIEF

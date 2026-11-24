@@ -1019,14 +1019,24 @@ def _maybe_raid_as_bandit(state: GameState, leader: LeaderState, ability: Abilit
     if not is_sea and AdvancedAbility.THIEF_BANDITRY not in leader.advanced_abilities:
         return 0
 
-    base = province_tax_yield(province) or 0
-    amount = round(base * (PIRACY_TAX_PERCENT if is_sea else BANDITRY_TAX_PERCENT))
-    if is_sea and amount == 0:
-        amount = PIRACY_ZERO_TAX_GOLD_FLOOR
-
-    victim_kingdom = state.kingdoms[province.owner_kingdom_id]
-    looted = min(amount, victim_kingdom.treasury)
-    victim_kingdom.treasury -= looted
+    # The share is taken from the province's own tax income ("the province owner's taxation will be
+    # reduced accordingly"): the thief gets it whatever the owner's treasury holds, the owner collects that
+    # much less at the turn's end, and over the turn's phases the thief can never snare more than the
+    # province yields (user ruling 2026-11-24, both Banditry and Piracy).
+    base = province_tax_yield(province, include_raids=False) or 0
+    remaining = max(0, province_tax_yield(province) or 0)
+    amount = min(remaining, round(base * (PIRACY_TAX_PERCENT if is_sea else BANDITRY_TAX_PERCENT)))
+    if amount > 0:
+        province.tax_raided_this_turn += amount
+        looted = amount
+    elif is_sea and base == 0:
+        # Piracy in a zero-taxation province: "the Thief will still often loot 1 gold from the treasury of
+        # the province owner".
+        victim_kingdom = state.kingdoms[province.owner_kingdom_id]
+        looted = min(PIRACY_ZERO_TAX_GOLD_FLOOR, victim_kingdom.treasury)
+        victim_kingdom.treasury -= looted
+    else:
+        looted = 0
     state.kingdoms[leader.kingdom_id].treasury += looted
     if looted > 0:
         from ak_engine.turn.experience import add_experience

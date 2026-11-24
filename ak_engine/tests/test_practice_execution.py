@@ -2440,7 +2440,9 @@ def test_maybe_raid_as_bandit_loots_fifteen_percent_of_tax_base_on_land():
     state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=100)
     amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
     assert amount == 15
-    assert state.kingdoms[2].treasury == 100 - 15
+    # The share comes out of the province's tax income, not the owner's treasury.
+    assert state.kingdoms[2].treasury == 100
+    assert state.provinces[BANDITRY_LOCATION].tax_raided_this_turn == 15
     assert state.kingdoms[1].treasury == 15
 
 
@@ -2448,7 +2450,8 @@ def test_maybe_raid_as_piracy_loots_fifty_percent_of_tax_value_at_sea():
     state = _state_for_banditry(abilities={AdvancedAbility.THIEF_PIRACY}, terrain=Terrain.SEA, tax=100)
     amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
     assert amount == 50
-    assert state.kingdoms[2].treasury == 100 - 50
+    assert state.kingdoms[2].treasury == 100
+    assert state.provinces[BANDITRY_LOCATION].tax_raided_this_turn == 50
 
 
 def test_banditry_only_leader_loots_nothing_at_sea():
@@ -2476,13 +2479,38 @@ def test_banditry_loots_nothing_in_a_zero_tax_land_province():
     assert amount == 0
 
 
-def test_loot_is_capped_at_the_victims_own_treasury():
+def test_the_loot_does_not_depend_on_what_the_owners_treasury_holds():
+    # [Banditry]: "the Thief will rake in about 15% of the province's tax base" -- an empty treasury
+    # does not make him rake in nothing (the owner's taxation is what suffers).
     state = _state_for_banditry(
-        abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=100, victim_treasury=5
+        abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=100, victim_treasury=0
     )
     amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
-    assert amount == 5
+    assert amount == 15
     assert state.kingdoms[2].treasury == 0
+
+
+def test_over_the_turns_phases_a_pirate_never_snares_more_than_the_province_yields():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_PIRACY}, terrain=Terrain.SEA, tax=100)
+
+    gains = [_maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0)) for _ in range(5)]
+
+    assert gains == [50, 50, 0, 0, 0]  # 50% per phase, but only the province's 100 gold exist
+    assert state.provinces[BANDITRY_LOCATION].tax_raided_this_turn == 100
+    assert state.kingdoms[1].treasury == 100
+
+
+def test_what_a_pirate_raided_is_no_longer_collected_by_the_provinces_owner():
+    from ak_engine.turn.tax_base import province_tax_yield
+
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_PIRACY}, terrain=Terrain.SEA, tax=100)
+    province = state.provinces[BANDITRY_LOCATION]
+    assert province_tax_yield(province) == 100
+
+    _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+
+    assert province_tax_yield(province) == 50  # the owner's taxation is reduced accordingly
+    assert province_tax_yield(province, include_raids=False) == 100
 
 
 def test_maybe_raid_as_bandit_credits_spy_experience_on_a_real_loot():
@@ -2504,7 +2532,7 @@ def test_execute_practice_threads_gold_looted_as_bandit_through_the_result():
 
     assert result.gold_looted_as_bandit == 15
     assert state.kingdoms[1].treasury == 15
-    assert state.kingdoms[2].treasury == 100 - 15
+    assert state.kingdoms[2].treasury == 100  # the owner loses taxes at the turn's end, not treasury
 
 
 def test_execute_practice_group_never_raids_as_bandit():

@@ -1427,6 +1427,10 @@ class ProvinceState:
     # percent``/``terrain_override`` now are (Phase 1046's own
     # ``turn/turn_processor.py _replenish_turn_scoped_state()`` fix).
     earthquake_flat_reduction: int = 0
+    # Thief Banditry/Piracy (2026-11-24): the gold raided from this province's own tax income this turn,
+    # subtracted from what its owner collects at the turn's end ("the province owner's taxation will be
+    # reduced accordingly"); reset every turn like `earthquake_flat_reduction`.
+    tax_raided_this_turn: int = 0
     # Illusory Fog (Phase 207) -- see module docstring. Set by a
     # successful cast (turn/cast_execution.py _execute_illus_fog).
     # Cleared to False at the end of every run_turn() call (Phase 576) --
