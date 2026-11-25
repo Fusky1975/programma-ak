@@ -1281,7 +1281,8 @@ def test_resolve_feature_power_attempt_chance_cast_spell():
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
     feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
     state.add_feature(feature)
-    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN, owner_kingdom_id=2)  # Tornado needs an enemy province
 
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, _chance_event(Power.CAST_SPELL), random.Random(0))
 
