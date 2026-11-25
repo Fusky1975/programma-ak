@@ -1373,6 +1373,7 @@ from ak_engine.models.discovery import (
     DISCOVERY_NAME,
     Discovery,
     describe_discovery_line,
+    discovery_benefits_text,
     discovery_effect_description,
     sorted_kingdom_discoveries,
 )
@@ -1397,7 +1398,7 @@ from ak_engine.report.ascii_map import (
     paginate_known_columns,
     select_layout_tier,
 )
-from ak_engine.report.layout import flow_paragraph, flow_prose_in_lines, flow_sentences, looks_like_prose
+from ak_engine.report.layout import flow_paragraph, flow_prose_in_lines, flow_sentences, looks_like_prose, normalize_sentences
 from ak_engine.report.prose import render
 from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
@@ -6416,7 +6417,7 @@ def render_character_wanders_away(
 _LWANDTO_TEMPLATES: list[str] = [
     "< {has }just recently wandered into ^S from @.",
     "< has arrived in ^S from @{, attracted/Rdrawn by the fine/Rgreat "
-    "(or infamous?/Rterrible?) reputation of its king}.",
+    "(or infamous/Rterrible?) reputation of its king}.",
     "< hiked/Ssailed into ^S.< had grown bored/Rtired with @ and was "
     "attracted/Rdrawn there by tales/Rrumors of its fine/Rwonderful "
     "scotch/Rwines{ and even more_wonderful/Rfiner "
@@ -10562,7 +10563,8 @@ def render_sage_discovery(character_name: str, discovery: Discovery, rng: random
     """Renders DISCOV.X's own device-discovery success line for ``discovery``."""
 
     values = {">": f"{character_name}'s", "<": character_name, "!": DISCOVERY_NAME[discovery]}
-    return render(_DISCOVERY_TEMPLATE, values, rng=rng)
+    # The real reports end the announcement with an exclamation mark ("... called the Analytical Psychology!").
+    return render(_DISCOVERY_TEMPLATE, values, rng=rng) + "!"
 
 
 # SAY.PAS `_LNoDisc` -- Sage's device-discovery failure line (the same
@@ -10611,7 +10613,14 @@ def describe_sage_discovery(
     if result.ability is not Ability.SAGE:
         return []
     if result.discovery_granted is not None:
-        return [render_sage_discovery(character_name, result.discovery_granted, rng)]
+        discovery = result.discovery_granted
+        # ... and tell what the invention is good for, as the real reports do ("The following benefits are
+        # conferred by the Analytical Psychology: Analytical Psychology is taught to all characters ...").
+        return [
+            render_sage_discovery(character_name, discovery, rng),
+            f"The following benefits are conferred by the {DISCOVERY_NAME[discovery]}:",
+            discovery_benefits_text(discovery),
+        ]
     return [render_sage_no_discovery(character_name, rng)]
 
 
@@ -11346,21 +11355,47 @@ def describe_desertions(result: MaintenanceResult, state: GameState, *, king_nam
     return lines
 
 
-def describe_unpaid_armies(result: MaintenanceResult) -> list[str]:
-    """One project-original line per army whose upkeep the treasury could not cover ([9.2], user ruling
-    2026-11-26): what became of it (desertion, dissolution, a lost rank, or nothing)."""
+_UNPAID_ARMY_TEMPLATES: dict[str, list[str]] = {
+    "disbanded": [
+        "The {name}, left unpaid, dissolved and went back to the farms.",
+        "No pay came for the {name}, and its soldiers drifted off one by one to their villages until nothing was left of it.",
+        "With the treasury empty, the {name} laid down its arms and was swallowed up by the countryside.",
+    ],
+    "deserted": [
+        "The {name}, left unpaid, deserted and now sells its sword to the highest bidder.",
+        "Tired of waiting for wages that never came, the {name} marched off in the night and took up service as a mercenary band.",
+        "The {name} was not paid, and so it paid the Crown back in kind: it deserted and went looking for a better employer.",
+    ],
+    "demoted": [
+        "The {name} went unpaid and lost a rank.",
+        "Hungry and unpaid, the {name} grew slack and sloppy, and is no longer what it was.",
+        "Discipline frayed in the unpaid {name}, which has slipped down a rank.",
+    ],
+    "grumbled": [
+        "The {name} went unpaid, and grumbled.",
+        "The treasury could not pay the {name} this turn; its soldiers muttered darkly about it, but stayed at their posts.",
+        "The {name} saw no wages this turn, though it kept its ranks and its temper, for now.",
+    ],
+}
 
+
+def describe_unpaid_armies(result: MaintenanceResult, rng: random.Random | None = None) -> list[str]:
+    """One project-original line per army whose upkeep the treasury could not cover ([9.2], user ruling
+    2026-11-26): what became of it (desertion, dissolution, a lost rank, or nothing). Several wordings each."""
+
+    rng = rng if rng is not None else random.Random(0)
     lines: list[str] = []
     for army_id in result.unpaid_army_ids:
         name = result.army_names.get(army_id, f"Army {army_id}")
         if army_id in result.disbanded_army_ids:
-            lines.append(f"The {name}, left unpaid, dissolved and went back to the farms.")
+            outcome = "disbanded"
         elif army_id in result.deserted_army_ids:
-            lines.append(f"The {name}, left unpaid, deserted and now sells its sword to the highest bidder.")
+            outcome = "deserted"
         elif army_id in result.demoted_army_ids:
-            lines.append(f"The {name} went unpaid and lost a rank.")
+            outcome = "demoted"
         else:
-            lines.append(f"The {name} went unpaid, and grumbled.")
+            outcome = "grumbled"
+        lines.append(pick_variant(_UNPAID_ARMY_TEMPLATES[outcome], rng).format(name=name))
     return lines
 
 
@@ -13884,7 +13919,7 @@ def describe_finances_report(
         army_cost = maintenance.army_debited
         story_sink.append(render_finance_leader_costs(maintenance.debited - army_cost, rng))
         story_sink.append(render_finance_army_costs(army_cost, rng))
-        story_sink.extend(describe_unpaid_armies(maintenance))
+        story_sink.extend(describe_unpaid_armies(maintenance, rng))
         story_sink.extend(describe_desertions(maintenance, state, king_name=king_name, rng=rng))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
     lines.append("")
@@ -15851,7 +15886,7 @@ def _office_title_acquired_paragraph(office: Office, values: dict[str, str]) -> 
     separate top-of-report block would.
     """
 
-    return render(OFFICE_TITLE_DESCRIPTION[office], values)
+    return normalize_sentences(render(OFFICE_TITLE_DESCRIPTION[office], values))
 
 
 def _army_office_candidate_line(state: GameState, office: Office, holder: ArmyOfficeHolder, *, prefix: str) -> str:
@@ -16360,7 +16395,7 @@ def describe_adventure_report(state: GameState, kingdom_id: int, rng: random.Ran
     than guessing one.
     """
 
-    lines = ["ADVENTURE", _ADVENTURE_REPORT_OPENING, _ADVENTURE_REPORT_COLUMN_HEADER]
+    lines = ["ADVENTURE", _ADVENTURE_REPORT_OPENING, "", _ADVENTURE_REPORT_COLUMN_HEADER]
 
     by_province: dict[HexCoord, list[Feature]] = {}
     for feature in state.features.values():

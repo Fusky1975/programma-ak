@@ -8,7 +8,13 @@ from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbi
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, discovery_effect_description
+from ak_engine.models.discovery import (
+    DISCOVERY_NAME,
+    Discovery,
+    describe_discovery_line,
+    discovery_benefits_text,
+    discovery_effect_description,
+)
 from ak_engine.models.feature import Feature, FeatureType, RaidEvent
 from ak_engine.models.game_state import (
     ArmyState,
@@ -6522,7 +6528,7 @@ def test_practice_already_maxed_template_is_the_confirmed_hardcoded_say():
 def test_render_sage_discovery_names_the_granted_discovery():
     rng = ScriptedRandom([0.1] * 4)
     result = render_sage_discovery("Aldric", Discovery.COMPASS, rng)
-    assert result == "in Aldric's sagely researches, Aldric discovered a fabulous invention called the Compass"
+    assert result == "in Aldric's sagely researches, Aldric discovered a fabulous invention called the Compass!"
 
 
 def test_render_sage_discovery_picks_an_before_a_vowel_initial_discovery():
@@ -6530,7 +6536,7 @@ def test_render_sage_discovery_picks_an_before_a_vowel_initial_discovery():
     # this only confirms ^A resolution runs at all, via a vowel-initial name.
     rng = ScriptedRandom([0.1] * 4)
     result = render_sage_discovery("Aldric", Discovery.ASBESTOS_CLOTHING, rng)
-    assert result == "in Aldric's sagely researches, Aldric discovered a fabulous invention called the Asbestos Clothing"
+    assert result == "in Aldric's sagely researches, Aldric discovered a fabulous invention called the Asbestos Clothing!"
 
 
 def test_render_sage_no_discovery_left_branch():
@@ -6557,10 +6563,17 @@ def test_describe_sage_discovery_empty_for_a_non_sage_ability():
     assert lines == []
 
 
+_COMPASS_LINES = lambda rng_values: [  # noqa: E731
+    render_sage_discovery("Aldric", Discovery.COMPASS, ScriptedRandom(rng_values)),
+    "The following benefits are conferred by the Compass:",
+    discovery_benefits_text(Discovery.COMPASS),
+]
+
+
 def test_describe_sage_discovery_renders_the_success_line_when_a_discovery_was_granted():
     result = PracticeExecutionResult(ability=Ability.SAGE, device_discovered=True, discovery_granted=Discovery.COMPASS)
     lines = describe_sage_discovery(result, character_name="Aldric", rng=ScriptedRandom([0.1] * 4))
-    assert lines == [render_sage_discovery("Aldric", Discovery.COMPASS, ScriptedRandom([0.1] * 4))]
+    assert lines == _COMPASS_LINES([0.1] * 4)
 
 
 def test_describe_sage_discovery_renders_the_failure_line_when_no_roll_succeeded():
@@ -6741,7 +6754,7 @@ def test_describe_turn_results_practice_renders_only_the_discovery_line_when_des
 
     lines = describe_turn_results(entries, state, rng, ability_names={Ability.SAGE: "Sageness"})
 
-    assert lines == [render_sage_discovery("Aldric", Discovery.COMPASS, ScriptedRandom([0.1] * 10))]
+    assert lines == _COMPASS_LINES([0.1] * 10)
 
 
 def test_describe_turn_results_practice_renders_both_lines_in_order_when_both_are_real():
@@ -6759,7 +6772,7 @@ def test_describe_turn_results_practice_renders_both_lines_in_order_when_both_ar
 
     assert lines == [
         "Aldric practiced Sageness even though Aldric had already reached the maximum skill level.",
-        render_sage_discovery("Aldric", Discovery.COMPASS, ScriptedRandom([0.1] * 10)),
+        *_COMPASS_LINES([0.1] * 10),
     ]
 
 
@@ -14283,7 +14296,8 @@ def test_describe_adventure_report_opening_lines():
 
     assert lines[0] == "ADVENTURE"
     assert lines[1] == _ADVENTURE_OPENING
-    assert lines[2] == _ADVENTURE_COLUMN_HEADER
+    assert lines[2] == ""
+    assert lines[3] == _ADVENTURE_COLUMN_HEADER
 
 
 def test_describe_adventure_report_no_discovered_features_renders_none_at_present():
@@ -14292,7 +14306,7 @@ def test_describe_adventure_report_no_discovered_features_renders_none_at_presen
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == ["None at present"]
+    assert lines[4:] == ["None at present"]
 
 
 def test_describe_adventure_report_lists_a_discovered_feature():
@@ -14311,7 +14325,7 @@ def test_describe_adventure_report_lists_a_discovered_feature():
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "Mongu           305  100  Cave             2  Swordsman       ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
@@ -14325,7 +14339,7 @@ def test_describe_adventure_report_looted_feature_shows_sacked_and_looted():
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(1, 1)          101    0  Crypt            3  sacked &looted  ",
     ]
 
@@ -14338,7 +14352,7 @@ def test_describe_adventure_report_discovery_level_1_renders_question_mark():
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(2, 2)          202    0  Tomb             4  Mummy               ?",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
@@ -14350,7 +14364,7 @@ def test_describe_adventure_report_undiscovered_feature_is_excluded():
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == ["None at present"]
+    assert lines[4:] == ["None at present"]
 
 
 def test_describe_adventure_report_only_shows_this_kingdoms_own_discovery():
@@ -14361,7 +14375,7 @@ def test_describe_adventure_report_only_shows_this_kingdoms_own_discovery():
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == ["None at present"]
+    assert lines[4:] == ["None at present"]
 
 
 def test_describe_adventure_report_monster_name_prefix_is_stripped():
@@ -14372,7 +14386,7 @@ def test_describe_adventure_report_monster_name_prefix_is_stripped():
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(0, 0)          0    0  Petrified Fores  7  Eagle           ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
@@ -14384,7 +14398,7 @@ def test_describe_adventure_report_no_guardian_recorded_omits_monster_segment():
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(0, 0)          0    0  Cave             8                  ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
@@ -14404,7 +14418,7 @@ def test_describe_adventure_report_sorts_provinces_then_features_by_id():
 
     lines = describe_adventure_report(state, 1, random.Random(0))
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(0, 0)          0    0  Tomb             1  Mummy           ",
         _ADVENTURE_UNKNOWN_RICHES,
         "                           Crypt            3  Ghost           ",
@@ -14431,7 +14445,7 @@ def test_describe_adventure_report_reveals_treasure_when_the_roll_succeeds():
 
     lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(0, 0)          0    0  Crypt            9  Gargoyle        ",
         "                           /Large Hoard of Gold (#9): 10-25 gold",
     ]
@@ -14452,7 +14466,7 @@ def test_describe_adventure_report_hides_treasure_when_the_roll_fails():
 
     lines = describe_adventure_report(state, 1, _AlwaysFalseRandom())
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(0, 0)          0    0  Crypt           10  Gargoyle        ",
         _ADVENTURE_UNKNOWN_RICHES,
     ]
@@ -14473,7 +14487,7 @@ def test_describe_adventure_report_reveals_a_magic_item_treasure():
 
     lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(0, 0)          0    0  Pyramid         11  Lich            ",
         '                           /Reflector of Armies (#11): Cast "Phantasmal Armies" at skill-2',
     ]
@@ -14495,7 +14509,7 @@ def test_describe_adventure_report_looted_feature_never_shows_a_treasure_line():
 
     lines = describe_adventure_report(state, 1, _AlwaysTrueRandom())
 
-    assert lines[3:] == [
+    assert lines[4:] == [
         "(0, 0)          0    0  Crypt           12  sacked &looted  ",
     ]
 
@@ -14698,6 +14712,7 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
         "terrorize the populace by night.  Here are these lairs:",
+        "",
         "Province             %Exp  Features and F#     Monster         Special",
         "None at present",
         "",
@@ -14952,6 +14967,7 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "O Luminous One, adventure awaits thee and thy companions at every corner of "
         "the globe!  Fearsome monsters lurk in their cavernous hidden lairs by day and "
         "terrorize the populace by night.  Here are these lairs:",
+        "",
         "Province             %Exp  Features and F#     Monster         Special",
         "None at present",
         "",
@@ -18344,6 +18360,8 @@ def test_a_commander_who_finds_no_excuse_is_reported_with_the_precursor_clause()
 
 
 def test_describe_finances_report_narrates_the_unpaid_armies():
+    from ak_engine.report.turn_report import _UNPAID_ARMY_TEMPLATES
+
     state = _finances_state_with_owned_province()
     state.turn_maintenance_by_kingdom[1] = MaintenanceResult(
         debited=0,
@@ -18356,10 +18374,17 @@ def test_describe_finances_report_narrates_the_unpaid_armies():
 
     lines = describe_finances_report(state, 1, random.Random(0))
 
-    assert "The 1st Legion went unpaid, and grumbled." in lines
-    assert "The 2nd Legion went unpaid and lost a rank." in lines
-    assert any(line.startswith("The 3rd Legion, left unpaid, deserted") for line in lines)
-    assert any(line.startswith("The 4th Legion, left unpaid, dissolved") for line in lines)
+    for outcome, name in (("grumbled", "1st"), ("demoted", "2nd"), ("deserted", "3rd"), ("disbanded", "4th")):
+        wordings = {t.format(name=f"{name} Legion") for t in _UNPAID_ARMY_TEMPLATES[outcome]}
+        assert wordings & set(lines), outcome
+
+
+def test_every_unpaid_army_outcome_has_several_wordings():
+    from ak_engine.report.turn_report import _UNPAID_ARMY_TEMPLATES
+
+    assert set(_UNPAID_ARMY_TEMPLATES) == {"disbanded", "deserted", "demoted", "grumbled"}
+    assert all(len(variants) >= 3 for variants in _UNPAID_ARMY_TEMPLATES.values())
+
 
 
 # -- Diplomacy: the issuer's order notes, BREAK.X and the Diplomatic Furor ---------
@@ -18440,3 +18465,36 @@ def test_a_mutual_break_treat_is_read_by_both():
 
     assert len(describe_diplomacy_change_notices(state, 1, random.Random(0))) == 1
     assert len(describe_diplomacy_change_notices(state, 2, random.Random(0))) == 1
+
+
+def test_the_benefits_text_stops_before_the_from_now_on_addendum():
+    # SE3__T6.K1: "The following benefits are conferred by the Analytical Psychology: Analytical Psychology is taught
+    # to all characters employed by the Kingdom. Any Charm spell ... will never Search features or risk combat."
+    text = discovery_benefits_text(Discovery.ANALYTICAL_PSYCHOLOGY)
+    assert text.startswith("Analytical Psychology is taught to all characters employed by the Kingdom.")
+    assert text.endswith("will never Search features or risk combat.")
+    assert "From now on" not in text
+    assert discovery_benefits_text(Discovery.SCREW).startswith("The Screw helps your woodworking industry.")
+
+
+def test_sentences_that_run_into_the_next_word_are_spaced_and_capitalized():
+    from ak_engine.report.layout import normalize_sentences
+
+    assert normalize_sentences("go through a ford.but their enemy charged") == "go through a ford.  But their enemy charged"
+    assert normalize_sentences("in the world.his infamy has") == "in the world.  His infamy has"
+    assert normalize_sentences("e.g. this stays") == "e.g. this stays"
+    assert normalize_sentences("found 3.5 gold") == "found 3.5 gold"
+
+
+def test_the_fine_or_infamous_reputation_template_resolves_to_one_word():
+    from ak_engine.report.prose import render as render_template
+    from ak_engine.report.turn_report import _LWANDTO_TEMPLATES
+
+    texts = [
+        render_template(_LWANDTO_TEMPLATES[1], {"<": "Hero", "^S": "Here", "@": "There"}, rng=random.Random(seed))
+        for seed in range(40)
+    ]
+    with_clause = [t for t in texts if "reputation" in t]
+    assert with_clause  # the optional clause does come up
+    assert all("infamous?terrible" not in t for t in texts)
+    assert all("(or infamous?)" in t or "(or terrible?)" in t for t in with_clause)
