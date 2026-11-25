@@ -2672,6 +2672,14 @@ def _resolve_search_encounter(
                 ice_suspend_immune = False
             if ice_suspend_immune:
                 return None
+            if target_is_monster and monster_species in ICE_SUSPENSION_FLYING_MONSTERS:
+                # Flying monsters are never frozen or slowed ([4.2.4]: "funziona in maniera
+                # differente contro mostri volanti"): they crash, whatever their hit points.
+                target.hit_points -= roll_ice_suspension_flying_crash_damage(rng)
+                caster.bonus_unanswered_attacks += roll_ice_suspension_flying_bonus_rounds(rng)
+                if target.hit_points <= 0:
+                    return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
+                return None
             if ice_suspension_is_frozen(target.hit_points, level):
                 # Confirmed by the user: the frozen branch simplifies to a win.
                 outcome = _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
@@ -2681,12 +2689,6 @@ def _resolve_search_encounter(
                 if outcome is not None:
                     outcome.ice_suspend_immobilized = True
                 return outcome
-            if target_is_monster and monster_species in ICE_SUSPENSION_FLYING_MONSTERS:
-                target.hit_points -= roll_ice_suspension_flying_crash_damage(rng)
-                caster.bonus_unanswered_attacks += roll_ice_suspension_flying_bonus_rounds(rng)
-                if target.hit_points <= 0:
-                    return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
-                return None
             caster.bonus_unanswered_attacks += ice_suspension_slowed_bonus_rounds(target.hit_points, level)
             return None
 

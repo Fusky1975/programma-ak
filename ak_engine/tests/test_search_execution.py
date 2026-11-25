@@ -7225,3 +7225,21 @@ def test_a_king_of_any_temper_never_refuses_to_search():
     result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5] * 40))
 
     assert result.reason != "refused to face the guardian"
+
+
+def test_execute_search_cast_ice_suspend_on_a_flying_monster_crashes_it_even_when_its_hit_points_are_low():
+    # [4.2.4]: against flying monsters the spell "funziona in maniera differente": they crash for
+    # 5-10 points and give 1-3 free rounds; they are never frozen, however few hit points remain.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.ICE_SUSPEND)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.ice_suspension_is_frozen", return_value=True
+    ), patch("ak_engine.turn.search_execution.roll_ice_suspension_flying_crash_damage", return_value=1) as crash, patch(
+        "ak_engine.turn.search_execution.roll_ice_suspension_flying_bonus_rounds", return_value=0
+    ), patch("ak_engine.turn.search_execution.roll_melee_attack", return_value=0):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert crash.called
+    assert result.ice_suspend_immobilized is False

@@ -2492,6 +2492,15 @@ def _execute_flood(
     return CastExecutionResult(request, applied=True, discovery_defended=Discovery.FLOOD_DAMS if defended else None)
 
 
+def _is_enemy_province(state: GameState, caster: LeaderState, province: ProvinceState) -> bool:
+    """[4.2.4] Tornado/Earthquake need an *enemy* province: one owned by a Kingdom other than
+    the caster's own and not allied with it (the same own-or-allied vs enemy split the movement
+    rules use). An unowned province is nobody's enemy."""
+
+    owner = province.owner_kingdom_id
+    return owner is not None and not state.is_allied(owner, caster.kingdom_id)
+
+
 def _execute_tornado(
     state: GameState,
     leader_id: int,
@@ -2540,8 +2549,9 @@ def _execute_tornado(
     resolved = _resolve_province_cast(state, leader_id, request, board_width)
     if isinstance(resolved, CastExecutionResult):
         return resolved
-    caster, coord, _province = resolved
-
+    caster, coord, province = resolved
+    if not _is_enemy_province(state, caster, province):
+        return CastExecutionResult(request, applied=False, reason="target province is not an enemy province")
     early = _province_cast_gate(state, caster, coord, request, Ability.ELEMENTAL, rng, wand_skill_level)
     if early is not None:
         return early
@@ -2681,6 +2691,8 @@ def _execute_earthquake(
     caster, coord, province = resolved
     if province.effective_terrain() is Terrain.SEA and AdvancedAbility.ENHANCED_EARTHQUAKE not in caster.advanced_abilities:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
+    if province.effective_terrain() is not Terrain.SEA and not _is_enemy_province(state, caster, province):
+        return CastExecutionResult(request, applied=False, reason="target province is not an enemy province")
 
     early = _province_cast_gate(state, caster, coord, request, Ability.ELEMENTAL, rng, wand_skill_level)
     if early is not None:

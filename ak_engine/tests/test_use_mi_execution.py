@@ -114,7 +114,7 @@ def test_execute_use_mi_wand_uses_skill_level_2_regardless_of_casters_real_level
     # real Cast); the wand always casts "at skill-2" (TREASAB.X2), i.e.
     # a 20% chance, regardless.
     state = build_state()
-    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     raw_values = [0] * 30
     state.leaders[CASTER_ID].skills = SkillTable(raw_values=raw_values)  # Elemental level 0
     state.add_army(ArmyState(1, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))

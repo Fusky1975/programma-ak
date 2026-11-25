@@ -1703,7 +1703,7 @@ def test_flood_dams_is_a_no_op_for_an_unowned_province():
 
 def test_tornado_destroys_units_that_roll_under_the_per_level_chance():
     state = build_state()
-    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 2)  # 20% destroy chance
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # caster's own army
     state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))  # enemy army
@@ -1721,7 +1721,7 @@ def test_tornado_destroys_units_that_roll_under_the_per_level_chance():
 
 def test_tornado_destroys_nothing_when_caster_has_no_recorded_level():
     state = build_state()
-    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.add_army(ArmyState(1, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
     request = CastRequest(spell=Spell.TORNADO, target=_target(LOCATION))
     rng = ScriptedRandom([0.0])  # would destroy at any nonzero chance -- see module docstring
@@ -1739,7 +1739,7 @@ def test_tornado_giant_fan_downgrades_quality_instead_of_destroying():
     # army's own Kingdom.
     state = build_state()
     state.kingdoms[2].discoveries.add(Discovery.GIANT_FAN)
-    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 2)  # 20% destroy chance
     state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
     request = CastRequest(spell=Spell.TORNADO, target=_target(LOCATION))
@@ -1765,7 +1765,7 @@ def test_tornado_giant_fan_downgrades_quality_instead_of_destroying():
 
 def test_earthquake_zeroes_the_tax_modifier_on_a_land_province():
     state = build_state()
-    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
@@ -4216,7 +4216,7 @@ def test_earthquake_coin_miss_proceeds_to_a_full_unmultiplied_success_roll():
     assert result.applied is True
 
 
-def test_earthquake_never_blocked_by_the_castings_own_kingdoms_amulet_but_still_draws_the_coin():
+def test_flood_never_blocked_by_the_castings_own_kingdoms_amulet_but_still_draws_the_coin():
     # Phase 725: the real, previously-missing own-kingdom exemption --
     # this Kingdom's own province, protected by this Kingdom's own
     # amulet, is never blocked by a cast from this same Kingdom, even on
@@ -4226,7 +4226,7 @@ def test_earthquake_never_blocked_by_the_castings_own_kingdoms_amulet_but_still_
     state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=CASTER_ID)
     state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
-    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
 
     result = execute_cast(
         state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5, 0.5, 0.5, 0.5])
@@ -4235,12 +4235,13 @@ def test_earthquake_never_blocked_by_the_castings_own_kingdoms_amulet_but_still_
     assert result.applied is True
 
 
-def test_earthquake_not_halved_when_target_province_has_no_owner():
+def test_earthquake_not_halved_when_the_provinces_owner_does_not_hold_the_amulet():
     # Contrast case: same skill/roll setup as the halved test above, but
-    # the province has no owner at all -- province_halves_spell_chance()
+    # the province's owner holds no amulet -- province_halves_spell_chance()
     # returns False, so the un-halved 75% chance beats the 0.5 roll.
     state = build_state()
-    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))  # owner_kingdom_id=None
+    state.add_kingdom(KingdomState(3, "Thirdia", Race.HUMAN, Alignment.EVIL, ELSEWHERE))
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))  # owner without the amulet
     state.add_leader(LeaderState(99, 2, "Amulet Holder", ELSEWHERE))
     state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=99)
     state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
@@ -4374,3 +4375,53 @@ def test_a_resurrected_undead_character_of_a_divine_resurrector_becomes_good():
     execute_cast(state, 1, CASTER_ID, CastRequest(spell=Spell.RESURRECTION, target=78))
 
     assert state.leaders[78].alignment is Alignment.GOOD
+
+
+# ---------------------------------------------------------------------------
+# Elemental Magic audit: Tornado and Earthquake need an enemy province ([4.2.4])
+# ---------------------------------------------------------------------------
+
+
+def _province_owned_by(owner: int | None) -> GameState:
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=owner))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    return state
+
+
+@pytest.mark.parametrize("spell", [Spell.TORNADO, Spell.EARTHQUAKE])
+def test_tornado_and_earthquake_work_on_an_enemy_province(spell: Spell):
+    state = _province_owned_by(2)
+
+    result = execute_cast(
+        state, 1, CASTER_ID, CastRequest(spell=spell, target=_target(LOCATION)), rng=ScriptedRandom([0.01, 0.5, 0.5, 0.5])
+    )
+
+    assert result.applied is True
+
+
+@pytest.mark.parametrize("spell", [Spell.TORNADO, Spell.EARTHQUAKE])
+@pytest.mark.parametrize("owner", [1, None])
+def test_tornado_and_earthquake_refuse_an_own_or_unowned_province(spell: Spell, owner: int | None):
+    state = _province_owned_by(owner)
+
+    result = execute_cast(
+        state, 1, CASTER_ID, CastRequest(spell=spell, target=_target(LOCATION)), rng=ScriptedRandom([0.01, 0.5, 0.5])
+    )
+
+    assert result.applied is False
+    assert result.reason == "target province is not an enemy province"
+    assert state.provinces[LOCATION].tax_modifier_percent == 0
+
+
+@pytest.mark.parametrize("spell", [Spell.TORNADO, Spell.EARTHQUAKE])
+def test_tornado_and_earthquake_refuse_an_allied_province(spell: Spell):
+    state = _province_owned_by(2)
+    state.allied_kingdoms.add(frozenset({1, 2}))
+
+    result = execute_cast(
+        state, 1, CASTER_ID, CastRequest(spell=spell, target=_target(LOCATION)), rng=ScriptedRandom([0.01, 0.5, 0.5])
+    )
+
+    assert result.applied is False
+    assert result.reason == "target province is not an enemy province"
