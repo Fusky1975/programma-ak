@@ -111,6 +111,7 @@ class UseMIExecutionResult:
     applied: bool
     reason: str | None = None
     cast_result: CastExecutionResult | None = None  # set when a wand triggered a spell cast
+    battle_report: object | None = None  # the battle a wand-raised Skeletal Army forced, if any
     ability_boosted: Ability | None = None  # set when a book was read
     # Phase 833 bug fix: the book's own real Treasure identity, set
     # alongside `ability_boosted` -- needed because `state.remove_item()`

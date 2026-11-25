@@ -881,7 +881,7 @@ def run_turn(
 
     _revert_analytical_psychology_charms(state)
     _apply_werebeast_transformations(state)
-    decompose_graveyard(state)
+    decompose_graveyard(state, rng)
     # Phase 670: Hide Feature's own genuinely new 10%-per-turn
     # dissipation roll (THUNDERBIRD.md section 12.3) -- once per real
     # turn, not per phase (no phase-specific trigger is named the way

@@ -4419,3 +4419,9 @@ def test_resolve_melee_duel_reaches_through_to_the_atomic_wrapper():
 
     assert result.winner == "a"
     assert any(swing.weapon_proc == "psychic_flail_stun" for swing in result.melee_swings)
+
+
+def test_roll_hand_of_death_damage_is_capped_at_skill_level_4():
+    # User ruling 2026-11-25: every Personal-Combat spell stops scaling at level 4 (1 + 4/2 = 3).
+    assert roll_hand_of_death_damage(4, ScriptedRandom([])) == 3
+    assert roll_hand_of_death_damage(9, ScriptedRandom([])) == 3

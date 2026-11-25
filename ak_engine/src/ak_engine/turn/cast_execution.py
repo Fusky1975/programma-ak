@@ -737,7 +737,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, SEA_ARMY_TYPES, ArmyType, is_land_army
+from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, OVERFLIGHT_SEA, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import FeatureType
@@ -892,6 +892,10 @@ PLAGUE_DESTROY_CHANCE_PER_LEVEL = 0.10
 # [4.24.2]: "un 10% di probabilita' per livello del mago di essere distrutte" (Tornado).
 TORNADO_DESTROY_CHANCE_PER_LEVEL = 0.10
 
+# [4.25.2] Kill Enemy cast as an Action spell: chance that a success kills instead of causing a coma
+# (user ruling 2026-11-25).
+KILL_ENEMY_ACTION_DEATH_CHANCE = 0.85
+
 # [4.22.1]: "+60% for one turn" (Bless) / [4.24.3]: zeroes revenue (Earthquake).
 BLESS_TAX_BONUS_PERCENT = 60
 EARTHQUAKE_TAX_MODIFIER_PERCENT = -100
@@ -1041,6 +1045,13 @@ class CastExecutionResult:
     # melee -- every spell but a failed Kill_Enemy, or the exhausted-
     # max_rounds draw). See ``_execute_kill_enemy``'s own docstring.
     kill_enemy_berserk_winner: str | None = None
+    # A successful Action-cast Kill Enemy that killed its victim outright (85%) instead of
+    # leaving him in a coma (15%); ``looted_item_ids`` then lists what the caster took.
+    kill_enemy_victim_killed: bool = False
+    # The battle forced by raising a Skeletal Army in a province held by an enemy ([4.2.5]),
+    # fought by ``turn/plan_dispatch.py`` right after the cast; a ``BattleReport`` (typed loosely
+    # to avoid importing the battle orchestrator here). ``None`` for every other cast.
+    battle_report: object | None = None
     # Phase 313: item ids the Berserk retaliation's loser owned, transferred
     # to the winner via `turn/encounter.py loot_defeated_leader()` -- [5.9]'s
     # "looting a vanquished foe's treasure, magic items changing hands".
@@ -2151,6 +2162,14 @@ def _execute_kill_enemy(
     # Berserk-counterattack branch above is a different combat entirely)
     # or on a Hidden Tattoos defense (disease, no kill).
     caster.merit_tally.successful_assassinations += 1
+    # [4.2.5]: as an Action spell "può succedere che, invece di morire, la vittima cada in coma
+    # profondo" -- user ruling 2026-11-25: 85% the victim dies, 15% falls into a coma.
+    if rng.random() < KILL_ENEMY_ACTION_DEATH_CHANCE:
+        state.remove_leader(request.target)
+        looted_items = loot_defeated_leader(state, winner_id=leader_id, loser_id=request.target)
+        return CastExecutionResult(
+            request, applied=True, kill_enemy_victim_killed=True, looted_item_ids=[item.item_id for item in looted_items]
+        )
     target.is_comatose = True
     return CastExecutionResult(request, applied=True)
 
@@ -3520,10 +3539,14 @@ def _execute_skeletal_army(
     undead_king_holder = resolve_office_holder(state, Office.UNDEAD_KING)
     if undead_king_holder is not None and undead_king_holder.leader_id == leader_id:
         necromancy_level += 1
-    raised_count = min(necromancy_level, len(graveyard))
+    # [4.2.5]: only "unità cadute in battaglia nei turni precedenti" can be raised -- not the
+    # armies that died earlier in this very turn.
+    risable = [entry for entry in graveyard if entry.death_turn < state.turn_number]
+    raised_count = min(necromancy_level, len(risable))
     raised_armies: list[ArmyState] = []
     for _ in range(raised_count):
-        entry = graveyard.pop()
+        entry = risable.pop()
+        graveyard.remove(entry)
         army = ArmyState(
             state.new_army_id(),
             kingdom_id,
@@ -3532,6 +3555,9 @@ def _execute_skeletal_army(
             caster.location,
             commanded_by=leader_id,
             is_skeletal=True,
+            # "L'Esercito di Scheletri è in tutto e per tutto identico all'esercito morto e ha tutti
+            # i suoi punti movimento": the full allowance of its army type.
+            movement_points=ARMY_TABLE[entry.army_type].speed,
         )
         state.add_army(army)
         raised_armies.append(army)

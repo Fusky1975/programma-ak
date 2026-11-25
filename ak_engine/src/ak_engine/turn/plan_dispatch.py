@@ -427,6 +427,9 @@ from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, 
 from ak_engine.models.map import Terrain
 from ak_engine.turn.leader_queries import find_king_of_kingdom, release_armies_to_garrison
 from ak_engine.turn.sea_transport import cargo_aboard
+from ak_engine.turn.battle_orchestrator import fight_battle, snapshot_army_types
+from ak_engine.turn.diplomacy import is_attackable_at
+from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.move_execution import (
     MoveExecutionResult,
     execute_move,
@@ -914,18 +917,67 @@ def _dispatch_recruit(phase: PlanPhase, state: GameState, kingdom_id: int, leade
     return execute_recruit(state, kingdom_id, leader_id, request)
 
 
+def _fight_for_raised_skeletons(
+    state: GameState, kingdom_id: int, result: CastExecutionResult | None, rng: random.Random | None
+) -> None:
+    """[4.2.5]: "Un Esercito di Scheletri può essere evocato in una provincia controllata da un
+    nemico e quindi, se un'unità sta difendendo la provincia, ci sarà una battaglia." Fights it
+    right after the cast and stores the report on ``result.battle_report``."""
+
+    if result is None or not result.skeletal_army_raised:
+        return
+    raised_ids = [army.army_id for army in result.skeletal_army_raised if army.army_id in state.armies]
+    if not raised_ids:
+        return
+    coord = state.armies[raised_ids[0]].location
+    province = state.provinces.get(coord)
+    if province is None:
+        return
+    defenders_present = any(
+        not army.is_mercenary and army.army_id not in raised_ids and is_attackable_at(state, army.kingdom_id, kingdom_id, province)
+        for army in state.armies_at(coord)
+    )
+    if not defenders_present:
+        return
+    army_types_before_battle = snapshot_army_types(state)
+    report = fight_battle(
+        state,
+        kingdom_id,
+        coord,
+        raised_ids,
+        apply_fanaticism=True,
+        use_real_duel_combat=True,
+        rng=rng if rng is not None else random.Random(),
+    )
+    apply_battle_carrier_destruction(
+        state,
+        report.destroyed_army_ids,
+        report.disbanded_army_ids,
+        report.pursuit_destroyed_army_ids,
+        coord=coord,
+        army_types_before_battle=army_types_before_battle,
+    )
+    result.battle_report = report
+
+
 def _dispatch_cast(
     phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int, rng: random.Random | None, board_width: int
 ) -> CastExecutionResult:
     request = decode_cast_phase(phase)
-    return execute_cast(state, kingdom_id, leader_id, request, rng, board_width=board_width)
+    result = execute_cast(state, kingdom_id, leader_id, request, rng, board_width=board_width)
+    _fight_for_raised_skeletons(state, kingdom_id, result, rng)
+    return result
 
 
 def _dispatch_use_mi(
     phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int, rng: random.Random | None, board_width: int
 ) -> UseMIExecutionResult:
     request = decode_use_mi_phase(phase)
-    return execute_use_mi(state, kingdom_id, leader_id, request, rng, board_width=board_width)
+    result = execute_use_mi(state, kingdom_id, leader_id, request, rng, board_width=board_width)
+    _fight_for_raised_skeletons(state, kingdom_id, result.cast_result, rng)
+    if result.cast_result is not None:
+        result.battle_report = result.cast_result.battle_report
+    return result
 
 
 def _dispatch_challenge(
@@ -1312,6 +1364,9 @@ def _skeletal_army_returns_to_its_grave(state: GameState, army: ArmyState) -> No
     successful Skeletal Armies spell can raise it again."""
 
     state.record_battle_death(army.location, army.army_type, army.quality, army.kingdom_id)
+    # It goes back to a grave it already left: not a fresh battle death, so it can be raised again at
+    # once (the "units that died this very turn" wait only applies to battle casualties).
+    state.battle_graveyard[army.location][-1].death_turn = -1
     state.remove_army(army.army_id)
 
 

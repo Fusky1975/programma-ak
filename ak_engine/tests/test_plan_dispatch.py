@@ -3432,3 +3432,33 @@ def test_dispatch_lmove_tells_the_special_place_its_partial_exploration_turned_u
     assert result.discovered_features == [feature]
     assert feature.discovery_level(1) == 3
     assert state.leaders[LEADER_ID].merit_tally.features_discovered_first == 1
+
+
+def test_raising_skeletons_in_a_province_held_by_an_enemy_forces_a_battle():
+    # [4.2.5]: "Un Esercito di Scheletri può essere evocato in una provincia controllata da un nemico
+    # e quindi, se un'unità sta difendendo la provincia, ci sarà una battaglia."
+    import random
+
+    from ak_engine.models.game_state import GraveyardEntry
+    from ak_engine.turn.battle_orchestrator import BattleReport
+    from ak_engine.turn.combat import Quality
+
+    place = HexCoord(3, 9)
+    state = GameState()
+    state.turn_number = 5
+    state.add_kingdom(KingdomState(1, "Necrolia", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.GOOD, place))
+    state.add_province(ProvinceState(place, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_leader(
+        LeaderState(1, 1, "Necromancer", place, skills=SkillTable(raw_values=[0] * 30))
+    )
+    state.leaders[1].skills.raw_values[Ability.NECROMANCY.value * 2] = 1
+    state.add_army(ArmyState(50, 2, ArmyType.LEGION, Quality.AVERAGE, place))
+    state.battle_graveyard[place] = [GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2, death_turn=1)]
+    phase = PlanPhase(label="P1", action=ActionCode.CAST, obj=Spell.SKELETAL_ARMY.value, extra=[0])
+
+    with patch("ak_engine.turn.cast_execution._roll_cast_success", return_value=(True, None)):
+        result = dispatch_phase(phase, state, kingdom_id=1, leader_id=1, board_width=10, rng=random.Random(1))
+
+    assert result.skeletal_army_raised
+    assert isinstance(result.battle_report, BattleReport)
