@@ -312,7 +312,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.advanced_ability import AdvancedAbilities, AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
@@ -1304,7 +1304,7 @@ class LeaderState:
     # Written by ``turn/practice_execution.py``'s own skill-rise path
     # (currently only the 5 magic colleges -- see that module's Phase
     # 493 addendum for why the other 10 categories aren't wired yet).
-    advanced_abilities: set[AdvancedAbility] = field(default_factory=set)
+    advanced_abilities: set[AdvancedAbility] = field(default_factory=AdvancedAbilities)
     # Phase 546 -- Valhalla visitor lifecycle (Desktop/VALHALLA.txt).
     # None for every leader except the current Valhalla visitor
     # (VALHALLA_VISITOR_LEADER_ID). ``valhalla_active_turn`` is the one

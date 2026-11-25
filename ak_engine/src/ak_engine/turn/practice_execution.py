@@ -346,7 +346,7 @@ from dataclasses import dataclass
 
 from collections.abc import Callable
 
-from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.advanced_ability import AdvancedAbility, advanced_ability_count, grant_advanced_ability
 from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
@@ -888,7 +888,7 @@ def _maybe_grant_advanced_ability(
         return None
 
     if granted is not None:
-        leader.advanced_abilities.add(granted)
+        grant_advanced_ability(leader, granted, ability, new_skill)
     return granted
 
 
@@ -1159,13 +1159,15 @@ def _roll_sage_device_discovery(
     birth coordinate already live on `leader` itself.
     """
 
+    super_sage_slots = sum(advanced_ability_count(leader.advanced_abilities, tier) for tier in SUPER_SAGE_ABILITIES)
     at_university = (
-        bool(leader.advanced_abilities & SUPER_SAGE_ABILITIES)
+        super_sage_slots > 0
         and leader.birth_x is not None
         and leader.birth_y is not None
         and leader.location == HexCoord(leader.birth_x, leader.birth_y)
     )
-    university_bonus = SUPER_SAGE_UNIVERSITY_BONUS if at_university else 0.0
+    # +5 for every Super Sage slot held (user ruling 2026-11-26: abilities add up per occurrence).
+    university_bonus = SUPER_SAGE_UNIVERSITY_BONUS * super_sage_slots if at_university else 0.0
     # The 5% is per level of the Talent as the character really has it: the two
     # Sage Discoveries (Hieroglyphic Translation, Scientific Method) and a held
     # Sage item each add a level, which is their whole purpose.

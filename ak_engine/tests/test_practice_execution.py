@@ -4,7 +4,7 @@ import random
 
 import pytest
 
-from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.advanced_ability import AdvancedAbilities, AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
@@ -1480,6 +1480,21 @@ def test_roll_sage_device_discovery_grants_the_flat_bonus_at_the_university():
     # skill=0 -> base chance 0%; the flat +5% bonus is the only thing
     # that can make 0.04 succeed.
     discovered, _ = _roll_sage_device_discovery(state, leader, current_skill=0, rng=ScriptedRandom([0.04]))
+
+    assert discovered is True
+
+
+def test_super_sage_bonus_adds_up_for_every_slot_held():
+    # Per occurrence: two Super Sage slots are +10%, so 0.09 succeeds where one slot (+5%) would not.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = _leader_at_university()
+    leader.advanced_abilities = AdvancedAbilities()
+    leader.advanced_abilities.grant(AdvancedAbility.SUPER_SAGE_I, Ability.SAGE, 5)
+    leader.advanced_abilities.grant(AdvancedAbility.SUPER_SAGE_II, Ability.SAGE, 6)
+    state.add_leader(leader)
+
+    discovered, _ = _roll_sage_device_discovery(state, leader, current_skill=0, rng=ScriptedRandom([0.09]))
 
     assert discovered is True
 

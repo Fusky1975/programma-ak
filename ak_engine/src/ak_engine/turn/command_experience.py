@@ -30,6 +30,7 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.army_type import SEA_ARMY_TYPES, is_land_army
+from ak_engine.models.advanced_ability import grant_advanced_ability
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import Terrain
@@ -60,11 +61,11 @@ def _award(state: GameState, leader: LeaderState, ability: Ability, base_points:
         if ability is Ability.NAVAL:
             granted = build_naval_ability_level_schedule(state.game_number).get(outcome.new_skill)
             if granted is not None:
-                leader.advanced_abilities.add(granted)
+                grant_advanced_ability(leader, granted, Ability.NAVAL, outcome.new_skill)
         elif ability is Ability.MARCH:
             granted = build_march_ability_level_schedule(state.game_number).get(outcome.new_skill)
             if granted is not None:
-                leader.advanced_abilities.add(granted)
+                grant_advanced_ability(leader, granted, Ability.MARCH, outcome.new_skill)
         else:
             _maybe_grant_advanced_ability(state, leader, ability, True, outcome.new_skill)
     return outcome

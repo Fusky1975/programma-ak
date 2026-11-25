@@ -277,7 +277,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Literal
 
-from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.advanced_ability import AdvancedAbility, grant_advanced_ability
 from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature
@@ -1486,11 +1486,11 @@ def award_move_experience(
     if move_experience_ability is Ability.NAVAL and outcome.skill_rose:
         naval_granted = build_naval_ability_level_schedule(state.game_number).get(outcome.new_skill)
         if naval_granted is not None:
-            mover_leader.advanced_abilities.add(naval_granted)
+            grant_advanced_ability(mover_leader, naval_granted, Ability.NAVAL, outcome.new_skill)
     elif move_experience_ability is Ability.MARCH and outcome.skill_rose:
         march_granted = build_march_ability_level_schedule(state.game_number).get(outcome.new_skill)
         if march_granted is not None:
-            mover_leader.advanced_abilities.add(march_granted)
+            grant_advanced_ability(mover_leader, march_granted, Ability.MARCH, outcome.new_skill)
     return naval_granted, march_granted
 
 def execute_move(

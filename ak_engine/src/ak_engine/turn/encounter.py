@@ -1699,7 +1699,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Literal
 
-from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.advanced_ability import AdvancedAbility, advanced_ability_count
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState
@@ -3331,13 +3331,15 @@ def archery_free_attack_bonus(advanced_abilities: "set[AdvancedAbility]") -> int
     addendum for why all three tiers collapse into one flat bonus.
     """
 
-    if advanced_abilities & {
-        AdvancedAbility.ARCHERY_FREE_ATTACK,
-        AdvancedAbility.ARCHERY_FREE_ATTACK_MASTERY,
-        AdvancedAbility.ARCHERY_FREE_ATTACK_TRUE_MASTERY,
-    }:
-        return ARCHERY_FREE_ATTACK_BONUS
-    return 0
+    # SA_Num: each slot of the family held is one more free attack (2026-11-26, user ruling: per occurrence).
+    return ARCHERY_FREE_ATTACK_BONUS * sum(
+        advanced_ability_count(advanced_abilities, ability)
+        for ability in (
+            AdvancedAbility.ARCHERY_FREE_ATTACK,
+            AdvancedAbility.ARCHERY_FREE_ATTACK_MASTERY,
+            AdvancedAbility.ARCHERY_FREE_ATTACK_TRUE_MASTERY,
+        )
+    )
 
 
 def berserk_fury_bonus_hit_points(rng: random.Random) -> int:
@@ -3368,9 +3370,7 @@ def melee_mastery_offensive_hit_multiplier(advanced_abilities: "set[AdvancedAbil
     the two compose correctly regardless of call order.
     """
 
-    if AdvancedAbility.MELEE_MASTERY in advanced_abilities:
-        return 1.0 + MELEE_MASTERY_HIT_CHANCE_BONUS
-    return 1.0
+    return 1.0 + MELEE_MASTERY_HIT_CHANCE_BONUS * advanced_ability_count(advanced_abilities, AdvancedAbility.MELEE_MASTERY)
 
 
 def melee_mastery_damage_bonus(advanced_abilities: "set[AdvancedAbility]") -> int:
@@ -3383,11 +3383,12 @@ def melee_mastery_damage_bonus(advanced_abilities: "set[AdvancedAbility]") -> in
     to seed a builder's own ``Combatant(melee_damage_dealt_bonus=...)``.
     """
 
-    if AdvancedAbility.MELEE_TRUE_MASTERY in advanced_abilities:
-        return MELEE_TRUE_MASTERY_DAMAGE_BONUS
-    if AdvancedAbility.MELEE_MASTERY in advanced_abilities:
-        return MELEE_MASTERY_DAMAGE_BONUS
-    return 0
+    # True Mastery's "+2 damage" is the whole effect of its tier, replacing Mastery's +1; each slot holding the tier
+    # adds its bonus again (per occurrence, 2026-11-26 user ruling).
+    true_mastery_slots = advanced_ability_count(advanced_abilities, AdvancedAbility.MELEE_TRUE_MASTERY)
+    if true_mastery_slots:
+        return MELEE_TRUE_MASTERY_DAMAGE_BONUS * true_mastery_slots
+    return MELEE_MASTERY_DAMAGE_BONUS * advanced_ability_count(advanced_abilities, AdvancedAbility.MELEE_MASTERY)
 
 
 def weapon_offensive_hit_multiplier(weapon: "Treasure | None") -> float:
