@@ -917,6 +917,36 @@ MONSTER_RUNTIME_PROFILE: dict[Monster, MonsterRuntimeProfile] = {
 }
 
 
+# **User ruling (2026-11-25): the disassembled engine's Melee skill, Archery skill and hit points govern
+# combat.** `MONSTER_COMBAT_STATS` above was compiled by the user in July from `Mostri con statistiche`
+# (and corresponds to `Mostri.md`); it disagreed with the real engine constants just above for 42 of the
+# 60 species (36 Melee skills, 6 Archery skills, 9 hit-point averages). Melee skill, Archery skill and the
+# hit points now come from `MONSTER_RUNTIME_PROFILE`; the original table is kept as
+# `MONSTER_COMBAT_STATS_USER_COMPILED`. The runtime layer holds only an *average* hit-point figure, so a
+# monster's hit-point range keeps the width of its user-compiled range, centred on the real average (never
+# below 1). Damage dice, missile damage and speed -- which the runtime layer expresses differently or the
+# user did not ask to change -- stay as compiled.
+MONSTER_COMBAT_STATS_USER_COMPILED: dict[Monster, MonsterCombatStats] = dict(MONSTER_COMBAT_STATS)
+
+
+def _combat_stats_from_runtime_layer(stats: MonsterCombatStats, profile: MonsterRuntimeProfile) -> MonsterCombatStats:
+    low, high = stats.hit_points_range
+    width = high - low
+    new_low = max(1, profile.average_hit_points - width // 2)
+    return MonsterCombatStats(
+        (new_low, new_low + width),
+        profile.melee_skill,
+        stats.melee_damage,
+        profile.missile_skill,
+        stats.missile_damage,
+        stats.speed,
+    )
+
+
+for _monster, _compiled in MONSTER_COMBAT_STATS_USER_COMPILED.items():
+    MONSTER_COMBAT_STATS[_monster] = _combat_stats_from_runtime_layer(_compiled, MONSTER_RUNTIME_PROFILE[_monster])
+
+
 @dataclass(frozen=True, slots=True)
 class AlignmentOption:
     alignment: Alignment
