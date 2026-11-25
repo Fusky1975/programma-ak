@@ -1442,6 +1442,7 @@ def test_run_turn_forced_rebattle_retreat_uses_the_original_invasion_origin():
     far_origin = HexCoord(8, 8)
     state = _base_state()
     state.add_province(ProvinceState(far_origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.kingdoms[1].treasury = 100  # an unpaid army may desert ([9.2]); not what this test is about
     state.provinces[TARGET].contested_by_kingdom_id = 1
     state.provinces[TARGET].contested_from_coord = far_origin
     state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, TARGET, movement_points=3))
@@ -1788,8 +1789,9 @@ def _defend_phase(label: str) -> PlanPhase:
 
 def _defend_state() -> GameState:
     state = GameState()
-    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, ATTACKER_ORIGIN))
-    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, DEFEND_HOME))
+    # Both treasuries can pay for the armies: an unpaid army may now desert ([9.2]), which this fixture is not about.
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, ATTACKER_ORIGIN, treasury=100))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, DEFEND_HOME, treasury=100))
     state.add_province(ProvinceState(DEFEND_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.add_province(ProvinceState(COVERED, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.add_province(ProvinceState(ANOTHER_COVERED, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))

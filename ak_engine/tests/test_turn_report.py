@@ -12434,8 +12434,8 @@ def test_describe_finances_report_lfinance_and_ltreas_use_the_kings_own_name_whe
 
 def test_describe_finances_report_llcosts_and_lacosts_render_when_maintenance_ran():
     state = _finances_state_with_owned_province()
-    state.turn_maintenance_by_kingdom[1] = MaintenanceResult(debited=9)
-    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0)))  # ACost 2
+    state.turn_maintenance_by_kingdom[1] = MaintenanceResult(debited=9, army_debited=2)  # ACost 2
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0)))
 
     lines = describe_finances_report(state, 1, random.Random(0))
 
@@ -18335,3 +18335,22 @@ def test_a_commander_who_finds_no_excuse_is_reported_with_the_precursor_clause()
     assert "Rolando" in line
     assert "excuse" in line or "ploy" in line
     assert ", so the forces commanded by Rolando" in line
+
+
+def test_describe_finances_report_narrates_the_unpaid_armies():
+    state = _finances_state_with_owned_province()
+    state.turn_maintenance_by_kingdom[1] = MaintenanceResult(
+        debited=0,
+        unpaid_army_ids=[1, 2, 3, 4],
+        demoted_army_ids=[2],
+        deserted_army_ids=[3],
+        disbanded_army_ids=[4],
+        army_names={1: "1st Legion", 2: "2nd Legion", 3: "3rd Legion", 4: "4th Legion"},
+    )
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert "The 1st Legion went unpaid, and grumbled." in lines
+    assert "The 2nd Legion went unpaid and lost a rank." in lines
+    assert any(line.startswith("The 3rd Legion, left unpaid, deserted") for line in lines)
+    assert any(line.startswith("The 4th Legion, left unpaid, dissolved") for line in lines)
