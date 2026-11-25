@@ -1916,9 +1916,9 @@ class GameState:
     # pair with the number of levels it degrades, so ``advance_pending_diplomacy()`` narrates the furor
     # (SAY.PAS ``_LIncid``) instead of a Break Treat. Not turn-scoped, for the same reason as its sibling.
     pending_fury_levels: dict[frozenset[int], int] = field(default_factory=dict)
-    # Who gave the Break Treat order behind a pending transition (they read BREAK.X in the turn they gave it, so
-    # the "X has broken his treaty with us" notice is for the other King only), and, once the relation really
-    # changes, the same for the notices of this turn. Not turn-scoped / turn-scoped, like the siblings above.
+    # Who gave the Break Treat order behind a pending transition (the real reports tell BREAK.X to the King it
+    # hits, naming the breaker), and, once the relation really changes, the same for the notices of this turn.
+    # Not turn-scoped / turn-scoped, like the siblings above.
     pending_break_issuers: dict[frozenset[int], frozenset[int]] = field(default_factory=dict)
     diplomacy_notice_issuers: dict[frozenset[int], frozenset[int]] = field(default_factory=dict)
     # Every furor made visible this turn: ``(kingdom_a_id, kingdom_b_id, levels)``. Cleared at the start of
@@ -1926,7 +1926,7 @@ class GameState:
     diplomacy_fury_notices: list[tuple[int, int, int]] = field(default_factory=list)
     # What became of each Treat / Break Treat order given this turn, for the issuing King's own report
     # (ALLY.X / BREAK.X / SAY.PAS ``_LATreat`` / ``_LRefA``): ``(issuer_id, target_id, outcome)``, outcome one
-    # of "accepted", "refused", "already_allied", "broken". Same lifetime as the notices above.
+    # of "accepted", "refused", "already_allied" (all Treat orders). Same lifetime as the notices above.
     diplomacy_order_notes: list[tuple[int, int, str]] = field(default_factory=list)
     # Phase 1041 bug fix -- rulebook [3.16] rule (d): "The Patrol stays
     # active until the next Move, Trail or Pursue order" -- a real

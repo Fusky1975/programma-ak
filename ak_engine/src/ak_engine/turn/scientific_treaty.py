@@ -174,6 +174,11 @@ least one leader who already holds ``EXPLORERS_LONG_RANGE_TRADE_ROUTES``
 -- alongside the two original sourced-and-buildable ones (adjacency,
 leader presence).
 
+**2026-11-26 -- the per-Explorer budget is now modeled** (the paragraph below is the older reasoning, kept for
+the record): a Kingdom can trade with as many faraway (non-adjacent, no-presence) Kingdoms a turn as it
+employs Explorers with this ability; each such exchange that actually happens uses one of the slots of one of
+the two Kingdoms (the one with more left). Pairs are resolved in id order.
+
 **"For each explorer of this level" -- not modeled as a per-exchange
 consumable**: the rulebook's own wording could be read as capping how
 many *simultaneous* non-adjacent exchanges a Kingdom's Explorers can
@@ -233,6 +238,19 @@ def _mutual_treat_pairs(state: GameState) -> set[frozenset[int]]:
     return pairs
 
 
+def _long_range_trade_routes_explorers(state: GameState, kingdom_id: int) -> int:
+    """How many leaders ``kingdom_id`` employs who hold ``AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES``
+    ("for each explorer of this level employed by your kingdom": each one is a trade a turn with a faraway
+    Kingdom -- see module docstring)."""
+
+    return sum(
+        1
+        for leader in state.leaders.values()
+        if leader.kingdom_id == kingdom_id
+        and AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES in leader.advanced_abilities
+    )
+
+
 def _kingdom_has_long_range_trade_routes_explorer(state: GameState, kingdom_id: int) -> bool:
     """Phase 511: does ``kingdom_id`` employ at least one leader who
     already holds ``AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES``
@@ -240,18 +258,12 @@ def _kingdom_has_long_range_trade_routes_explorer(state: GameState, kingdom_id: 
     is now a real, sourced registry for this check.
     """
 
-    return any(
-        leader.kingdom_id == kingdom_id
-        and AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES in leader.advanced_abilities
-        for leader in state.leaders.values()
-    )
+    return _long_range_trade_routes_explorers(state, kingdom_id) > 0
 
 
-def _kingdoms_in_contact(state: GameState, kingdom_a_id: int, kingdom_b_id: int, bounds: MapBounds) -> bool:
-    if _kingdom_has_long_range_trade_routes_explorer(
-        state, kingdom_a_id
-    ) or _kingdom_has_long_range_trade_routes_explorer(state, kingdom_b_id):
-        return True
+def _kingdoms_in_natural_contact(state: GameState, kingdom_a_id: int, kingdom_b_id: int, bounds: MapBounds) -> bool:
+    """Adjacent Kingdoms, or a character of one inside the other (no Explorer needed)."""
+
     provinces_a = [p for p in state.provinces.values() if p.owner_kingdom_id == kingdom_a_id]
     provinces_b = [p for p in state.provinces.values() if p.owner_kingdom_id == kingdom_b_id]
     if any(is_adjacent(pa.coord, pb.coord, bounds) for pa in provinces_a for pb in provinces_b):
@@ -264,6 +276,14 @@ def _kingdoms_in_contact(state: GameState, kingdom_a_id: int, kingdom_b_id: int,
         if leader.kingdom_id == kingdom_b_id and leader.location in coords_a:
             return True
     return False
+
+
+def _kingdoms_in_contact(state: GameState, kingdom_a_id: int, kingdom_b_id: int, bounds: MapBounds) -> bool:
+    return (
+        _kingdom_has_long_range_trade_routes_explorer(state, kingdom_a_id)
+        or _kingdom_has_long_range_trade_routes_explorer(state, kingdom_b_id)
+        or _kingdoms_in_natural_contact(state, kingdom_a_id, kingdom_b_id, bounds)
+    )
 
 
 def _highest_priority_unknown(source: set[Discovery], other: set[Discovery]) -> Discovery | None:
@@ -297,7 +317,13 @@ def execute_scientific_treaties(
     rng = rng if rng is not None else random.Random()
     bounds = MapBounds(board_width, board_height)
     results: list[ScientificTreatyResult] = []
-    for pair in _mutual_treat_pairs(state):
+    # The attribution lines ("Received from / Sent to player(s) #k by scientific treaty") only ever show on the
+    # turn of the exchange (the real SE3 sample reports show them on exchange turns alone): start every turn blank.
+    state.discovery_exchanged_from.clear()
+    # Each Explorer with Long-Range Trade Routes pays for one faraway exchange a turn.
+    long_range_slots: dict[int, int] = {}
+    # Sorted, so the order (and so the dice and who gets what first) never depends on set iteration order.
+    for pair in sorted(_mutual_treat_pairs(state), key=sorted):
         kingdom_a_id, kingdom_b_id = sorted(pair)
         if not state.is_allied(kingdom_a_id, kingdom_b_id):
             continue
@@ -308,8 +334,14 @@ def execute_scientific_treaties(
         kingdom_b = state.kingdoms.get(kingdom_b_id)
         if kingdom_a is None or kingdom_b is None:
             continue
-        if not _kingdoms_in_contact(state, kingdom_a_id, kingdom_b_id, bounds):
-            continue
+        long_range_payer: int | None = None
+        if not _kingdoms_in_natural_contact(state, kingdom_a_id, kingdom_b_id, bounds):
+            for candidate in (kingdom_a_id, kingdom_b_id):
+                slots = long_range_slots.setdefault(candidate, _long_range_trade_routes_explorers(state, candidate))
+                if slots > 0 and (long_range_payer is None or slots > long_range_slots[long_range_payer]):
+                    long_range_payer = candidate
+            if long_range_payer is None:
+                continue
         success_chance = alignment_check_success_chance(kingdom_a.alignment, kingdom_b.alignment)
         if success_chance < 1.0 and rng.random() >= success_chance:
             continue
@@ -318,6 +350,8 @@ def execute_scientific_treaties(
         discovery_to_a = _highest_priority_unknown(kingdom_b.discoveries, kingdom_a.discoveries)
         if discovery_to_a is None and discovery_to_b is None:
             continue
+        if long_range_payer is not None:
+            long_range_slots[long_range_payer] -= 1
 
         if discovery_to_b is not None:
             kingdom_b.discoveries.add(discovery_to_b)

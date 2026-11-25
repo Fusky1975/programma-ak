@@ -78,7 +78,8 @@ def test_mutual_treat_upgrades_neutral_to_allied_only_once_promoted_next_turn():
 
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
     assert state.is_allied(1, 2)
-    assert state.diplomatic_relations_since[frozenset({1, 2})] == state.turn_number
+    # struck at the end of the previous turn: Allies "in un turno precedente" already for [8.4]
+    assert state.diplomatic_relations_since[frozenset({1, 2})] == state.turn_number - 1
     assert state.diplomacy_relation_change_notices == []  # no top-of-report notice for Treat
 
 
@@ -593,7 +594,7 @@ def test_orders_leave_a_note_for_their_issuer():
     state.break_treat_orders.add((1, 2))
     state.treat_permissions.add((2, 1))  # the Break Treat wins: that Treat is refused
     apply_treat_orders(state)
-    assert sorted(state.diplomacy_order_notes) == [(1, 2, "broken"), (2, 1, "refused")]
+    assert state.diplomacy_order_notes == [(2, 1, "refused")]  # a Break Treat is told to its victim instead
 
 
 def test_a_break_treat_that_changes_nothing_leaves_no_note():
