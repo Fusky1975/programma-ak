@@ -1584,7 +1584,35 @@ def test_part_sea_succeeds_on_a_province_flooded_to_sea_via_override():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
     assert result.applied is True
-    assert state.provinces[LOCATION].terrain_override is Terrain.PLAINS
+    assert state.provinces[LOCATION].effective_terrain() is Terrain.PLAINS  # back to what it was
+
+
+def test_part_sea_on_a_flooded_forest_gives_the_forest_back():
+    # "Separare le acque neutralizza gli effetti di Inondazione": not a Plains, what the province really was.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.FOREST, Race.HUMAN, terrain_override=Terrain.SEA))
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.PART_SEA, target=_target(LOCATION))
+    )
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].terrain_override is None
+    assert state.provinces[LOCATION].effective_terrain() is Terrain.FOREST
+
+
+def test_flooding_a_parted_sea_restores_the_sea():
+    # "... e viceversa".
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.HUMAN, terrain_override=Terrain.PLAINS))
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+    )
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].terrain_override is None
+    assert state.provinces[LOCATION].effective_terrain() is Terrain.SEA
 
 
 def test_part_sea_fails_when_target_province_is_unknown():
@@ -2372,6 +2400,21 @@ def test_plague_skips_non_humanoid_and_mercenary_armies():
     assert result.applied is True
     assert 1 in state.armies
     assert 2 in state.armies
+
+
+def test_plague_looks_at_the_armys_own_race_not_its_kingdoms():
+    # "Solo le quattro razze umanoidi possono essere contagiate": a Dragon wing serving a Human Kingdom is a Dragon.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 9)  # near-certain chance
+    state.add_army(ArmyState(1, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, LOCATION))  # Dragons, in a Human kingdom
+    state.add_army(ArmyState(2, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # humanoid: exposed as ever
+    request = CastRequest(spell=Spell.PLAGUE, target=_target(LOCATION))
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.01, 0.0, 0.5, 0.5]))
+
+    assert 1 in state.armies  # the Dragon wing is untouched
+    assert 2 not in state.armies  # the Legion rolled under the chance and died
 
 
 def test_plague_marks_the_province_as_plague_active():

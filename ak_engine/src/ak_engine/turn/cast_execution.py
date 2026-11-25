@@ -737,7 +737,15 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, OVERFLIGHT_SEA, SEA_ARMY_TYPES, ArmyType, is_land_army
+from ak_engine.models.army_type import (
+    ARMY_TABLE,
+    MONSTROUS_ARMY_RACE,
+    OVERFLIGHT_AIR,
+    OVERFLIGHT_SEA,
+    SEA_ARMY_TYPES,
+    ArmyType,
+    is_land_army,
+)
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import FeatureType
@@ -2436,7 +2444,9 @@ def _execute_part_sea(
     if early is not None:
         return early
 
-    province.terrain_override = Terrain.PLAINS
+    # "Separare le acque neutralizza gli effetti di Inondazione": a land province that a Flood turned into Sea goes
+    # back to what it really was, not to Plains.
+    province.terrain_override = None if province.terrain is not Terrain.SEA else Terrain.PLAINS
     return CastExecutionResult(request, applied=True)
 
 
@@ -2503,7 +2513,8 @@ def _execute_flood(
     if early is not None:
         return early
 
-    province.terrain_override = Terrain.SEA
+    # ... "e viceversa": flooding a parted Sea simply restores it.
+    province.terrain_override = None if province.terrain is Terrain.SEA else Terrain.SEA
 
     defended = kingdom_has_discovery(state, province.owner_kingdom_id, Discovery.FLOOD_DAMS)  # Phase 1048
     if defended:
@@ -3230,7 +3241,10 @@ def apply_plague_exposure(
         if army.kingdom_id is None:
             continue
         kingdom = state.kingdoms[army.kingdom_id]
-        if kingdom.race not in HUMANOID_RACES:
+        # "Solo le quattro razze umanoidi possono essere contagiate": the race is the army's own (a Dragon wing or a
+        # Troll army serving a Human Kingdom is not humanoid), not its Kingdom's.
+        army_race = army.race if army.race is not None else MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
+        if army_race not in HUMANOID_RACES:
             continue
         protected_by_penicillin = Discovery.PENICILLIN in kingdom.discoveries or (
             province_owner_has_penicillin and state.is_allied(army.kingdom_id, province_owner_id)
