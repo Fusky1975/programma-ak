@@ -8638,8 +8638,11 @@ def describe_random_encounter_combat(
     if result.leader_died:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
         lines.append(render_character_death(character_name, rng))
-    elif result.monster_fled:
-        lines.append(render_monster_fled(opponent_name, character_name, rng))
+    else:
+        if result.monster_fled:
+            lines.append(render_monster_fled(opponent_name, character_name, rng))
+        if result.gold_found > 0:
+            lines.append(render_gold_spoils(character_name, opponent_name, result.gold_found, rng))
 
     return lines
 
