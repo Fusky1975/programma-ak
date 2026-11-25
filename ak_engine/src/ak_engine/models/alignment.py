@@ -107,6 +107,30 @@ ALIGNMENT_ORDINAL: dict[Alignment, int] = {
     Alignment.SPECIAL: 9,
 }
 
+# The rulebook's own order of the alignments a Kingdom can have (Divino, Buono, Druidico, Neutrale, Pagano,
+# Malvagio, Non-Morto). Anti-Holy is not an alignment (it is a trait of monsters), so there is nothing between
+# Evil and Undead: "posizioni di Allineamento" ([8] Furore Diplomatico, [8.4] "il 40% per posizione di
+# differenza") are counted on this scale, for both.
+KINGDOM_ALIGNMENT_SCALE: tuple[Alignment, ...] = (
+    Alignment.DIVINE,
+    Alignment.GOOD,
+    Alignment.DRUID,
+    Alignment.NEUTRAL,
+    Alignment.PAGAN,
+    Alignment.EVIL,
+    Alignment.UNDEAD,
+)
+
+
+def kingdom_alignment_distance(alignment_a: Alignment, alignment_b: Alignment) -> int | None:
+    """How many positions apart two Kingdom alignments are on ``KINGDOM_ALIGNMENT_SCALE`` (``None`` if either is
+    not an alignment a Kingdom can have)."""
+
+    if alignment_a not in KINGDOM_ALIGNMENT_SCALE or alignment_b not in KINGDOM_ALIGNMENT_SCALE:
+        return None
+    return abs(KINGDOM_ALIGNMENT_SCALE.index(alignment_a) - KINGDOM_ALIGNMENT_SCALE.index(alignment_b))
+
+
 ALIGNMENT_BY_ORDINAL: tuple[Alignment, ...] = tuple(
     sorted(ALIGNMENT_ORDINAL, key=lambda member: ALIGNMENT_ORDINAL[member])
 )

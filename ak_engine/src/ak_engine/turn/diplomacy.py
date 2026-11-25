@@ -130,7 +130,7 @@ from __future__ import annotations
 import random
 from collections.abc import Iterator, Mapping
 
-from ak_engine.models.alignment import Alignment
+from ak_engine.models.alignment import Alignment, kingdom_alignment_distance
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.parser.gw_world import DiplomaticRelation
@@ -412,15 +412,6 @@ def _note_orders(
 # -- "Furore Diplomatico" ("Scrittura gioco.txt"): two Allies more than three Alignment positions apart may see
 # -- their treaty break by itself, normally at the end of the turn, rarely during the turn. The rulebook gives no
 # -- numbers; these are the user's own (2026-11-26).
-FURY_ALIGNMENT_SCALE = (
-    Alignment.DIVINE,
-    Alignment.GOOD,
-    Alignment.DRUID,
-    Alignment.NEUTRAL,
-    Alignment.PAGAN,
-    Alignment.EVIL,
-    Alignment.UNDEAD,
-)  # the rulebook's own order of Kingdom alignments (Divino ... Non-Morto): Divino-Pagano is 4 apart
 FURY_MIN_DISTANCE = 4  # "più di tre posizioni"
 FURY_CHANCE_BY_DISTANCE = {4: 0.06, 5: 0.12, 6: 0.20}  # per turn, per pair of Allies
 FURY_TWO_LEVELS_CHANCE = 0.30  # Allied -> Enemy instead of Allied -> Neutral
@@ -435,9 +426,7 @@ def alignment_distance(state: GameState, kingdom_a: int, kingdom_b: int) -> int 
     b = state.kingdoms.get(kingdom_b)
     if a is None or b is None:
         return None
-    if a.alignment not in FURY_ALIGNMENT_SCALE or b.alignment not in FURY_ALIGNMENT_SCALE:
-        return None
-    return abs(FURY_ALIGNMENT_SCALE.index(a.alignment) - FURY_ALIGNMENT_SCALE.index(b.alignment))
+    return kingdom_alignment_distance(a.alignment, b.alignment)
 
 
 def apply_diplomatic_fury(state: GameState, rng: random.Random) -> None:

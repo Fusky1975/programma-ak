@@ -412,3 +412,11 @@ def test_pairs_are_resolved_in_id_order():
 
     assert [(r.kingdom_a_id, r.kingdom_b_id) for r in results] == [(1, 2), (2, 3)]
     assert Discovery.COMPASS in state.kingdoms[3].discoveries
+
+
+def test_alignment_steps_are_counted_on_the_rulebook_scale_without_anti_holy():
+    # Evil -> Undead is ONE step (Anti-Holy is a monster trait, not an alignment between them); the same
+    # distance the Diplomatic Furor uses.
+    assert alignment_check_success_chance(Alignment.EVIL, Alignment.UNDEAD) == pytest.approx(0.6)
+    assert alignment_check_success_chance(Alignment.NEUTRAL, Alignment.UNDEAD) == pytest.approx(0.0)  # 3 steps
+    assert alignment_check_success_chance(Alignment.PAGAN, Alignment.UNDEAD) == pytest.approx(0.2)  # 2 steps
