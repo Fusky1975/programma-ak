@@ -156,10 +156,10 @@ def test_live_combat_stats_take_melee_archery_and_hit_points_from_the_disassembl
         assert low >= 1
         assert high - low == compiled.hit_points_range[1] - compiled.hit_points_range[0]  # the width is kept
         assert (low + high) // 2 in (profile.average_hit_points, profile.average_hit_points + 1) or low == 1
+        assert live.speed == profile.speed  # the flee chance follows the real engine too
         # what the runtime layer does not express stays as compiled
         assert live.melee_damage == compiled.melee_damage
         assert live.missile_damage == compiled.missile_damage
-        assert live.speed == compiled.speed
 
 
 def test_live_combat_stats_spot_checks_against_the_runtime_layer():
@@ -168,6 +168,8 @@ def test_live_combat_stats_spot_checks_against_the_runtime_layer():
     assert MONSTER_COMBAT_STATS[Monster.TITAN].missile_skill == 0
     assert MONSTER_COMBAT_STATS[Monster.BANSHEE].missile_skill == 2
     assert MONSTER_COMBAT_STATS[Monster.SPHINX].hit_points_range == (21, 29)
+    assert MONSTER_COMBAT_STATS[Monster.R_DRAGON].speed is MonsterSpeed.FAST  # compiled by hand as SLOW
+    assert MONSTER_COMBAT_STATS[Monster.LICH].speed is MonsterSpeed.SLOW  # compiled by hand as MEDIUM
 
 
 def test_monster_combat_stats_corroborates_five_of_six_sourced_averages():

@@ -924,8 +924,9 @@ MONSTER_RUNTIME_PROFILE: dict[Monster, MonsterRuntimeProfile] = {
 # hit points now come from `MONSTER_RUNTIME_PROFILE`; the original table is kept as
 # `MONSTER_COMBAT_STATS_USER_COMPILED`. The runtime layer holds only an *average* hit-point figure, so a
 # monster's hit-point range keeps the width of its user-compiled range, centred on the real average (never
-# below 1). Damage dice, missile damage and speed -- which the runtime layer expresses differently or the
-# user did not ask to change -- stay as compiled.
+# below 1). Speed (the flee chance: fast 20%, medium 50%, slow 80%) follows the same ruling, asked for
+# separately (2026-11-26). Damage dice and missile damage -- which the runtime layer expresses
+# differently -- stay as compiled.
 MONSTER_COMBAT_STATS_USER_COMPILED: dict[Monster, MonsterCombatStats] = dict(MONSTER_COMBAT_STATS)
 
 
@@ -939,7 +940,7 @@ def _combat_stats_from_runtime_layer(stats: MonsterCombatStats, profile: Monster
         stats.melee_damage,
         profile.missile_skill,
         stats.missile_damage,
-        stats.speed,
+        profile.speed,
     )
 
 
