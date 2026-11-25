@@ -591,6 +591,7 @@ from ak_engine.turn.encounter import (
     FireArrowShot,
     MeleeSwing,
     MirrorImageIntelligenceTier,
+    MONSTER_TEMPERS_THAT_FLEE_BY_THEMSELVES,
     MonsterTalkReply,
     MONSTER_STEAL_GOLD_IF_NO_ITEM,
     MONSTER_TALK_REPLY_OUTCOME,
@@ -1920,6 +1921,8 @@ def _resolve_search_encounter_body(
         # The monster's own Temper (the disassembled `mtemper`) gives it the Temper Table's melee effects too:
         # Furia/Intimidazione, Slancio, Schivare.
         temper=MONSTER_RUNTIME_PROFILE[feature.guardian_monster].temper,
+        # ...and decides when it runs by itself (monster_wants_to_flee_by_temper()).
+        flees_by_temper=MONSTER_RUNTIME_PROFILE[feature.guardian_monster].temper in MONSTER_TEMPERS_THAT_FLEE_BY_THEMSELVES,
     )
     # [5.6] / Temper Table: a Cautious or Cowardly character who is not a King "may even refuse your
     # command to encounter a character or monster, depending on how strong the opponent is" (the Table's
@@ -2050,6 +2053,8 @@ def _resolve_search_encounter_body(
         docstring.
         """
 
+        if combat_result.fled_side == "b":
+            return _monster_flees_outcome()  # its own Temper made the guardian run
         if combat_result.winner == "a":
             feature.looted = True
             # Phase 242: grant the feature's own treasure (if world

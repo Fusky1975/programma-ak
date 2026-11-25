@@ -64,9 +64,9 @@ from _helpers import ScriptedRandom
 
 LOCATION = HexCoord(3, 9)
 # Plumbing tests script the dice of one exact melee exchange: a monster temper (Furia's extra roll, Slancio,
-# Schivare) would shift them, so they fight with a temper that has no melee effect (Cowardly).
+# Schivare, the flight rolls) would shift them, so they fight against a monster with no temper at all.
 _MONSTERS_WITHOUT_TEMPER = {
-    _monster: dataclasses.replace(_profile, temper=Temper.COWARDLY) for _monster, _profile in MONSTER_RUNTIME_PROFILE.items()
+    _monster: dataclasses.replace(_profile, temper=None) for _monster, _profile in MONSTER_RUNTIME_PROFILE.items()
 }
 
 LEADER_ID = 1
@@ -741,6 +741,45 @@ def test_execute_search_the_guardian_fights_with_the_temper_of_its_species():
         execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
     monster_side = mock_duel.call_args.args[1]
     assert monster_side.temper is MONSTER_RUNTIME_PROFILE[Monster.GRYPHON].temper
+
+
+def test_execute_search_a_frightened_guardian_runs_by_itself_and_leaves_the_field_to_the_hero():
+    # Its own Temper made the guardian run (the duel ended with fled_side="b"): the hero holds the field and
+    # takes the treasure, but nothing was defeated -- no Defender points.
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.BIGFOOT, treasure=Treasure.ABILITY_TACTICAL
+    )
+    state.add_feature(feature)
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=2, fled_side="b")
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.monster_fled is True and result.winner == "leader" and feature.looted is True
+    assert state.items_held_by(LEADER_ID)[0].treasure is Treasure.ABILITY_TACTICAL
+    assert state.leaders[LEADER_ID].merit_tally.monster_hp_defeated == 0
+
+
+def test_execute_search_the_guardian_combatant_runs_by_temper_only_when_its_species_does():
+    from ak_engine.models.temper import Temper
+
+    seen = {}
+    for monster in (Monster.GRYPHON, Monster.TROLL, Monster.GR_DRAGON, Monster.BIGFOOT):
+        state = _state_with_leader()
+        state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=monster))
+        with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+            "ak_engine.turn.search_execution.resolve_melee_duel"
+        ) as mock_duel:
+            mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+            execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+        guardian = mock_duel.call_args.args[1]
+        seen[monster] = (guardian.temper, guardian.flees_by_temper)
+    assert seen[Monster.GRYPHON] == (Temper.BERSERK, False)
+    assert seen[Monster.TROLL] == (Temper.BERSERK, False)
+    assert seen[Monster.GR_DRAGON] == (Temper.COWARDLY, True)
+    assert seen[Monster.BIGFOOT][1] is True
 
 
 def test_execute_search_leader_loses_is_removed_from_state():

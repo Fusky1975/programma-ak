@@ -3300,6 +3300,9 @@ class Combatant:
     # Mirror-Image/Illusory-Hero construct included). Default `False`
     # leaves every pre-Phase-665 caller unaffected.
     always_acts_first: bool = False
+    # A monster whose own Temper makes it run by itself (``monster_wants_to_flee_by_temper()``); False for
+    # every character and for a monster that never does.
+    flees_by_temper: bool = False
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -3750,6 +3753,50 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
             combatant.defensive_hit_multiplier *= 1.0 - CAUTIOUS_DODGE_HIT_CHANCE_REDUCTION
 
 
+def melee_blow_damage_bounds(attacker: "Combatant", defender: "Combatant") -> tuple[float, float]:
+    """The average and the maximum damage one landed Melee blow of ``attacker`` would do to ``defender``
+    right now: the species/character die, the Melee-level difference bonus, the flat bonuses and reductions
+    -- the same terms ``resolve_one_melee_round()`` applies (never below 0)."""
+
+    low, high = attacker.melee_damage_range
+    skill_bonus = max(0, effective_melee_skill(attacker) - effective_melee_skill(defender))
+    adjust = skill_bonus + attacker.melee_damage_dealt_bonus - attacker.melee_damage_dealt_reduction - defender.damage_reduction
+    return max(0.0, (low + high) / 2 + adjust), float(max(0, high + adjust))
+
+
+def monster_wants_to_flee_by_temper(own: "Combatant", opponent: "Combatant") -> bool:
+    """The Temper Table's involuntary flight ("indipendentemente dal Piano d'Incontro"), for a monster:
+    Berserk never; Cowardly "when death is possible" -- a single blow of the opponent could kill it;
+    Cautious "when the risk of a mortal blow is significant" -- two average blows could; Brave "when the
+    odds look bad and the risk of a mortal blow is high" -- two average blows could kill it *and* it has
+    fewer hit points than its opponent. (User ruling 2026-11-26: simple thresholds, checked at the start of
+    every Melee round.)"""
+
+    average, maximum = melee_blow_damage_bounds(opponent, own)
+    if own.temper is Temper.COWARDLY:
+        return maximum >= own.hit_points
+    if own.temper is Temper.CAUTIOUS:
+        return 2 * average >= own.hit_points
+    if own.temper is Temper.BRAVE:
+        return 2 * average >= own.hit_points and own.hit_points < opponent.hit_points
+    return False
+
+
+MONSTER_TEMPERS_THAT_FLEE_BY_THEMSELVES = frozenset({Temper.BRAVE, Temper.CAUTIOUS, Temper.COWARDLY})
+
+# [5.6]: getting away from "other characters" is a 50-50 proposition, and "(NOVITA') I personaggi Cauti hanno
+# il 30% in piu' di possibilita' di fuggire" (the Cautious and Cowardly alike).
+MONSTER_FLIGHT_BASE_CHANCE = 0.50
+MONSTER_FLIGHT_WEAK_TEMPER_BONUS = 0.30
+
+
+def monster_flight_succeeds(own: "Combatant", rng: random.Random) -> bool:
+    chance = MONSTER_FLIGHT_BASE_CHANCE
+    if own.temper in (Temper.CAUTIOUS, Temper.COWARDLY):
+        chance += MONSTER_FLIGHT_WEAK_TEMPER_BONUS
+    return rng.random() < chance
+
+
 def melee_skill_hit_bonus(attacker_skill: int, defender_skill: int) -> float:
     """[4.1.5]: the signed change to the 50% base chance to hit for the Melee level difference."""
 
@@ -3942,6 +3989,9 @@ class EncounterCombatResult:
     # resolver. See `report/turn_report.py render_melee_attack()`'s own
     # Phase 415 addendum.
     melee_swings: tuple[MeleeSwing, ...] = ()
+    # The side that got away from the Melee by itself (a monster whose Temper made it run): "a" / "b"; the
+    # duel ends with no winner and nobody dead.
+    fled_side: str | None = None
 
 
 @dataclass(slots=True)
@@ -4010,6 +4060,16 @@ def resolve_one_melee_round(
     attacks()`` call before any Melee round can run, so this is a
     provable no-op for every case except a fresh Psychic Flail proc.
     """
+
+    for runner, other, label in ((a, b, "a"), (b, a, "b")):
+        if (
+            runner.flees_by_temper
+            and runner.hit_points > 0
+            and other.hit_points > 0
+            and monster_wants_to_flee_by_temper(runner, other)
+            and monster_flight_succeeds(runner, rng)
+        ):
+            return MeleeRoundOutcome(result=EncounterCombatResult(winner=None, rounds=round_number, fled_side=label))
 
     skill_a, skill_b = effective_melee_skill(a), effective_melee_skill(b)
     first, second = (

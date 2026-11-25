@@ -2392,6 +2392,8 @@ def resolve_challenge_combat(
             if is_last_tactic and not _target_has_more_casts_pending():
                 result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
                 melee_swings.extend(result.melee_swings)
+                if result.fled_side == "b":
+                    return True, "target_fled"  # its own Temper made the monster run
                 return True, result.winner
             if not melee_setup_done:
                 apply_temper_melee_setup(caster, target, rng)
@@ -2407,6 +2409,8 @@ def resolve_challenge_combat(
             # (otherwise the peek would land on this same entry forever).
             _advance_target_tactic()
             if round_outcome.result is not None:
+                if round_outcome.result.fled_side == "b":
+                    return True, "target_fled"
                 return True, round_outcome.result.winner
             return False, None
         # Phase 674: mirrors search_execution.py's own "Melee vs Cast"
@@ -2813,6 +2817,8 @@ def resolve_challenge_combat(
     if not _target_has_more_casts_pending():
         result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
         melee_swings.extend(result.melee_swings)
+        if result.fled_side == "b":
+            return _outcome(winner="a", target_fled=True)
         return _outcome(winner=result.winner)
     # Phase 674: the exhausted tactic list still defaults to Melee, but
     # the target's own remaining Cast(s) must still get their own

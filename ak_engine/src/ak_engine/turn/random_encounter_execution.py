@@ -109,6 +109,7 @@ from ak_engine.turn.discovery_effects import (
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
+    MONSTER_TEMPERS_THAT_FLEE_BY_THEMSELVES,
     Combatant,
     FireArrowShot,
     MeleeSwing,
@@ -389,6 +390,8 @@ def resolve_random_encounter(
             variety_rng,
         )
     monster_starting_hit_points = opponent.hit_points
+    # A wild monster runs by itself when its Temper says so; a patrol (the King's own men) does not.
+    opponent.flees_by_temper = not is_patrol and opponent.temper in MONSTER_TEMPERS_THAT_FLEE_BY_THEMSELVES
     outcome = resolve_challenge_combat(
         decoded_sep,
         leader,

@@ -5430,3 +5430,13 @@ def test_mirror_image_between_characters_takes_the_opponents_sage_and_illusion_n
         )
     # the opponent's Sage 3 (+2% each) and Illusion 0 -- 0.06, not the caster's 0.11
     assert duel.call_args.kwargs["opponent_disbelief_bonus"] == pytest.approx(0.06)
+
+
+def test_resolve_challenge_combat_a_monster_that_runs_by_temper_ends_the_melee_with_the_hero_holding_the_field():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=2, fled_side="b")
+        outcome = resolve_challenge_combat(
+            [SearchTactic(Maneuver.MELEE)], caster_leader, caster, target_leader, target, state, ScriptedRandom([])
+        )
+    assert outcome.target_fled is True and outcome.winner == "a" and outcome.fled is False
