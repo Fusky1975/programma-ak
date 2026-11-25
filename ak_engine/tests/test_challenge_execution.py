@@ -5148,3 +5148,26 @@ def test_telekinetic_storm_hurts_the_caster_according_to_the_range_it_is_cast_fr
         )
 
     assert mock_self_damage.call_args.args[0] is CombatRange[combat_range_name]
+
+
+def test_kill_enemy_used_in_an_encounter_plan_is_always_halved():
+    # User ruling 2026-11-25: the halving of Kill Enemy applies to its use in an encounter plan.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=False) as roll, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as duel:
+        duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, ScriptedRandom([0.5]),
+            is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set(),
+        )
+
+    assert roll.call_args.kwargs["success_chance_multiplier"] == 0.5
