@@ -4303,6 +4303,12 @@ def resolve_fire_arrow_duel(
     skill_a, skill_b = effective_archery_skill(a), effective_archery_skill(b)
     shots_a = fire_arrow_free_attacks(skill_a) + a.archery_free_attack_bonus
     shots_b = fire_arrow_free_attacks(skill_b) + b.archery_free_attack_bonus
+    # Spiritwrack/Hand of Death: "La vittima non può lanciare incantesimi né tirare con l'arco" -- a victim
+    # fires no return shots either when the other side opens the exchange.
+    if a.blocked_from_archery:
+        shots_a = 0
+    if b.blocked_from_archery:
+        shots_b = 0
     if long_range_archer == "a" or short_range_archer == "a":
         shots_b = 0
     elif long_range_archer == "b" or short_range_archer == "b":

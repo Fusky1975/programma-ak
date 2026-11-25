@@ -2539,6 +2539,11 @@ def _resolve_search_encounter_body(
             return None
 
         if spell is Spell.CHARM:
+            # Discovery.ANALYTICAL_PSYCHOLOGY (Phase 529, `turn/challenge_execution.py`'s own Charm branch):
+            # in Personal Combat the spell is simply ineffective against a character of a Kingdom that
+            # holds it -- a guardian's Charm (a Dryad, a Mermaid) on such a hero leaves the fight going.
+            if not caster_is_leader and target_kingdom is not None and Discovery.ANALYTICAL_PSYCHOLOGY in target_kingdom.discoveries:
+                return None
             # Confirmed by the user: the *caster* flees, same outcome as a
             # successful Maneuver.FLEE.
             return _flee_outcome()

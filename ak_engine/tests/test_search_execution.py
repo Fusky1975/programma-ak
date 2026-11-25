@@ -2257,6 +2257,30 @@ def test_execute_search_monster_cast_psychic_blast_leader_kingdom_holding_lead_l
     assert mock_stun.call_args.kwargs["target_has_lead_lined_helmet"] is True
 
 
+def test_execute_search_guardian_charm_is_ineffective_against_a_hero_of_an_analytical_psychology_kingdom():
+    # Phase 529: in Personal Combat Analytical Psychology makes a Charm simply ineffective -- a Dryad's Charm
+    # must not make the encounter end peacefully for a hero whose Kingdom holds it.
+    def run(with_discovery):
+        state = _state_with_leader()
+        state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+        if with_discovery:
+            state.kingdoms[1].discoveries.add(Discovery.ANALYTICAL_PSYCHOLOGY)
+        state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.DRYAD))
+        with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+            "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+        ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+            mock_roll.return_value = (
+                SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.CHARM.value),
+                SearchTactic(maneuver=Maneuver.MELEE),
+            )
+            mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+            return execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert run(with_discovery=False).fled is True  # the Dryad charms its way out of the fight
+    protected = run(with_discovery=True)
+    assert protected.fled is False and protected.winner == "leader"  # the fight goes on
+
+
 def test_execute_search_monster_cast_psychic_blast_marks_the_leader_target_stunned():
     # Phase 1050: the leader target of a successful Psychic Blast cast
     # must carry `stunned_by_psychic_blast=True` into any later Melee
