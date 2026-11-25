@@ -312,6 +312,8 @@ class BattleReport:
     # is that decision, grounded in the one real structural signal this
     # project actually has for it, not an arbitrary pick.
     duel_loser_fled: bool = False
+    # "succeeded" / "failed": a Cowardly commander's excuse for refusing the duel (see _DuelOutcome.bluff).
+    duel_bluff: str | None = None
     # Phase 231 -- GENERAL INTELLIGENCE REPORT's own raw material
     # (`report/turn_report.py record_battle_world_events()`). Both are
     # already computed locally in `fight_battle()` for its own
@@ -1672,6 +1674,10 @@ class _DuelOutcome:
     # [5.10]: "Altrimenti il duello finisce con la morte di uno dei due comandanti" -- True when the
     # loser was slain (not when he fled). ``fight_battle()`` then removes him and hands his armies on.
     loser_died: bool = False
+    # The Cowardly commander who refused by temper: "succeeded" = his excuse ("warhorse is sick", ...)
+    # saved his troops' strength (BLUFF.X); "failed" = "couldn't think of a good excuse" (_BNoEx).
+    # None for every other outcome.
+    bluff: str | None = None
 
 
 def _commander_combatant(
@@ -1860,9 +1866,9 @@ def _challenged_commander_flees(
     if leader is None:
         return False, False
     governs_neutral_province = _commander_governs_neutral_province(state, commander) is not None
-    if governs_neutral_province and leader.temper is not Temper.COWARDLY:
-        return False, False
-    if not sep_accepts_challenge(sep, state):
+    # A free Hero ruling an independent province always accepts (his plan's Flee does not get him out of
+    # it), but a Cautious or Cowardly one flees by itself during the clash (user ruling 2026-11-25).
+    if not governs_neutral_province and not sep_accepts_challenge(sep, state):
         return True, False
     if resolve_refusal_to_meet(leader.temper, is_king=leader.is_king, opponent_leads_army=True, rng=rng):
         return True, leader.temper is Temper.COWARDLY
@@ -2124,6 +2130,12 @@ def _maybe_fight_duel(
         return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, side, loser_fled=True)
 
     if state is not None:
+        # An anonymous garrison commander defending an *independent* province cannot be challenged at
+        # all: no duel, so his troops lose nothing (user ruling 2026-11-25).
+        if defender_commander.leader_id is None and defender_armies:
+            defended_province = state.provinces.get(defender_armies[0].location)
+            if defended_province is not None and defended_province.owner_kingdom_id is None:
+                return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, None)
         attacker_sep = _side_special_encounter_plan(state, attacker_commander)
         defender_sep = _side_special_encounter_plan(state, defender_commander)
         # Phase 675: the attacker's own real Special Encounter Plan is the default `duel_maneuvers`
@@ -2153,9 +2165,15 @@ def _maybe_fight_duel(
             if flees:
                 if may_bluff and rng.random() < COWARD_BLUFF_AVOID_DEMORALIZATION_CHANCE:
                     return _DuelOutcome(
-                        attacker_commander.leader_id, defender_commander.leader_id, responder_side, loser_fled=True
+                        attacker_commander.leader_id,
+                        defender_commander.leader_id,
+                        responder_side,
+                        loser_fled=True,
+                        bluff="succeeded",
                     )
-                return _flee_demoralization(responder_side)
+                outcome = _flee_demoralization(responder_side)
+                outcome.bluff = "failed" if may_bluff else None
+                return outcome
     elif duel_maneuvers:
         first_tactic = duel_maneuvers[0]
         first_maneuver = first_tactic if isinstance(first_tactic, Maneuver) else first_tactic.maneuver
@@ -2247,7 +2265,21 @@ def _resolve_duel_death(
     side who stand in the province without commanding anything, else they stay unled for the rest of
     the battle. The garrison commander (no ``LeaderState``) has nobody to remove."""
 
-    if not duel.loser_died or duel.loser_side is None:
+    if duel.loser_side is None:
+        return
+    if not duel.loser_died:
+        if duel.loser_fled:
+            # A free Hero ruling an independent province who flees leaves his army to the garrison
+            # commander (user ruling 2026-11-25).
+            fled_id = (
+                duel.attacker_commander_leader_id if duel.loser_side == "attacker" else duel.defender_commander_leader_id
+            )
+            fled_leader = state.leaders.get(fled_id) if fled_id is not None else None
+            fled_province = state.provinces.get(fled_leader.location) if fled_leader is not None else None
+            if fled_province is not None and fled_province.owner_kingdom_id is None:
+                for army in attacker_armies if duel.loser_side == "attacker" else defender_armies:
+                    if army.commanded_by == fled_id:
+                        army.commanded_by = None
         return
     attacker_lost = duel.loser_side == "attacker"
     loser_id = duel.attacker_commander_leader_id if attacker_lost else duel.defender_commander_leader_id
@@ -3412,6 +3444,7 @@ def fight_battle(
         defender_home_province_leader_ids=defender_home_province_leader_ids,
         duel_loser_side=duel.loser_side,
         duel_loser_fled=duel.loser_fled,
+        duel_bluff=duel.bluff,
         province_coord=province_coord,
         attacker_kingdom_id=attacker_kingdom_id,
         defender_kingdom_id=defender_kingdom_id,

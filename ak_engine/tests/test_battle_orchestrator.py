@@ -3393,18 +3393,18 @@ def test_maybe_fight_duel_neutral_province_hero_never_challenges():
 
 
 def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly():
-    # [5.10]: "lo accettano sempre a meno che non siano di Temperamento Codardo" -- even a plan that
-    # starts with Flee does not get a neutral-province Hero out of the duel.
+    # A free Hero ruling an independent province always accepts: even a plan that starts with Flee does
+    # not get him out of the duel (a Brave one never flees on his own).
     state = _duel_gate_state()
     state.leaders[502].location = DEFENDER_HOME
     state.provinces[DEFENDER_HOME].owner_kingdom_id = None  # defender's own current province is unowned
     state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)  # attacker challenges
     state.leaders[502].special_encounter_plan = (SearchTactic(Maneuver.FLEE),)
-    state.leaders[502].temper = Temper.CAUTIOUS  # would sometimes refuse, but the exception forces acceptance
+    state.leaders[502].temper = Temper.BRAVE
     attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
         _duel_gate_armies_and_units()
     )
-    rng = ScriptedRandom([0.01])  # only the duel roll: no refusal roll is made
+    rng = ScriptedRandom([0.01])  # only the duel roll
 
     outcome = _maybe_fight_duel(
         attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
@@ -3417,13 +3417,32 @@ def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly
     assert defender_units[0].effective_strength == 10.0 * 0.75
 
 
-def test_maybe_fight_duel_neutral_province_hero_cowardly_exception_does_not_apply():
-    # Cowardly -- the neutral-province override doesn't fire, so the Hero's own Flee-first SEP governs.
+def test_maybe_fight_duel_neutral_province_hero_cautious_flees_by_himself_and_his_troops_lose_25_percent():
     state = _duel_gate_state()
     state.leaders[502].location = DEFENDER_HOME
     state.provinces[DEFENDER_HOME].owner_kingdom_id = None
     state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)
-    state.leaders[502].special_encounter_plan = (SearchTactic(Maneuver.FLEE),)
+    state.leaders[502].temper = Temper.CAUTIOUS
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
+        ScriptedRandom([0.4]), state=state,  # the refusal roll (Cautious: 50%) fires
+    )
+
+    assert outcome.loser_side == "defender"
+    assert outcome.loser_fled is True
+    assert outcome.bluff is None  # only a Coward bluffs
+    assert defender_units[0].effective_strength == 10.0 * 0.75
+
+
+def test_maybe_fight_duel_neutral_province_hero_cowardly_flees_and_may_bluff():
+    state = _duel_gate_state()
+    state.leaders[502].location = DEFENDER_HOME
+    state.provinces[DEFENDER_HOME].owner_kingdom_id = None
+    state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)
     state.leaders[502].temper = Temper.COWARDLY
     attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
         _duel_gate_armies_and_units()
@@ -3431,12 +3450,59 @@ def test_maybe_fight_duel_neutral_province_hero_cowardly_exception_does_not_appl
 
     outcome = _maybe_fight_duel(
         attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
-        ScriptedRandom([]), state=state,
+        ScriptedRandom([0.99, 0.9]), state=state,  # refuses; the excuse (0.9 >= 2/3) fails
     )
 
-    assert outcome.loser_side == "defender"
-    assert outcome.loser_fled is True  # the Flee-first plan refuses; no bluff for a first-tactic Flee
+    assert outcome.loser_fled is True
+    assert outcome.bluff == "failed"
     assert defender_units[0].effective_strength == 10.0 * 0.75
+
+
+def test_a_fled_free_hero_leaves_his_army_to_the_garrison_commander():
+    state = _duel_gate_state()
+    state.leaders[502].location = DEFENDER_HOME
+    state.provinces[DEFENDER_HOME].owner_kingdom_id = None
+    attacker_armies, defender_armies, *_ = _duel_gate_armies_and_units()
+    state.add_army(defender_armies[0])
+
+    _resolve_duel_death(
+        state, _DuelOutcome(501, 502, "defender", loser_fled=True), attacker_armies, defender_armies, [], []
+    )
+
+    assert 502 in state.leaders  # he flees alive
+    assert state.armies[201].commanded_by is None  # his army passes to the garrison commander
+
+
+def test_the_garrison_commander_of_an_independent_province_cannot_be_challenged():
+    state = _duel_gate_state()
+    state.provinces[FIELD].owner_kingdom_id = None  # an independent province
+    del state.leaders[502]
+    attacker_armies, _defender_armies, attacker_units, defender_units, attacker_commander, _dc = _duel_gate_armies_and_units()
+    garrison_armies = [ArmyState(201, None, ArmyType.GARRISON, Quality.GREEN, FIELD)]
+    state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)  # an aggressive attacker
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, Commander(leader_id=None, contingent_size=1, tactical_ability=0), attacker_armies,
+        garrison_armies, attacker_units, defender_units, ScriptedRandom([]), state=state,
+    )
+
+    assert outcome.loser_side is None
+    assert defender_units[0].effective_strength == 10.0  # no penalty for the defending army
+
+
+def test_maybe_fight_duel_a_bluffing_coward_is_reported_as_such():
+    state = _duel_gate_state()
+    state.leaders[502].temper = Temper.COWARDLY
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
+        ScriptedRandom([0.99, 0.5]), state=state,
+    )
+
+    assert outcome.bluff == "succeeded"
 
 
 def test_fight_battle_flee_laced_attacker_sep_avoids_a_duel_a_default_sep_would_trigger():

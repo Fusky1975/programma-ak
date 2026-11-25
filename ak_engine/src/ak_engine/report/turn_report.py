@@ -3116,8 +3116,19 @@ def describe_battle(
             else battle_report.defender_commander_leader_id
         )
         loser_name = _leader_name(state, loser_leader_id) if loser_leader_id is not None else None
+        challenger_leader_id = (
+            battle_report.defender_commander_leader_id
+            if battle_report.duel_loser_side == "attacker"
+            else battle_report.attacker_commander_leader_id
+        )
+        challenger_name = _leader_name(state, challenger_leader_id) if challenger_leader_id is not None else None
         if loser_name is not None:
-            if battle_report.duel_loser_fled:
+            if battle_report.duel_bluff == "succeeded" and challenger_name is not None:
+                # BLUFF.X: the Coward's excuse ("his warhorse was ill", ...) -- his troops keep their strength.
+                lines.append(render_cowardly_excuse(loser_name, challenger_name, rng))
+            elif battle_report.duel_bluff == "failed":
+                lines.append(render_no_excuse_found(loser_name, rng))
+            elif battle_report.duel_loser_fled:
                 lines.append(render_commander_fled_demoralized(loser_name, rng))
             else:
                 lines.append(render_commander_died_demoralized(loser_name, rng))
@@ -11491,6 +11502,46 @@ DUEL_NO_EXCUSE_TEMPLATE = (
     "< couldn't/Rfailed_to think_of/Rcome_up_with a good/Rbelievable "
     "excuse/Rploy for_avoiding/Rto_get_out_of the duel, so "
 )
+
+
+# HostAK/TP/PROSE/BLUFF.X (FD('bluff', S_Batt, 1)) -- a Coward's excuse for refusing a battle duel, which
+# saves his troops the 25% demoralization (rulebook [4.2], Temper Table: "In battle duels, the Coward makes
+# excuses 2/3 of the time ('warhorse is sick', etc.)"). In the original file a couple of the markers read
+# "<" where the sentence needs the opponent; they are rendered as the opponent here.
+_COWARDLY_EXCUSE_TEMPLATES: list[str] = [
+    "< weaseled/Rwormed {> way }out of the duel/Rshowdown{ with [}{ at the last moment/Rsecond}, "
+    "claiming/Rannouncing_that >_warhorse/R< was too_ill/Rhaving_arthritic_spasms.",
+    "[1 offered_to_duel/Rchallenged <2, but < {haughtily/Rbrazenly }informed/Rordained_to [/Rall_who_would_listen "
+    "that because_of/Rdue_to > infinite/Rbenevolent mercy/Rpity, < would excuse_[_from/Rnot_hold_[_to ] "
+    "ridiculous/Rchildish challenge/Roffer.",
+    "< cleverly/Rsecretly paid_off/Rbribed a camp_attendant/Rspy to produce_false_evidence_of/"
+    "Rannounce_he_had_detected illegal_poison/R['s_plans_to_cheat in ] army-camp/Rtent, and {so }< "
+    "angrily/Rhaughtily backed_out_of/Rdeclined the challenge/Rduel.",
+]
+
+
+def render_cowardly_excuse(coward_name: str, challenger_name: str, rng: random.Random) -> str:
+    """BLUFF.X: the Coward wriggles out of the duel with an excuse and his troops are not demoralized."""
+
+    variant = pick_variant(_COWARDLY_EXCUSE_TEMPLATES, rng)
+    values = {
+        "<": coward_name,
+        "<2": coward_name,
+        ">": f"{coward_name}'s",
+        "[": challenger_name,
+        "[1": challenger_name,
+        "]": f"{challenger_name}'s",
+    }
+    return render(variant, values, rng=rng)
+
+
+def render_no_excuse_found(coward_name: str, rng: random.Random) -> str:
+    """_BNoEx + _ADishF: the Coward refused the duel but could not invent an excuse, so his forces are
+    disappointed by his cowardice and lose 25%."""
+
+    precursor = render(DUEL_NO_EXCUSE_TEMPLATE, {"<": coward_name}, rng=rng)
+    fled = render_commander_fled_demoralized(coward_name, rng)
+    return precursor + fled[:1].lower() + fled[1:]
 
 
 # HostAK/TP/SAY.PAS _LChUnd -- a single, real, hardcoded template (no
