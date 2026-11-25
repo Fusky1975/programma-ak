@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import random
 from unittest.mock import ANY, patch
 
@@ -16,7 +18,7 @@ from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterEngagementState, MonsterSpeed
+from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_RUNTIME_PROFILE, Monster, MonsterEngagementState, MonsterSpeed
 from ak_engine.models.office import Office
 from ak_engine.models.power import Power
 from ak_engine.models.race import Race
@@ -61,6 +63,12 @@ from ak_engine.turn.search_execution import (
 from _helpers import ScriptedRandom
 
 LOCATION = HexCoord(3, 9)
+# Plumbing tests script the dice of one exact melee exchange: a monster temper (Furia's extra roll, Slancio,
+# Schivare) would shift them, so they fight with a temper that has no melee effect (Cowardly).
+_MONSTERS_WITHOUT_TEMPER = {
+    _monster: dataclasses.replace(_profile, temper=Temper.COWARDLY) for _monster, _profile in MONSTER_RUNTIME_PROFILE.items()
+}
+
 LEADER_ID = 1
 
 
@@ -721,6 +729,18 @@ def test_execute_search_hero_killed_by_the_guardian_keeps_his_legendary_item_in_
     assert [r.taken_by_leader_id for r in result.rescued_items] == [77]
     assert state.items[excalibur.item_id].owner_leader_id == 77
     assert state.items[minor.item_id].owner_leader_id == LEADER_ID  # a minor item may be lost with him
+
+
+def test_execute_search_the_guardian_fights_with_the_temper_of_its_species():
+    from ak_engine.models.monster import MONSTER_RUNTIME_PROFILE
+
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+    monster_side = mock_duel.call_args.args[1]
+    assert monster_side.temper is MONSTER_RUNTIME_PROFILE[Monster.GRYPHON].temper
 
 
 def test_execute_search_leader_loses_is_removed_from_state():
@@ -1492,6 +1512,7 @@ def test_execute_search_melee_fast_path_surfaces_the_duels_own_melee_swings():
     assert result.melee_swings == swings
 
 
+@patch.dict(MONSTER_RUNTIME_PROFILE, _MONSTERS_WITHOUT_TEMPER)
 def test_execute_search_melee_round_stepping_accumulates_swings_across_rounds():
     # A bare [MELEE] leader plan still round-steps (instead of taking the
     # atomic resolve_melee_duel() fast path) whenever the guardian's own
@@ -3946,7 +3967,8 @@ def test_execute_search_cast_kill_enemy_failed_roll_triggers_berserk_retaliation
 
     # retaliator (the monster target) passed first -- "a" means it won.
     assert observed_tempers == [Temper.BERSERK]
-    assert mock_melee.call_args[0][0].temper is None  # restored once the duel concludes
+    # restored to the species' own temper once the duel concludes
+    assert mock_melee.call_args[0][0].temper is MONSTER_RUNTIME_PROFILE[Monster.ARCHER].temper
     assert mock_melee.call_args.kwargs["skip_temper_setup"] is False
     assert result.winner == "monster"
     assert result.leader_killed is True
@@ -6796,6 +6818,7 @@ def test_execute_search_melee_uses_atomic_fast_path_when_guardian_has_nothing_le
     assert result.winner == "leader"
 
 
+@patch.dict(MONSTER_RUNTIME_PROFILE, _MONSTERS_WITHOUT_TEMPER)
 def test_execute_search_melee_round_steps_when_guardian_has_a_cast_pending_beyond_its_first_melee():
     # Mirrors Dryad's/Mermaid's own real "MELEE, MELEE, ..., CAST, MELEE"
     # shape (models/monster_encounter_plan.py) -- the guardian's own
@@ -6828,6 +6851,7 @@ def test_execute_search_melee_round_steps_when_guardian_has_a_cast_pending_beyon
     assert mock_cast.called  # the guardian's own later Cast was genuinely attempted
 
 
+@patch.dict(MONSTER_RUNTIME_PROFILE, _MONSTERS_WITHOUT_TEMPER)
 def test_execute_search_guardians_own_cast_disrupted_by_a_landed_swing_never_attempts_the_cast():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
@@ -6909,6 +6933,7 @@ def test_execute_search_melee_vs_cast_skips_the_reactive_swing_when_guardian_alr
     assert result.melee_swings == ()
 
 
+@patch.dict(MONSTER_RUNTIME_PROFILE, _MONSTERS_WITHOUT_TEMPER)
 def test_execute_search_guardians_own_cast_disrupted_by_a_missed_swing_uses_the_flat_30_percent():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
@@ -6937,6 +6962,7 @@ def test_execute_search_guardians_own_cast_disrupted_by_a_missed_swing_uses_the_
     assert not mock_cast.called
 
 
+@patch.dict(MONSTER_RUNTIME_PROFILE, _MONSTERS_WITHOUT_TEMPER)
 def test_execute_search_leaders_own_cast_after_a_non_last_melee_tactic_can_be_disrupted():
     # The leader's own MELEE followed by a real CAST -- a genuinely new
     # plan shape (no pre-Phase-293 caller ever ordered these this way)
@@ -7078,6 +7104,7 @@ def test_resolve_cast_disruption_with_no_pending_cast_uses_the_generic_formula()
 # double-apply Temper setup after an earlier non-last MELEE already ran it --
 
 
+@patch.dict(MONSTER_RUNTIME_PROFILE, _MONSTERS_WITHOUT_TEMPER)
 def test_execute_search_non_last_melee_trailing_fallback_skips_temper_setup_already_applied():
     # Same real bug as turn/challenge_execution.py's own identical Phase
     # 297 fix, found in a dedicated bug-hunt audit: a MELEE tactic that
@@ -7368,6 +7395,7 @@ def _fleeing_guardian_search(hurt_by_round: bool):
     return result, calls, mock_duel
 
 
+@patch.dict(MONSTER_RUNTIME_PROFILE, _MONSTERS_WITHOUT_TEMPER)
 def test_a_wounded_intelligent_guardian_runs_away_and_leaves_the_field_to_the_hero():
     result, calls, mock_duel = _fleeing_guardian_search(hurt_by_round=True)
 
@@ -7378,6 +7406,7 @@ def test_a_wounded_intelligent_guardian_runs_away_and_leaves_the_field_to_the_he
     assert calls["n"] == 2  # two rounds, then the wounded guardian's FLEE comes up
 
 
+@patch.dict(MONSTER_RUNTIME_PROFILE, _MONSTERS_WITHOUT_TEMPER)
 def test_an_unhurt_guardian_keeps_fighting_instead_of_fleeing():
     result, calls, _mock_duel = _fleeing_guardian_search(hurt_by_round=False)
 

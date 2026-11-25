@@ -1917,6 +1917,9 @@ def _resolve_search_encounter_body(
         regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND if feature.guardian_monster is Monster.TROLL else 0,
         is_undead_or_anti_holy=feature.guardian_monster in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
         is_humanoid=feature.guardian_monster in HUMANOID_MONSTERS,
+        # The monster's own Temper (the disassembled `mtemper`) gives it the Temper Table's melee effects too:
+        # Furia/Intimidazione, Slancio, Schivare.
+        temper=MONSTER_RUNTIME_PROFILE[feature.guardian_monster].temper,
     )
     # [5.6] / Temper Table: a Cautious or Cowardly character who is not a King "may even refuse your
     # command to encounter a character or monster, depending on how strong the opponent is" (the Table's
