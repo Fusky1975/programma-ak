@@ -1628,6 +1628,10 @@ class WorldEvent:
     # Read with ``getattr(event, "phase", "")``: saved games predate it. A spy watching the
     # province in that phase sees the event ([3.14]).
     phase: str = ""
+    # For a news item that is about a Kingdom's own doings rather than about a place (a Treat, a Diplomatic Furor):
+    # the Kingdom it is filed under, and who may read it (those who have met it) -- ``coord`` is then unused.
+    # Read with ``getattr(event, "actor_kingdom_id", None)``: saved games predate it.
+    actor_kingdom_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -2732,10 +2736,18 @@ class GameState:
 
         return bool(phase) and (kingdom_id, coord, phase) in self.spy_watches
 
-    def record_world_event(self, coord: HexCoord, lines: list[str], *, kind: str = "", phase: str = "") -> None:
+    def record_world_event(
+        self,
+        coord: HexCoord,
+        lines: list[str],
+        *,
+        kind: str = "",
+        phase: str = "",
+        actor_kingdom_id: int | None = None,
+    ) -> None:
         """Appends one ``WorldEvent`` at ``coord`` -- see that class's own
         docstring for GENERAL INTELLIGENCE REPORT's own real raw material
         (Phase 231).
         """
 
-        self.world_events.append(WorldEvent(coord, lines, kind, phase))
+        self.world_events.append(WorldEvent(coord, lines, kind, phase, actor_kingdom_id))
