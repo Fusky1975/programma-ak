@@ -93,6 +93,7 @@ from ak_engine.models.monster import (
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.models.enums import Maneuver
+from ak_engine.turn.legendary_item_rescue import RescuedItem, rescue_legendary_items
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase
@@ -305,6 +306,7 @@ class RandomEncounterResult:
     leader_died: bool = False
     monster_fled: bool = False  # the wandering monster ran away wounded (its plan's FLEE)
     gold_found: int = 0  # the monster's purse, paid into the hero's Kingdom treasury
+    rescued_items: tuple[RescuedItem, ...] = ()  # legendary items of a fallen hero (turn/legendary_item_rescue.py)
     melee_swings: tuple[MeleeSwing, ...] = ()
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
 
@@ -401,9 +403,11 @@ def resolve_random_encounter(
 
     leader_died = False
     gold_found = 0
+    rescued: list[RescuedItem] = []
     if outcome.winner == "b":
         state.remove_leader(leader_id)
         leader_died = True
+        rescued = rescue_legendary_items(state, leader_id, leader.kingdom_id, coord)
     elif outcome.winner == "a" and not is_patrol:
         if not outcome.target_fled:
             # The Lord High Defender's merit: the monster's own starting hit points (see
@@ -424,6 +428,7 @@ def resolve_random_encounter(
         leader_died=leader_died,
         monster_fled=outcome.target_fled,
         gold_found=gold_found,
+        rescued_items=tuple(rescued),
         melee_swings=outcome.melee_swings,
         fire_arrow_shots=outcome.fire_arrow_shots,
     )

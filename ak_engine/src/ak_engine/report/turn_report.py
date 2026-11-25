@@ -8242,6 +8242,26 @@ def render_take_items(character_name: str, item_names: list[str], rng: random.Ra
     return render(TAKE_ITEMS_TEMPLATE, values, rng=rng, lists={"\\": item_names})
 
 
+# Project-original (user ruling 2026-11-25, `turn/legendary_item_rescue.py`): what happens to a legendary
+# item when its bearer is killed by a monster.
+SQUIRE_CARRIES_ITEM_TEMPLATE = "<'s squire gathered the \\ and will carry it to the King at the end of the turn."
+
+
+def describe_rescued_items(rescued_items, state: GameState | None, dead_name: str, rng: random.Random) -> list[str]:
+    """One line per legendary item saved from a fallen hero: taken at once by a comrade on the spot, or left to
+    the squire who delivers it to the King (the Royal Heir, if the King fell) at the end of the turn."""
+
+    lines: list[str] = []
+    for rescued in rescued_items:
+        item_name = TREASURE_NAME[rescued.treasure]
+        comrade = state.leaders.get(rescued.taken_by_leader_id) if state is not None and rescued.taken_by_leader_id is not None else None
+        if comrade is not None:
+            lines.append(render_take_items(comrade.name, [item_name], rng))
+        else:
+            lines.append(render(SQUIRE_CARRIES_ITEM_TEMPLATE, {"<": dead_name, "\\": item_name}, rng=rng))
+    return lines
+
+
 # HostAK/TP/SAY.PAS _LWill -- a single, real, hardcoded template (no
 # file). See module docstring's Phase 117 addendum.
 WILL_TEMPLATE = "['s will left {all }] {worldly }possessions to ] compatriots/Rfellow_adventurers."
@@ -8693,6 +8713,8 @@ def describe_random_encounter(
             result, character_name=character_name, opponent_name=opponent_name, rng=rng, is_sea=is_sea
         )
     )
+    if result.leader_died:
+        lines.extend(describe_rescued_items(result.rescued_items, state, character_name, rng))
     return lines
 
 
@@ -13100,6 +13122,7 @@ def describe_search(
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
         lines.append(render_character_death(character_name, rng))
+        lines.extend(describe_rescued_items(result.rescued_items, state, character_name, rng))
 
     # Phase 672/673: the guardian's own pacification, if this encounter
     # triggered one -- real, sourced `SAY.PAS` text as of Phase 673, see

@@ -1768,6 +1768,9 @@ class GameState:
     # processor.py run_turn()`'s own `_replenish_turn_scoped_state()`
     # call already uses) installs each one and clears this set.
     pending_king_successions: set[int] = field(default_factory=set)
+    # Legendary items (``turn/legendary_item_rescue.py``) of a hero killed by a monster with no comrade on the
+    # spot: ``(item_id, kingdom_id)`` pairs the dead hero's squire delivers to the King at the end of the turn.
+    pending_squire_deliveries: list[tuple[int, int]] = field(default_factory=list)
     # Battle deaths only (Phase 60) -- see module docstring.
     battle_graveyard: dict[HexCoord, list[GraveyardEntry]] = field(default_factory=dict)
     # Phase 309: next GraveyardEntry.death_seq to hand out -- see module

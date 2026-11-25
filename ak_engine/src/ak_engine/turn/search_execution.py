@@ -560,6 +560,7 @@ from ak_engine.models.power import Power
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+from ak_engine.turn.legendary_item_rescue import RescuedItem, rescue_legendary_items
 from ak_engine.turn.cast_execution import PLACES_ABILITY_FOR_ABILITY, PLACES_FEATURE_TYPES
 from ak_engine.turn.discovery_effects import (
     arcane_valor_hit_points_bonus,
@@ -978,6 +979,7 @@ class SearchExecutionResult:
     winner: str | None = None
     feature_looted: bool = False
     leader_killed: bool = False
+    rescued_items: tuple[RescuedItem, ...] = ()  # legendary items of the fallen hero (turn/legendary_item_rescue.py)
     fled: bool = False
     # 2026-11-24 -- [3.3]: "You can Search a feature to Scout it even after you've killed the monster": a
     # Search that only scouted a feature whose guardian was already dead (no encounter took place).
@@ -2040,11 +2042,13 @@ def _resolve_search_encounter(
             # _resolve_guardian_pacification()'s own docstring.
             intimidated, undeterred = _resolve_guardian_pacification()
             state.remove_leader(leader_id)
+            rescued_items = rescue_legendary_items(state, leader_id, leader.kingdom_id, leader.location)
             return SearchExecutionResult(
                 accepted=True,
                 combat_resolved=True,
                 winner="monster",
                 leader_killed=True,
+                rescued_items=tuple(rescued_items),
                 guardian_intimidated=intimidated,
                 guardian_undeterred=undeterred,
             )
