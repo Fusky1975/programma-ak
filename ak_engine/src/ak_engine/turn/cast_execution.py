@@ -2492,15 +2492,6 @@ def _execute_flood(
     return CastExecutionResult(request, applied=True, discovery_defended=Discovery.FLOOD_DAMS if defended else None)
 
 
-def _is_enemy_province(state: GameState, caster: LeaderState, province: ProvinceState) -> bool:
-    """[4.2.4] Tornado/Earthquake need an *enemy* province: one owned by a Kingdom other than
-    the caster's own and not allied with it (the same own-or-allied vs enemy split the movement
-    rules use). An unowned province is nobody's enemy."""
-
-    owner = province.owner_kingdom_id
-    return owner is not None and not state.is_allied(owner, caster.kingdom_id)
-
-
 def _execute_tornado(
     state: GameState,
     leader_id: int,
@@ -2511,7 +2502,10 @@ def _execute_tornado(
 ) -> CastExecutionResult:
     """Rulebook [4.24.2]: "cast on an enemy province you're in or adjacent to it: every
     unit present (even your own or allied ones) has a 10%-per-mage-level
-    chance of being destroyed." No ownership/allegiance check on which
+    chance of being destroyed." **User ruling 2026-11-25: despite the word "enemy", the
+    target province is not restricted** -- it may be the caster's own, an ally's (an enemy
+    using a common ally's territory against you) or an independent one (to conquer it more
+    easily). No ownership/allegiance check on which
     units get caught in the blast -- the rulebook explicitly says own
     and allied units aren't exempt.
 
@@ -2549,9 +2543,7 @@ def _execute_tornado(
     resolved = _resolve_province_cast(state, leader_id, request, board_width)
     if isinstance(resolved, CastExecutionResult):
         return resolved
-    caster, coord, province = resolved
-    if not _is_enemy_province(state, caster, province):
-        return CastExecutionResult(request, applied=False, reason="target province is not an enemy province")
+    caster, coord, _province = resolved
     early = _province_cast_gate(state, caster, coord, request, Ability.ELEMENTAL, rng, wand_skill_level)
     if early is not None:
         return early
@@ -2654,7 +2646,8 @@ def _execute_earthquake(
     wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.24.3]: "zeroes the tax revenue of an enemy land province you're in or
-    adjacent to it, for one turn." "Not cumulative" -- stored as a
+    adjacent to it, for one turn." **User ruling 2026-11-25: any land province may be
+    targeted**, not only an enemy one (a deterrent against an ally, for instance). "Not cumulative" -- stored as a
     ``ProvinceState.tax_modifier_percent`` -100 (a set, not an add),
     same convention as Bless's +60.
 
@@ -2691,8 +2684,6 @@ def _execute_earthquake(
     caster, coord, province = resolved
     if province.effective_terrain() is Terrain.SEA and AdvancedAbility.ENHANCED_EARTHQUAKE not in caster.advanced_abilities:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
-    if province.effective_terrain() is not Terrain.SEA and not _is_enemy_province(state, caster, province):
-        return CastExecutionResult(request, applied=False, reason="target province is not an enemy province")
 
     early = _province_cast_gate(state, caster, coord, request, Ability.ELEMENTAL, rng, wand_skill_level)
     if early is not None:
