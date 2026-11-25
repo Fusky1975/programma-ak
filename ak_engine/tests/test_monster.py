@@ -338,10 +338,11 @@ def test_roll_gate_demon_type_every_result_is_one_of_the_seven_anti_holy_demons(
 # ALIGNMENT_DISTRIBUTION) --
 
 
-def test_monster_magic_abilities_covers_exactly_29_of_60_species():
-    # The other 31 real species genuinely have no magic abilities at
-    # all in the source -- absent, not a hidden zero-everything row.
-    assert len(MONSTER_MAGIC_ABILITIES) == 29
+def test_monster_magic_abilities_covers_exactly_30_of_60_species():
+    # The other 30 real species genuinely have no magic abilities at
+    # all -- absent, not a hidden zero-everything row. 29 come from the user's July
+    # source; the Giant (Illusion 2) was added from Mostri.md at the user's request (2026-11-26).
+    assert len(MONSTER_MAGIC_ABILITIES) == 30
     all_real = {m for m in Monster if m is not Monster.NOMONSTER}
     assert set(MONSTER_MAGIC_ABILITIES.keys()) <= all_real
 
@@ -351,11 +352,14 @@ def test_monster_magic_abilities_nomonster_sentinel_has_no_entry():
 
 
 def test_monster_magic_abilities_species_with_no_source_entry_are_absent():
-    # Sampled from species whose Magic Abilities column was blank in the
-    # source (Gryphon, Giant, Gargoyle, Troll -- the same four species
-    # MONSTER_STATS's own 6-of-60 table covers).
-    for monster in (Monster.GRYPHON, Monster.GIANT, Monster.GARGOYLE, Monster.TROLL):
+    # Sampled from species whose Magic Abilities column was blank (Gryphon, Gargoyle, Troll).
+    for monster in (Monster.GRYPHON, Monster.GARGOYLE, Monster.TROLL):
         assert monster not in MONSTER_MAGIC_ABILITIES
+
+
+def test_monster_magic_abilities_aligned_with_mostri_md_for_giant_and_elemental_sorcerer():
+    assert MONSTER_MAGIC_ABILITIES[Monster.GIANT] == {Ability.ILLUSION: 2}
+    assert MONSTER_MAGIC_ABILITIES[Monster.ELE_MAGE] == {Ability.ELEMENTAL: 3, Ability.ILLUSION: 1}
 
 
 def test_monster_magic_abilities_single_school_sample():

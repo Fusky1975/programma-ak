@@ -5279,3 +5279,154 @@ def test_kill_enemy_used_in_an_encounter_plan_is_always_halved():
         )
 
     assert roll.call_args.kwargs["success_chance_multiplier"] == 0.5
+
+
+# -- a wandering monster as the target of the character's spells: the species rules (user audit 2026-11-26) --
+
+
+def _cast_at_a_monster(spell, monster, *, skills=None, caster_kwargs=None, target_hit_points=30, mirror=None):
+    """The character casts ``spell`` at a wandering ``monster`` (target_monster=...). Returns what the
+    cast resolver gave back plus the two combatants and the caster leader."""
+
+    from ak_engine.models.monster import MONSTER_NAMES
+
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=skills, **(caster_kwargs or {}))
+    state.add_leader(caster_leader)
+    stand_in = LeaderState(-1000, None, MONSTER_NAMES[monster], FIELD)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(stand_in, state)
+    target.hit_points = target_hit_points
+    tactic = SearchTactic(Maneuver.CAST, spell.value)
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True):
+        outcome = _resolve_personal_combat_cast(
+            caster,
+            caster_leader,
+            target,
+            stand_in,
+            tactic,
+            state,
+            ScriptedRandom([0.5] * 20),
+            is_first_tactic=True,
+            cast_slots_used={},
+            cast_spells_attempted=set(),
+            target_monster=monster,
+        )
+    return outcome, caster, target, caster_leader
+
+
+def test_telekinetic_storm_is_useless_against_a_submarine_monster_and_costs_the_caster_nothing():
+    from ak_engine.models.monster import Monster
+
+    _outcome, caster, target, _leader = _cast_at_a_monster(
+        Spell.TELEK_STORM, Monster.GI_OCTOPUS, skills=_skills_with(Ability.PSYCHIC, 4, 9)
+    )
+    assert target.hit_points == 30 and caster.hit_points == CHARACTER_HIT_POINTS
+    _outcome, caster, target, _leader = _cast_at_a_monster(
+        Spell.TELEK_STORM, Monster.TROLL, skills=_skills_with(Ability.PSYCHIC, 4, 9)
+    )
+    assert target.hit_points < 30
+
+
+def test_fireball_spares_a_submarine_monster_unless_the_caster_has_enhanced_elemental_spells():
+    from ak_engine.models.advanced_ability import AdvancedAbility
+    from ak_engine.models.monster import Monster
+
+    skills = _skills_with(Ability.ELEMENTAL, 4, 9)
+    _o, _c, target, _l = _cast_at_a_monster(Spell.FIREBALL, Monster.ELASMOSAURUS, skills=skills)
+    assert target.hit_points == 30
+    _o, _c, target, _l = _cast_at_a_monster(
+        Spell.FIREBALL,
+        Monster.ELASMOSAURUS,
+        skills=skills,
+        caster_kwargs={"advanced_abilities": {AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS}},
+    )
+    assert target.hit_points < 30
+
+
+def test_spiritwrack_is_ineffective_against_mechanical_and_undead_monsters_and_halved_against_animals():
+    from ak_engine.models.monster import Monster
+
+    skills = _skills_with(Ability.WHITE, 4, 9)
+    with patch("ak_engine.turn.challenge_execution.spiritwrack_melee_damage_reduction", return_value=1.0) as reduction:
+        for monster, immune, animal in (
+            (Monster.GOLEM, True, False),
+            (Monster.GARGOYLE, True, False),
+            (Monster.VAMPIRE, True, False),
+            (Monster.GI_SPIDER, False, True),
+            (Monster.TROLL, False, False),
+        ):
+            _cast_at_a_monster(Spell.SPIRITWRACK, monster, skills=skills)
+            kwargs = reduction.call_args.kwargs
+            assert (kwargs["target_is_immune"], kwargs["target_is_animal_intelligence"]) == (immune, animal), monster
+
+
+def test_hand_of_death_is_ineffective_against_mechanical_monsters_too():
+    from ak_engine.models.monster import Monster
+
+    skills = _skills_with(Ability.NECROMANCY, 3, 9)
+    for monster, immune in ((Monster.GOLEM, True), (Monster.IMP, True), (Monster.TROLL, False)):
+        with patch("ak_engine.turn.challenge_execution.resolve_hand_of_death_channel") as channel:
+            channel.return_value = type("R", (), {"winner": None, "squeeze_hits": (), "interrupt_damage": 0})()
+            _cast_at_a_monster(Spell.HAND_OF_DEATH, monster, skills=skills)
+            assert channel.call_args.kwargs["target_is_immune"] is immune, monster
+
+
+def test_ice_suspension_crashes_flying_monsters_and_spares_demons():
+    from ak_engine.models.monster import Monster
+
+    skills = _skills_with(Ability.ELEMENTAL, 3, 9)
+    _o, caster, target, _l = _cast_at_a_monster(Spell.ICE_SUSPEND, Monster.ROC, skills=skills)
+    assert target.hit_points < 30  # a flying monster crashes whatever its hit points
+    assert caster.bonus_unanswered_attacks > 0
+    outcome, caster, target, _l = _cast_at_a_monster(Spell.ICE_SUSPEND, Monster.BAL_DEMON, skills=skills, target_hit_points=1)
+    assert outcome is None and target.hit_points == 1 and caster.bonus_unanswered_attacks == 0
+    outcome, _c, _t, _l = _cast_at_a_monster(Spell.ICE_SUSPEND, Monster.TROLL, skills=skills, target_hit_points=1)
+    assert outcome == "a"  # frozen
+
+
+def test_mirror_image_against_a_monster_uses_its_species_intelligence_and_no_leader_bonus():
+    from ak_engine.models.monster import Monster
+    from ak_engine.turn.encounter import MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER
+
+    with patch("ak_engine.turn.challenge_execution.resolve_mirror_image_duel") as duel:
+        duel.return_value = type("D", (), {"winner": None})()
+        _cast_at_a_monster(Spell.MIRROR_IMAGE, Monster.GI_SPIDER, skills=_skills_with(Ability.ILLUSION, 4, 9))
+    args = duel.call_args
+    assert args.args[2] is MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER[Monster.GI_SPIDER]
+    assert args.kwargs["opponent_disbelief_bonus"] == 0.0
+
+
+def test_mirror_image_between_characters_takes_the_opponents_sage_and_illusion_not_the_casters():
+    from ak_engine.models.enums import Ability as A
+
+    state = _base_state()
+    raw_caster = [0] * 30
+    raw_caster[A.ILLUSION.value * 2] = 5  # the caster's own Illusion must not make the opponent doubt
+    raw_caster[A.SAGE.value * 2] = 5
+    raw_target = [0] * 30
+    raw_target[A.SAGE.value * 2] = 3
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=SkillTable(raw_caster))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=SkillTable(raw_target))
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_mirror_image_duel"
+    ) as duel:
+        duel.return_value = type("D", (), {"winner": None})()
+        _resolve_personal_combat_cast(
+            caster,
+            caster_leader,
+            target,
+            target_leader,
+            SearchTactic(Maneuver.CAST, Spell.MIRROR_IMAGE.value),
+            state,
+            ScriptedRandom([0.5] * 10),
+            is_first_tactic=True,
+            cast_slots_used={},
+            cast_spells_attempted=set(),
+        )
+    # the opponent's Sage 3 (+2% each) and Illusion 0 -- 0.06, not the caster's 0.11
+    assert duel.call_args.kwargs["opponent_disbelief_bonus"] == pytest.approx(0.06)
