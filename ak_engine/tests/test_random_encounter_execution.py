@@ -61,6 +61,15 @@ def test_monster_combatant_hp_within_species_range():
     assert combatant.melee_skill == MONSTER_COMBAT_STATS[Monster.GIANT].melee_skill
 
 
+def test_monster_combatant_carries_the_temper_of_its_species():
+    # The disassembled `mtemper` gives a monster the Temper Table's melee effects (Furia, Slancio, Schivare).
+    from ak_engine.models.monster import MONSTER_RUNTIME_PROFILE
+
+    for monster in MONSTER_COMBAT_STATS:
+        assert monster_combatant(monster, random.Random(1)).temper is MONSTER_RUNTIME_PROFILE[monster].temper
+    assert monster_combatant(Monster.GRYPHON, random.Random(1)).temper.name == "BERSERK"
+
+
 def test_monster_combatant_troll_regenerates():
     combatant = monster_combatant(Monster.TROLL, random.Random(1))
     assert combatant.regenerates_hp == 1

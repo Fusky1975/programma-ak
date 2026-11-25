@@ -166,6 +166,7 @@ def monster_combatant(monster: Monster, rng: random.Random) -> Combatant:
         regenerates_hp=_TROLL_REGENERATION_PER_COMBAT_ROUND if monster is Monster.TROLL else 0,
         is_undead_or_anti_holy=monster in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
         is_humanoid=monster in HUMANOID_MONSTERS,
+        temper=MONSTER_RUNTIME_PROFILE[monster].temper,  # Furia/Intimidazione, Slancio, Schivare
     )
 
 
