@@ -3,6 +3,8 @@ from __future__ import annotations
 import random
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, NO_LEADER_SENTINEL, ArmyType
@@ -16,6 +18,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.battle_orchestrator import BattleReport, MultiAttackerBattle
@@ -4065,3 +4068,122 @@ def test_a_hired_heros_embedded_plan_starts_from_the_next_phase_not_at_once():
     assert order == [(10, "P0"), (11, "P0"), (50, "P1")]
     assert state.leaders[50].kingdom_id == 1
     assert len(turn_leaders) == 2  # the caller's list is left alone
+
+
+# -- Initiative audit ([3] "Un personaggio può attendere se un altro deve fare qualcosa per lui") --
+
+
+@pytest.mark.parametrize(
+    "beneficiary_action",
+    [ActionCode.LMOVE, ActionCode.PURSUE, ActionCode.TRAIL, ActionCode.SEARCH, ActionCode.CHALLENGE, ActionCode.PRACTICE],
+)
+def test_a_higher_initiative_beneficiary_waits_before_any_kind_of_order(beneficiary_action: ActionCode):
+    # Whatever the favoured leader means to do (move, pursue, trail, enter a Special Place, meet another
+    # hero...), he waits until the lower-Initiative colleague has done his favour.
+    state = _ordering_state({20: 0, 21: 3})
+    beneficiary_phase = PlanPhase(
+        label="P1",
+        action=beneficiary_action,
+        obj=encode_hex_number(ORIGIN2, BOARD_WIDTH) if beneficiary_action is ActionCode.LMOVE else 99,
+        extra=[0],
+    )
+    turn_leaders = _turn_leaders(
+        (20, 1, "P1", _recruit_phase("P1", target_leader_id=21)),
+        (21, 1, "P1", beneficiary_phase),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P1", state, BOARD_WIDTH)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [20, 21]
+
+
+def test_a_spell_wand_used_on_a_colleague_makes_him_wait_like_a_favourable_cast():
+    state = _ordering_state({22: 0, 23: 3})
+    wand = state.add_item(Treasure.WAND_ORATORY, owner_leader_id=22, charges=1)
+    use_mi = PlanPhase(label="P0", action=ActionCode.USE_MI, obj=wand.item_id, extra=[23])
+    turn_leaders = _turn_leaders((22, 1, "P0", use_mi), (23, 1, "P0", _wait_phase("P0")))
+
+    entries = _collect_phase_entries(turn_leaders, "P0", state, BOARD_WIDTH)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [22, 23]
+
+
+def test_the_benefactor_waits_for_a_newcomer_who_is_moving_into_his_province():
+    # [3]: "quando il personaggio A sta entrando in una provincia in cui il personaggio B ha in programma di
+    # fare qualcosa per A, anche se B ha un'iniziativa più alta, aspetterà A."
+    state = _ordering_state({70: 0, 71: 3})  # B (71) has the higher Initiative
+    state.leaders[71].location = ORIGIN2  # B stands where A is going
+    turn_leaders = _turn_leaders(
+        (70, 1, "P1", _lmove_phase("P1", ORIGIN2)),
+        (71, 1, "P1", _recruit_phase("P1", target_leader_id=70)),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P1", state, BOARD_WIDTH)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [70, 71]
+
+
+def test_the_benefactor_still_goes_first_when_the_beneficiary_moves_elsewhere():
+    state = _ordering_state({70: 3, 71: 0})
+    state.leaders[71].location = ORIGIN2
+    turn_leaders = _turn_leaders(
+        (70, 1, "P1", _lmove_phase("P1", TARGET)),  # not the benefactor's province
+        (71, 1, "P1", _recruit_phase("P1", target_leader_id=70)),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P1", state, BOARD_WIDTH)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [71, 70]
+
+
+def test_run_turn_a_joint_practice_group_still_waits_for_the_favour_it_depends_on():
+    # Two heroes practising the same ability together are dispatched as one group, which used to run
+    # ahead of every ordinary order -- even ahead of the Give one of them was waiting for.
+    state = _base_state()
+    state.add_leader(LeaderState(13, 1, "Benefactor", ORIGIN, skills=_skills_with(Ability.MARCH, 1, 1)))
+    state.add_leader(LeaderState(14, 1, "Beneficiary", ORIGIN, skills=_skills_with(Ability.MARCH, 3, 3)))
+    state.add_leader(LeaderState(15, 1, "Partner", ORIGIN, skills=_skills_with(Ability.MARCH, 2, 2)))
+    turn_leaders = [
+        TurnLeader(Leader(13, "Benefactor", ActionPlan(13, [PlanSegment(0, 0, (), {"P1": _trade_phase("P1", 14)})])), 1),
+        TurnLeader(Leader(14, "Beneficiary", ActionPlan(14, [PlanSegment(0, 0, (), {"P1": _practice_phase("P1", Ability.MELEE)})])), 1),
+        TurnLeader(Leader(15, "Partner", ActionPlan(15, [PlanSegment(0, 0, (), {"P1": _practice_phase("P1", Ability.MELEE)})])), 1),
+    ]
+
+    results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    p1 = [r.leader_id for r in results if r.phase_label == "P1" and r.leader_id in (13, 14, 15)]
+    assert p1.index(13) < p1.index(14)
+    assert p1.index(13) < p1.index(15)  # the whole group runs after the Give
+
+
+def test_order_phase_units_keeps_rank_order_unless_a_dependency_forces_otherwise():
+    from ak_engine.turn.turn_processor import _order_phase_units
+
+    log: list[str] = []
+    units = [
+        ((0, 0), [0, 1], lambda: log.append("group")),
+        ((1, 0), [2], lambda: log.append("single")),
+    ]
+
+    for run in _order_phase_units(units, {}):
+        run()
+    assert log == ["group", "single"]
+
+    log.clear()
+    for run in _order_phase_units(units, {2: {1}}):  # the single must go before the group's member 1
+        run()
+    assert log == ["single", "group"]
+
+
+def test_a_same_kingdom_trail_also_acts_right_after_its_target():
+    # [3.16]: "Se il personaggio ne insegue o pedina un altro che appartiene al proprio Reame ed entrambi
+    # partono dalla stessa provincia, l'inseguitore eseguirà l'azione dopo l'inseguito."
+    from ak_engine.turn.turn_processor import _order_same_kingdom_pursuits_after_their_target
+
+    trail = PlanPhase(label="P0", action=ActionCode.TRAIL, obj=20, extra=[0])
+    leaders = _turn_leaders((10, 1, "P0", trail), (20, 1, "P0", _lmove_phase("P0", TARGET)))
+    entries = [(leaders[0], 0, trail), (leaders[1], 0, _lmove_phase("P0", TARGET))]
+
+    order = _order_same_kingdom_pursuits_after_their_target(entries, [0, 1], {10: ORIGIN, 20: ORIGIN})
+
+    assert order == [1, 0]  # the trailed leader moves first, the trailer follows
