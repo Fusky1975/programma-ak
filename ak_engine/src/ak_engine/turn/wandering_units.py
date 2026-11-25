@@ -245,6 +245,8 @@ def army_eligible_for_wander(state: GameState, army: ArmyState, orders_flag: dic
         return False
     if army.commanded_by is not None:
         return False  # "le unita' militari non possono muovere senza personaggi" -- and not away from theirs
+    if not army.is_mercenary:
+        return False  # user ruling 2026-11-26: only mercenary bands wander; a native garrison stays where it defends
     province = state.provinces.get(army.location)
     owner_kingdom_id = province.owner_kingdom_id if province is not None else None
     if owner_kingdom_id is not None and _kingdom_has_king(state, owner_kingdom_id):
@@ -468,7 +470,7 @@ def resolve_wandering(
             relocations.append(WanderRelocation("hero", leader.leader_id, origin, destination))
 
     armies = sorted(
-        (army for army in state.armies.values() if army.kingdom_id is None),
+        (army for army in state.armies.values() if army.kingdom_id is None and army.is_mercenary),
         key=lambda army: army.army_id,
     )
     for army in armies:

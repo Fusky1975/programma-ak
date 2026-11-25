@@ -263,7 +263,17 @@ def test_hero_eligible_for_wander_king_orders_flag_gate():
 def test_army_eligible_for_wander_requires_kingdomless():
     state = build_state()
     state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME))
-    state.add_army(ArmyState(2, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME))
+    state.add_army(ArmyState(2, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME, is_mercenary=True))
+    assert army_eligible_for_wander(state, state.armies[1], {}) is False
+    assert army_eligible_for_wander(state, state.armies[2], {}) is True
+
+
+def test_army_eligible_for_wander_only_for_mercenary_bands():
+    # User ruling 2026-11-26: the native garrison of an unowned province (kingdom-less, not a mercenary band)
+    # stays where it defends.
+    state = build_state()
+    state.add_army(ArmyState(1, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME))
+    state.add_army(ArmyState(2, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME, is_mercenary=True))
     assert army_eligible_for_wander(state, state.armies[1], {}) is False
     assert army_eligible_for_wander(state, state.armies[2], {}) is True
 
@@ -272,7 +282,7 @@ def test_army_eligible_for_wander_king_orders_flag_gate():
     state = build_state()
     state.add_province(_province(HOME, owner=1))
     state.add_leader(LeaderState(99, 1, "King", HOME, is_king=True))
-    state.add_army(ArmyState(1, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME))
+    state.add_army(ArmyState(1, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME, is_mercenary=True))
     assert army_eligible_for_wander(state, state.armies[1], {1: False}) is False
     assert army_eligible_for_wander(state, state.armies[1], {1: True}) is True
 
@@ -535,8 +545,8 @@ def test_army_eligible_for_wander_never_when_it_has_a_commander():
     # None too) must not wander off and leave him behind.
     state = GameState()
     state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
-    free = ArmyState(1, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 1))
-    led = ArmyState(2, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 1), commanded_by=77)
+    free = ArmyState(1, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 1), is_mercenary=True)
+    led = ArmyState(2, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 1), commanded_by=77, is_mercenary=True)
     state.add_army(free)
     state.add_army(led)
     assert army_eligible_for_wander(state, free, {}) is True
