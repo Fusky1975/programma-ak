@@ -2865,7 +2865,11 @@ def _execute_illus_armies(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    target.phantasmal_armies_level = _caster_level(state, caster, Ability.ILLUSION, wand_skill_level)
+    # "L'uso ripetuto di questo incantesimo non è cumulativo": a second cast never stacks on the
+    # first, and a weaker caster never undoes a stronger caster's phantoms -- the best level stands.
+    target.phantasmal_armies_level = max(
+        target.phantasmal_armies_level, _caster_level(state, caster, Ability.ILLUSION, wand_skill_level)
+    )
     return CastExecutionResult(request, applied=True)
 
 
