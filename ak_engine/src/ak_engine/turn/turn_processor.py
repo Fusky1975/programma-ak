@@ -284,7 +284,12 @@ from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_ph
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
 from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, decode_cast_phase
-from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders, is_attackable_at
+from ak_engine.turn.diplomacy import (
+    advance_pending_diplomacy,
+    apply_diplomatic_fury,
+    apply_treat_orders,
+    is_attackable_at,
+)
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
@@ -520,6 +525,9 @@ def run_turn(
     # end, which would wipe it before that later read ever happens. See
     # `GameState.diplomacy_relation_change_notices`'s own docstring.
     state.diplomacy_relation_change_notices = []
+    state.diplomacy_fury_notices = []
+    state.diplomacy_notice_issuers = {}
+    state.diplomacy_order_notes = []
 
     # 2026-11-03 -- promotes any ordinary King's own Break Treat order
     # deferred last turn (RULES.AK [8.3]'s "alla fine del turno" timing,
@@ -538,6 +546,7 @@ def run_turn(
     # Treat; Break Treat's own timing is modeled for real as of
     # 2026-11-03 (see `advance_pending_diplomacy()` right above).
     apply_treat_orders(state)
+    apply_diplomatic_fury(state, rng)
 
     # Phase 669 -- rulebook [5.10]: each leader's own real, standing
     # Special Encounter Plan, decoded once here (before any phase

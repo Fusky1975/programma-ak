@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import pytest
 
+from _helpers import ScriptedRandom
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.kingdom import KingdomMoveHeader
@@ -15,6 +17,8 @@ from ak_engine.models.race import Race
 from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.diplomacy import (
     advance_pending_diplomacy,
+    alignment_distance,
+    apply_diplomatic_fury,
     apply_treat_orders,
     is_attackable_at,
     set_relation,
@@ -456,3 +460,169 @@ def test_sync_treat_orders_then_apply_treat_orders_produces_a_real_pending_allia
     advance_pending_diplomacy(state)
 
     assert state.is_allied(1, 2)
+
+
+# -- Furore Diplomatico (user ruling 2026-11-26) ---------------------------------
+
+
+def _allied(alignment_a: Alignment, alignment_b: Alignment) -> GameState:
+    state = _state(alignment_a, alignment_b)
+    set_relation(state, 1, 2, DiplomaticRelation.ALLIED)
+    return state
+
+
+def test_alignment_distance_follows_the_rulebooks_order_of_kingdom_alignments():
+    assert alignment_distance(_state(Alignment.DIVINE, Alignment.PAGAN), 1, 2) == 4  # the rulebook's own example
+    assert alignment_distance(_state(Alignment.GOOD, Alignment.EVIL), 1, 2) == 4
+    assert alignment_distance(_state(Alignment.DIVINE, Alignment.UNDEAD), 1, 2) == 6
+    assert alignment_distance(_state(Alignment.GOOD, Alignment.NEUTRAL), 1, 2) == 2
+    assert alignment_distance(_state(Alignment.GOOD, Alignment.MECHANICAL), 1, 2) is None
+
+
+def test_the_furor_needs_allies_more_than_three_positions_apart_and_draws_nothing_otherwise():
+    for state in (
+        _allied(Alignment.GOOD, Alignment.PAGAN),  # 3 apart: not enough
+        _state(Alignment.DIVINE, Alignment.PAGAN),  # far apart but not Allies
+    ):
+        apply_diplomatic_fury(state, ScriptedRandom([]))  # an empty script: any draw would fail
+        assert state.pending_break_treat_transitions == {} and state.diplomacy_fury_notices == []
+
+
+def test_a_furor_at_the_end_of_the_turn_is_parked_like_an_ordinary_break_treat():
+    state = _allied(Alignment.DIVINE, Alignment.PAGAN)  # distance 4: 6% a turn, never mid-turn
+
+    apply_diplomatic_fury(state, ScriptedRandom([0.05, 0.5]))  # triggers, one level
+
+    pair = frozenset({1, 2})
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
+    assert state.pending_break_treat_transitions[pair] == (DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL)
+    assert state.pending_fury_levels[pair] == 1
+    assert state.diplomacy_fury_notices == []
+
+
+def test_no_furor_when_the_roll_is_above_the_chance():
+    state = _allied(Alignment.DIVINE, Alignment.PAGAN)
+
+    apply_diplomatic_fury(state, ScriptedRandom([0.06]))
+
+    assert state.pending_break_treat_transitions == {}
+
+
+def test_a_furor_can_degrade_two_levels_to_war():
+    state = _allied(Alignment.DIVINE, Alignment.PAGAN)
+
+    apply_diplomatic_fury(state, ScriptedRandom([0.0, 0.29]))
+
+    assert state.pending_break_treat_transitions[frozenset({1, 2})][1] is DiplomaticRelation.ENEMY
+    assert state.pending_fury_levels[frozenset({1, 2})] == 2
+
+
+def test_the_chance_grows_with_the_distance():
+    for alignments, roll, expected in (
+        ((Alignment.DIVINE, Alignment.EVIL), 0.11, True),  # distance 5: 12%
+        ((Alignment.DIVINE, Alignment.EVIL), 0.12, False),
+        ((Alignment.DIVINE, Alignment.UNDEAD), 0.19, True),  # distance 6: 20%
+        ((Alignment.DIVINE, Alignment.UNDEAD), 0.20, False),
+    ):
+        state = _allied(*alignments)
+        # triggered ones also roll levels (and, from distance 5, the timing: 0.99 = at the end of the turn)
+        apply_diplomatic_fury(state, ScriptedRandom([roll, 0.5, 0.99]))
+        assert bool(state.pending_break_treat_transitions) is expected
+
+
+def test_a_marked_difference_can_blow_up_during_the_turn():
+    state = _allied(Alignment.DIVINE, Alignment.UNDEAD)
+
+    apply_diplomatic_fury(state, ScriptedRandom([0.0, 0.5, 0.19]))  # triggers, one level, mid-turn (< 20%)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL and not state.is_allied(1, 2)
+    assert state.diplomacy_fury_notices == [(1, 2, 1)]
+    assert state.pending_break_treat_transitions == {}
+
+
+def test_only_a_marked_difference_gets_the_mid_turn_roll():
+    state = _allied(Alignment.DIVINE, Alignment.PAGAN)  # distance 4: the script has no third draw
+
+    apply_diplomatic_fury(state, ScriptedRandom([0.0, 0.5]))
+
+    assert frozenset({1, 2}) in state.pending_break_treat_transitions
+
+
+def test_a_pending_furor_is_narrated_as_a_furor_when_it_lands_next_turn():
+    state = _allied(Alignment.DIVINE, Alignment.PAGAN)
+    apply_diplomatic_fury(state, ScriptedRandom([0.0, 0.5]))
+
+    advance_pending_diplomacy(state)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+    assert state.diplomacy_fury_notices == [(1, 2, 1)]
+    assert state.diplomacy_relation_change_notices == []  # not a Break Treat
+    assert state.pending_fury_levels == {}
+
+
+def test_a_pair_with_a_break_treat_pending_gets_no_furor():
+    state = _allied(Alignment.DIVINE, Alignment.PAGAN)
+    state.break_treat_orders.add((1, 2))
+    apply_treat_orders(state)
+
+    apply_diplomatic_fury(state, ScriptedRandom([]))  # no draw at all
+
+    assert state.pending_fury_levels == {}
+
+
+# -- the report notes of each order -----------------------------------------------
+
+
+def test_orders_leave_a_note_for_their_issuer():
+    state = _state()
+    state.treat_permissions.update({(1, 2), (2, 1)})
+    apply_treat_orders(state)
+    assert sorted(state.diplomacy_order_notes) == [(1, 2, "accepted"), (2, 1, "accepted")]
+
+    state = _state()
+    state.treat_permissions.add((1, 2))  # not reciprocated
+    apply_treat_orders(state)
+    assert state.diplomacy_order_notes == [(1, 2, "refused")]
+
+    state = _allied(Alignment.GOOD, Alignment.GOOD)
+    state.treat_permissions.add((1, 2))
+    apply_treat_orders(state)
+    assert state.diplomacy_order_notes == [(1, 2, "already_allied")]
+
+    state = _allied(Alignment.GOOD, Alignment.GOOD)
+    state.break_treat_orders.add((1, 2))
+    state.treat_permissions.add((2, 1))  # the Break Treat wins: that Treat is refused
+    apply_treat_orders(state)
+    assert sorted(state.diplomacy_order_notes) == [(1, 2, "broken"), (2, 1, "refused")]
+
+
+def test_a_break_treat_that_changes_nothing_leaves_no_note():
+    state = _state()
+    set_relation(state, 1, 2, DiplomaticRelation.ENEMY)  # already at war
+    state.break_treat_orders.add((1, 2))
+    apply_treat_orders(state)
+    assert state.diplomacy_order_notes == []
+
+
+def test_the_druids_one_sided_treat_is_accepted():
+    state = _state(alignment_a=Alignment.DRUID)
+    state.treat_permissions.add((1, 2))
+    apply_treat_orders(state)
+    assert state.diplomacy_order_notes == [(1, 2, "accepted")]
+
+
+def test_the_break_treat_issuer_is_remembered_for_the_notice():
+    state = _state()
+    set_relation(state, 1, 2, DiplomaticRelation.ALLIED)
+    state.break_treat_orders.add((1, 2))
+    apply_treat_orders(state)
+    assert state.pending_break_issuers[frozenset({1, 2})] == frozenset({1})
+    state.diplomacy_notice_issuers = {}
+    advance_pending_diplomacy(state)
+    assert state.diplomacy_notice_issuers[frozenset({1, 2})] == frozenset({1})
+
+    state = _state(alignment_a=Alignment.EVIL)  # immediate
+    set_relation(state, 1, 2, DiplomaticRelation.ALLIED)
+    state.break_treat_orders.add((1, 2))
+    apply_treat_orders(state)
+    assert state.diplomacy_notice_issuers[frozenset({1, 2})] == frozenset({1})

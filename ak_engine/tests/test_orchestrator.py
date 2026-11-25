@@ -301,7 +301,7 @@ def test_process_turn_bridges_a_real_mutual_treat_order_into_a_real_alliance():
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", side_effect=[kingdom_a, kingdom_b]):
         process_turn(
-            state, [Path("a.K1"), Path("b.K2")], board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0], choice_indices=[0])
+            state, [Path("a.K1"), Path("b.K2")], board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0] * 40, choice_indices=[0] * 40)  # the Treat sentences draw too
         )
 
     # [8.2]'s own "alla fine del turno" timing: not yet visible to this
@@ -314,7 +314,7 @@ def test_process_turn_bridges_a_real_mutual_treat_order_into_a_real_alliance():
 
     with patch("ak_engine.orchestrator.parse_k1_moves_file", side_effect=[kingdom_a, kingdom_b]):
         outcome = process_turn(
-            state, [Path("a.K1"), Path("b.K2")], board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0], choice_indices=[0])
+            state, [Path("a.K1"), Path("b.K2")], board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0] * 40, choice_indices=[0] * 40)  # the Treat sentences draw too
         )
 
     assert state.is_allied(1, 2)
