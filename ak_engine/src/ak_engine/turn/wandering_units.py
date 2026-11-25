@@ -243,6 +243,8 @@ def army_eligible_for_wander(state: GameState, army: ArmyState, orders_flag: dic
 
     if army.kingdom_id is not None:
         return False
+    if army.commanded_by is not None:
+        return False  # "le unita' militari non possono muovere senza personaggi" -- and not away from theirs
     province = state.provinces.get(army.location)
     owner_kingdom_id = province.owner_kingdom_id if province is not None else None
     if owner_kingdom_id is not None and _kingdom_has_king(state, owner_kingdom_id):

@@ -235,10 +235,11 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
     lump-sum design and its own Phase 527 addendum for the real per-Hero
     payment/desertion mechanic this now implements.
 
-    Army maintenance (``ACost``) is still paid as one unconditional lump
-    sum, unclamped. Each non-King, non-Valhalla-visitor leader's own pay
-    is then attempted individually, in ascending ``leader_id`` order,
-    against whatever treasury remains; a leader whose own pay the treasury
+    Each non-King, non-Valhalla-visitor leader's own pay is attempted
+    individually, in ascending ``leader_id`` order, against the treasury
+    ([9.2]: "Si pagano prima gli Eroi, quindi le unita' militari" -- the
+    Heroes come first, user audit 2026-11-26), then army maintenance
+    (``ACost``) is paid as one unconditional lump sum, unclamped; a leader whose own pay the treasury
     can no longer cover rolls for desertion/standby (``hero_liking()``
     plus a fresh ``(IRand and 3) - 2`` roll) instead of being paid.
 
@@ -254,10 +255,7 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
     rng = rng if rng is not None else random.Random()
     results: dict[int, MaintenanceResult] = {}
     for kingdom_id, kingdom in state.kingdoms.items():
-        debited = compute_army_maintenance(state, kingdom_id)
-        kingdom.treasury -= debited
-        if kingdom.treasury >= 0:
-            promote_recruits_and_depleted_armies(state, kingdom_id)
+        debited = 0
 
         king = find_king_of_kingdom(state, kingdom_id)
         heroes = sorted(
@@ -293,6 +291,14 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
                 deserted.append(hero.leader_id)
             else:
                 standby.append(hero.leader_id)
+
+        # [9.2] "Si pagano prima gli Eroi, quindi le unita' militari": the armies' upkeep comes out of what the
+        # Heroes left (still one unconditional lump sum, unclamped).
+        army_upkeep = compute_army_maintenance(state, kingdom_id)
+        kingdom.treasury -= army_upkeep
+        debited += army_upkeep
+        if kingdom.treasury >= 0:
+            promote_recruits_and_depleted_armies(state, kingdom_id)
 
         results[kingdom_id] = MaintenanceResult(
             debited=debited, deserted_leader_ids=deserted, standby_leader_ids=standby

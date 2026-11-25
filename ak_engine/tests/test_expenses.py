@@ -432,9 +432,27 @@ def test_a_deserting_hero_leaves_his_armies_to_the_kingdom_s_garrison_command():
     state.add_leader(king)
     state.add_leader(hero)
     state.add_army(ArmyState(7, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=3))
-    state.kingdoms[1].treasury = ARMY_TABLE[ArmyType.BOWMEN].pay  # the army's upkeep leaves nothing for the hero
+    state.kingdoms[1].treasury = 0  # nothing to pay the hero with (the Heroes are paid first, [9.2])
 
     result = apply_turn_maintenance(state, ScriptedRandom([], choice_indices=[3]))
 
     assert result[1].deserted_leader_ids == [3] and hero.kingdom_id is None
     assert state.armies[7].kingdom_id == 1 and state.armies[7].commanded_by is None
+
+
+def test_the_heroes_are_paid_before_the_armies():
+    # [9.2] "Si pagano prima gli Eroi, quindi le unita' militari": with just enough gold for the Hero, he is
+    # paid and it is the armies' upkeep that runs the treasury negative -- not the other way round.
+    state = make_state()
+    king = LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
+    hero = LeaderState(3, 1, "Indra", HOME, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
+    state.add_leader(king)
+    state.add_leader(hero)
+    state.add_army(ArmyState(7, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME))
+    hero_pay = required_pay(state, hero, king)
+    state.kingdoms[1].treasury = hero_pay
+
+    result = apply_turn_maintenance(state, ScriptedRandom([], choice_indices=[]))
+
+    assert result[1].deserted_leader_ids == [] and result[1].standby_leader_ids == [] and hero.kingdom_id == 1
+    assert state.kingdoms[1].treasury == -ARMY_TABLE[ArmyType.BOWMEN].pay
