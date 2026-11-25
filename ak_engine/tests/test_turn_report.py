@@ -18281,3 +18281,25 @@ def test_describe_search_says_a_cowardly_searcher_would_not_face_the_guardian():
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=ScriptedRandom([]))
 
     assert lines == ["Aldric lost heart and would not face the Roc of the Ancient Ruins."]
+
+
+def test_a_cowardly_commanders_excuse_names_both_men_and_uses_a_bluff_variant():
+    from ak_engine.report.turn_report import render_cowardly_excuse
+
+    seen = set()
+    for seed in range(40):
+        line = render_cowardly_excuse("Rolando", "Attla", random.Random(seed))
+        assert "Rolando" in line or "his" in line
+        assert "{" not in line and "}" not in line and "<" not in line
+        seen.add(line.split()[0])
+    assert len(seen) >= 2  # several of BLUFF.X's variants come up
+
+
+def test_a_commander_who_finds_no_excuse_is_reported_with_the_precursor_clause():
+    from ak_engine.report.turn_report import render_no_excuse_found
+
+    line = render_no_excuse_found("Rolando", random.Random(1))
+
+    assert "Rolando" in line
+    assert "excuse" in line or "ploy" in line
+    assert ", so the forces commanded by Rolando" in line
