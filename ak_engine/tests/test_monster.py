@@ -5,6 +5,7 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.monster import (
     MONSTER_ALIGNMENT_DISTRIBUTION,
     MONSTER_COMBAT_STATS,
+    MONSTER_COMBAT_STATS_USER_COMPILED,
     MONSTER_DESCRIPTION,
     MONSTER_ENGAGEMENT_STATE_NAME,
     MONSTER_HP_BANDS,
@@ -129,7 +130,7 @@ def test_monster_combat_stats_hp_ranges_are_all_valid():
 
 
 def test_monster_combat_stats_gryphon_matches_supplied_table():
-    gryphon = MONSTER_COMBAT_STATS[Monster.GRYPHON]
+    gryphon = MONSTER_COMBAT_STATS_USER_COMPILED[Monster.GRYPHON]
     assert gryphon == MonsterCombatStats((20, 30), 2, (1, 6), 0, None, MonsterSpeed.FAST)
 
 
@@ -139,22 +140,48 @@ def test_monster_combat_stats_giant_has_missile_attack():
 
 
 def test_monster_combat_stats_red_dragon_is_slow_and_powerful():
-    red_dragon = MONSTER_COMBAT_STATS[Monster.R_DRAGON]
+    red_dragon = MONSTER_COMBAT_STATS_USER_COMPILED[Monster.R_DRAGON]
     assert red_dragon == MonsterCombatStats((30, 50), 3, (1, 7), 2, (3, 10), MonsterSpeed.SLOW)
+
+
+def test_live_combat_stats_take_melee_archery_and_hit_points_from_the_disassembled_engine():
+    # User ruling 2026-11-25: the real engine constants govern combat.
+    assert set(MONSTER_COMBAT_STATS) == set(MONSTER_COMBAT_STATS_USER_COMPILED) == set(MONSTER_RUNTIME_PROFILE)
+    for monster, live in MONSTER_COMBAT_STATS.items():
+        profile = MONSTER_RUNTIME_PROFILE[monster]
+        compiled = MONSTER_COMBAT_STATS_USER_COMPILED[monster]
+        assert live.melee_skill == profile.melee_skill
+        assert live.missile_skill == profile.missile_skill
+        low, high = live.hit_points_range
+        assert low >= 1
+        assert high - low == compiled.hit_points_range[1] - compiled.hit_points_range[0]  # the width is kept
+        assert (low + high) // 2 in (profile.average_hit_points, profile.average_hit_points + 1) or low == 1
+        # what the runtime layer does not express stays as compiled
+        assert live.melee_damage == compiled.melee_damage
+        assert live.missile_damage == compiled.missile_damage
+        assert live.speed == compiled.speed
+
+
+def test_live_combat_stats_spot_checks_against_the_runtime_layer():
+    assert MONSTER_COMBAT_STATS[Monster.COUATL].melee_skill == 3
+    assert MONSTER_COMBAT_STATS[Monster.TITAN].melee_skill == 4
+    assert MONSTER_COMBAT_STATS[Monster.TITAN].missile_skill == 0
+    assert MONSTER_COMBAT_STATS[Monster.BANSHEE].missile_skill == 2
+    assert MONSTER_COMBAT_STATS[Monster.SPHINX].hit_points_range == (21, 29)
 
 
 def test_monster_combat_stats_corroborates_five_of_six_sourced_averages():
     # Gryphon/Giant/Gargoyle/Troll/Elasmosaurus: this table's own HP range
     # midpoint matches MONSTER_STATS's RULES.AK-sourced average exactly.
     for monster in (Monster.GRYPHON, Monster.GIANT, Monster.GARGOYLE, Monster.TROLL, Monster.ELASMOSAURUS):
-        low, high = MONSTER_COMBAT_STATS[monster].hit_points_range
+        low, high = MONSTER_COMBAT_STATS_USER_COMPILED[monster].hit_points_range
         assert (low + high) / 2 == MONSTER_STATS[monster].hit_points
 
 
 def test_monster_combat_stats_spectre_disagrees_with_sourced_average():
     # Genuine cross-source discrepancy, transcribed as supplied rather
     # than silently reconciled -- see module docstring's Phase 154 note.
-    low, high = MONSTER_COMBAT_STATS[Monster.SPECTRE].hit_points_range
+    low, high = MONSTER_COMBAT_STATS_USER_COMPILED[Monster.SPECTRE].hit_points_range
     assert (low, high) == (12, 22)
     assert (low + high) / 2 != MONSTER_STATS[Monster.SPECTRE].hit_points
 
