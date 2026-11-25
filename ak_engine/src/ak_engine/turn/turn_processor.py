@@ -260,6 +260,7 @@ valhalla_visit_announcement()``.
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ak_engine.models.advanced_ability import AdvancedAbility
@@ -270,6 +271,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
+from ak_engine.models.treasure import TREASURE_WAND_SPELL
 from ak_engine.turn.battle_orchestrator import (
     MultiAttackerBattle,
     MultiAttackerParty,
@@ -290,6 +292,7 @@ from ak_engine.turn.aspy_execution import execute_aspy
 from ak_engine.turn.cast_execution import maybe_dissolve_illusory_terrain
 from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.trade_decode import decode_trade_phase
+from ak_engine.turn.use_mi_decode import decode_use_mi_phase
 from ak_engine.turn.battle_line import estimate_win_probability
 from ak_engine.turn.challenge_pursue_decode import PursueRequest, decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
@@ -566,7 +569,7 @@ def run_turn(
                 for coord in newly_infected
             )
 
-        entries = _collect_phase_entries(turn_leaders, label, state)
+        entries = _collect_phase_entries(turn_leaders, label, state, board_width)
         # A leader still mid-chase (Pursue/Trail, or a Move chase toward
         # a non-adjacent target) has this phase's own order preempted
         # entirely -- see "PERSISTENT PURSUE/TRAIL CHASE"/"PERSISTENT
@@ -751,7 +754,7 @@ def run_turn(
         consumed |= {index for _ability, indices in multi_practice_groups for index in indices}
         consumed |= {index for pair in mutual_encounter_pairs for index in pair}
 
-        for target, indices in multi_attacker_groups:
+        def _run_multi_attacker_group(target: HexCoord, indices: list[int]) -> None:
             movers = [entries[i] for i in indices]
             # Phase 1041 bug fix -- unlike every ordinary single-leader
             # phase (dispatched through `run_leader_plan()`, whose own
@@ -772,7 +775,7 @@ def run_turn(
             _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, group_results)
             _apply_defend_battle_win(active_pursuits, reinforced_by_target, target, group_results)
 
-        for ability, indices in multi_practice_groups:
+        def _run_multi_practice_group(ability: Ability | int, indices: list[int]) -> None:
             movers = [entries[i] for i in indices]
             # Phase 1041 bug fix -- see the identical note above.
             try:
@@ -784,7 +787,7 @@ def run_turn(
                 ]
             results.extend(group_results)
 
-        for index_a, index_b in mutual_encounter_pairs:
+        def _run_mutual_encounter_pair(index_a: int, index_b: int) -> None:
             # Phase 1041 bug fix -- see the identical note above.
             try:
                 pair_results = _dispatch_mutual_encounter(entries[index_a], entries[index_b], state, rng)
@@ -799,7 +802,7 @@ def run_turn(
         dispatch_order = _order_same_kingdom_pursuits_after_their_target(
             entries, eligible_indices, phase_start_location_by_leader_id
         )
-        for index in dispatch_order:
+        def _run_single_entry(index: int) -> None:
             tl, segment_index, phase = entries[index]
             joined_plans: list[tuple[int, ActionPlan]] = []
             dispatch_results = _dispatch_single(
@@ -827,6 +830,24 @@ def run_turn(
                     _register_move_chase_continuation(
                         active_move_chases, tl.leader.leader_id, tl.kingdom_id, target, dispatch_results
                     )
+
+        # Run every unit (a multi-attacker group, a joint Practice, a mutual encounter, or one
+        # ordinary order) in an order that respects the rulebook's "chi aspetta chi" constraints
+        # ([3]: A waits while B recruits / leaves armies / casts / gives for him, B waits for A who
+        # is coming into his province): groups and pairs keep running ahead of the ordinary orders
+        # as before, except when one of their members has to wait for an order that has not run yet.
+        units: list[tuple[tuple[int, int], list[int], Callable[[], None]]] = []
+        for target, indices in multi_attacker_groups:
+            units.append(((0, len(units)), list(indices), lambda t=target, ix=indices: _run_multi_attacker_group(t, ix)))
+        for ability, indices in multi_practice_groups:
+            units.append(((0, len(units)), list(indices), lambda a=ability, ix=indices: _run_multi_practice_group(a, ix)))
+        for index_a, index_b in mutual_encounter_pairs:
+            units.append(((0, len(units)), [index_a, index_b], lambda a=index_a, b=index_b: _run_mutual_encounter_pair(a, b)))
+        for order_position, index in enumerate(dispatch_order):
+            units.append(((1, order_position), [index], lambda ix=index: _run_single_entry(ix)))
+        for unit in _order_phase_units(units, _same_phase_dependency_edges(entries, state, board_width)):
+            unit()
+
 
         # Phase 670 -- rulebook's own Fall/Early-Winter-only guardian
         # maturation (THUNDERBIRD.md section 11). Season -> phase mapping
@@ -2305,7 +2326,7 @@ def _dispatch_multi_practice(
 
 
 def _collect_phase_entries(
-    turn_leaders: list[TurnLeader], label: str, state: GameState
+    turn_leaders: list[TurnLeader], label: str, state: GameState, board_width: int | None = None
 ) -> list[tuple[TurnLeader, int, PlanPhase]]:
     entries = []
     for tl in turn_leaders:
@@ -2313,7 +2334,7 @@ def _collect_phase_entries(
             phase = segment.phases.get(label)
             if phase is not None:
                 entries.append((tl, segment_index, apply_sickness(state, tl.leader.leader_id, phase)))
-    return _order_phase_entries_by_initiative(entries, state)
+    return _order_phase_entries_by_initiative(entries, state, board_width)
 
 
 def _same_side(state: GameState, kingdom_a: int, kingdom_b: int) -> bool:
@@ -2445,6 +2466,13 @@ def _same_phase_beneficiary_leader_id(
         request = decode_cast_phase(phase)
         if request.spell in CHARACTER_TARGET_SPELLS:
             target_leader_id = request.target
+    elif phase.action is ActionCode.USE_MI:
+        # A spell wand used on a friendly character is a favourable spell too.
+        use_mi_request = decode_use_mi_phase(phase)
+        wand = state.items.get(use_mi_request.item_instance_id)
+        wand_spell = TREASURE_WAND_SPELL.get(wand.treasure) if wand is not None else None
+        if wand_spell in CHARACTER_TARGET_SPELLS:
+            target_leader_id = use_mi_request.target
 
     if target_leader_id is None or target_leader_id == tl.leader.leader_id:
         return None
@@ -2459,8 +2487,132 @@ def _same_phase_beneficiary_leader_id(
     return target_leader_id
 
 
+def _beneficiary_is_moving_into_benefactors_province(
+    beneficiary_entry: tuple[TurnLeader, int, PlanPhase],
+    benefactor_tl: TurnLeader,
+    state: GameState,
+    board_width: int | None,
+) -> bool:
+    """Whether the beneficiary's own order this phase is a Move into the province where the
+    benefactor stands (and the beneficiary is not already there) -- the case where it is the
+    benefactor who waits for the newcomer ([3]: "quando il personaggio A sta entrando in una
+    provincia in cui il personaggio B ha in programma di fare qualcosa per A ... B aspetterà A")."""
+
+    tl, _segment_index, phase = beneficiary_entry
+    if phase.action is not ActionCode.LMOVE:
+        return False
+    beneficiary = state.leaders.get(tl.leader.leader_id)
+    benefactor = state.leaders.get(benefactor_tl.leader.leader_id)
+    if beneficiary is None or benefactor is None or beneficiary.location == benefactor.location:
+        return False
+    try:
+        destination = decode_hex_number(phase.obj, board_width if board_width is not None else state.board_width)
+    except ValueError:
+        return False
+    return destination == benefactor.location
+
+
+def _order_phase_units(
+    units: list[tuple[tuple[int, int], list[int], Callable[[], None]]], edges: dict[int, set[int]]
+) -> list[Callable[[], None]]:
+    """Orders the dispatch units of one phase. Each unit is ``(rank, member entry indexes, runner)``;
+    ``edges`` is ``_same_phase_dependency_edges()``'s own "index -> indexes that must come after it".
+    Units run in rank order unless one still has to wait for an order that has not run yet, in
+    which case the lowest-ranked unit that is free goes first (a dependency cycle, which has no
+    source behind it, falls back to plain rank order)."""
+
+    unit_of_index = {index: u for u, (_rank, indices, _run) in enumerate(units) for index in indices}
+    predecessors: list[set[int]] = [set() for _ in units]
+    for before, afters in edges.items():
+        for after in afters:
+            u_before, u_after = unit_of_index.get(before), unit_of_index.get(after)
+            if u_before is not None and u_after is not None and u_before != u_after:
+                predecessors[u_after].add(u_before)
+
+    ordered: list[int] = []
+    placed: set[int] = set()
+    while len(ordered) < len(units):
+        waiting = [u for u in range(len(units)) if u not in placed]
+        free = [u for u in waiting if predecessors[u] <= placed] or waiting
+        picked = min(free, key=lambda u: units[u][0])
+        placed.add(picked)
+        ordered.append(picked)
+    return [units[u][2] for u in ordered]
+
+
+def _same_phase_dependency_edges(
+    entries: list[tuple[TurnLeader, int, PlanPhase]], state: GameState, board_width: int | None = None
+) -> dict[int, set[int]]:
+    """The "who must act before whom" constraints of one phase, as ``{index: {indexes that must
+    come after it}}`` over ``entries``' own indexes (RULES.AK [3]; see
+    ``_order_phase_entries_by_initiative()``'s docstring for the rule and its sources).
+
+    1. A leader who does something *for* another same-side leader (Recruit, Leave, Pick Up, a
+       favourable spell or wand, Give) acts before that leader, whatever their initiative.
+    2. The mirror case ("quando il personaggio A sta entrando in una provincia in cui il
+       personaggio B ha in programma di fare qualcosa per A, anche se B ha un'iniziativa più alta,
+       aspetterà A"): when the beneficiary's own order is a Move into the benefactor's province
+       the constraint is reversed -- the mover arrives first, then the benefactor acts.
+    3. [3.4]: in an ally's territory the owner recruits before the guest.
+    """
+
+    acting_leader_ids_this_phase = {tl.leader.leader_id for tl, _segment_index, _phase in entries}
+    position_by_leader_id = {tl.leader.leader_id: i for i, (tl, _segment_index, _phase) in enumerate(entries)}
+
+    # 2026-11-06: every acting leader with a Pick_Up(all_armies) order
+    # this phase, by (location, kingdom_id) -- see
+    # _pick_up_beneficiary_for_untargeted_leave()'s own docstring. Built
+    # once, in entries's own deterministic iteration order (that
+    # function's own documented single-match tiebreak relies on this).
+    pick_up_all_armies_leaders: dict[int, tuple[HexCoord, int]] = {}
+    for tl, _segment_index, phase in entries:
+        if phase.action is not ActionCode.PICK_UP:
+            continue
+        if not decode_army_list_phase(phase).all_armies:
+            continue
+        pick_up_leader = state.leaders.get(tl.leader.leader_id)
+        if pick_up_leader is not None:
+            pick_up_all_armies_leaders[tl.leader.leader_id] = (pick_up_leader.location, pick_up_leader.kingdom_id)
+
+    must_precede: dict[int, set[int]] = {}
+    for i, (tl, _segment_index, phase) in enumerate(entries):
+        beneficiary_id = _same_phase_beneficiary_leader_id(
+            tl, phase, state, acting_leader_ids_this_phase, pick_up_all_armies_leaders
+        )
+        if beneficiary_id is None:
+            continue
+        j = position_by_leader_id[beneficiary_id]
+        if j != i:
+            if _beneficiary_is_moving_into_benefactors_province(entries[j], tl, state, board_width):
+                must_precede.setdefault(j, set()).add(i)
+            else:
+                must_precede.setdefault(i, set()).add(j)
+
+    # [3.4]: "When you recruit units in an ally's territory, the computer always makes sure that in
+    # any given phase, the owner of the territory has the right to recruit there before you do."
+    for guest_position, (guest_tl, _segment_index, guest_phase) in enumerate(entries):
+        if guest_phase.action is not ActionCode.RECRUIT:
+            continue
+        guest = state.leaders.get(guest_tl.leader.leader_id)
+        province = state.provinces.get(guest.location) if guest is not None else None
+        owner_id = province.owner_kingdom_id if province is not None else None
+        if owner_id is None or owner_id == guest_tl.kingdom_id:
+            continue
+        for host_position, (host_tl, _host_segment, host_phase) in enumerate(entries):
+            host = state.leaders.get(host_tl.leader.leader_id)
+            if (
+                host_phase.action is ActionCode.RECRUIT
+                and host is not None
+                and host_tl.kingdom_id == owner_id
+                and host.location == guest.location
+                and host_position != guest_position
+            ):
+                must_precede.setdefault(host_position, set()).add(guest_position)
+    return must_precede
+
+
 def _order_phase_entries_by_initiative(
-    entries: list[tuple[TurnLeader, int, PlanPhase]], state: GameState
+    entries: list[tuple[TurnLeader, int, PlanPhase]], state: GameState, board_width: int | None = None
 ) -> list[tuple[TurnLeader, int, PlanPhase]]:
     """RULES.AK [3] AZIONI E INIZIATIVA, quoted in full (2026-11-03;
     `turn/initiative.py`'s own module docstring already covers the
@@ -2562,6 +2714,16 @@ def _order_phase_entries_by_initiative(
     tiebreak this still leaves for the (unsourced, real but rare) case
     of two same-spot Pick_Up(all_armies) leaders.
 
+    **2026-11-25 audit**: (1) the constraints now live in ``_same_phase_dependency_edges()``, which
+    also covers a spell *wand* used on a colleague (Use_MI) and the mirror case of the rulebook's
+    "quando il personaggio A sta entrando in una provincia in cui il personaggio B ha in programma di
+    fare qualcosa per A, B aspetterà A" -- a beneficiary whose order is a Move into the benefactor's
+    province now goes first. (2) ``run_turn()`` no longer runs the multi-attacker, joint-Practice and
+    mutual-encounter groups blindly ahead of the ordinary orders: ``_order_phase_units()`` schedules
+    every group and every ordinary order with those same constraints, so a leader inside a group still
+    waits for the Recruit/Leave/Give/spell done for him. The beneficiary's whole order waits, whatever
+    it is (Move, Pursue, Trail, Search, Challenge, Defend...).
+
     "...e per gli Incontri" (Encounters) is still left out -- Challenge/
     Pursue already has its own dedicated same-phase pairing/sequencing
     machinery (mutual-encounter resolution, and [3.16]'s own separate
@@ -2578,55 +2740,7 @@ def _order_phase_entries_by_initiative(
 
     base_order = [entry for _original_index, entry in sorted(enumerate(entries), key=_initiative_sort_key)]
 
-    acting_leader_ids_this_phase = {tl.leader.leader_id for tl, _segment_index, _phase in entries}
-    position_by_leader_id = {tl.leader.leader_id: i for i, (tl, _segment_index, _phase) in enumerate(base_order)}
-
-    # 2026-11-06: every acting leader with a Pick_Up(all_armies) order
-    # this phase, by (location, kingdom_id) -- see
-    # _pick_up_beneficiary_for_untargeted_leave()'s own docstring. Built
-    # once, in base_order's own deterministic iteration order (that
-    # function's own documented single-match tiebreak relies on this).
-    pick_up_all_armies_leaders: dict[int, tuple[HexCoord, int]] = {}
-    for tl, _segment_index, phase in base_order:
-        if phase.action is not ActionCode.PICK_UP:
-            continue
-        if not decode_army_list_phase(phase).all_armies:
-            continue
-        pick_up_leader = state.leaders.get(tl.leader.leader_id)
-        if pick_up_leader is not None:
-            pick_up_all_armies_leaders[tl.leader.leader_id] = (pick_up_leader.location, pick_up_leader.kingdom_id)
-
-    must_precede: dict[int, set[int]] = {}
-    for i, (tl, _segment_index, phase) in enumerate(base_order):
-        beneficiary_id = _same_phase_beneficiary_leader_id(
-            tl, phase, state, acting_leader_ids_this_phase, pick_up_all_armies_leaders
-        )
-        if beneficiary_id is None:
-            continue
-        j = position_by_leader_id[beneficiary_id]
-        if j != i:
-            must_precede.setdefault(i, set()).add(j)
-
-    # [3.4]: "When you recruit units in an ally's territory, the computer always makes sure that in
-    # any given phase, the owner of the territory has the right to recruit there before you do."
-    for guest_position, (guest_tl, _segment_index, guest_phase) in enumerate(base_order):
-        if guest_phase.action is not ActionCode.RECRUIT:
-            continue
-        guest = state.leaders.get(guest_tl.leader.leader_id)
-        province = state.provinces.get(guest.location) if guest is not None else None
-        owner_id = province.owner_kingdom_id if province is not None else None
-        if owner_id is None or owner_id == guest_tl.kingdom_id:
-            continue
-        for host_position, (host_tl, _host_segment, host_phase) in enumerate(base_order):
-            host = state.leaders.get(host_tl.leader.leader_id)
-            if (
-                host_phase.action is ActionCode.RECRUIT
-                and host is not None
-                and host_tl.kingdom_id == owner_id
-                and host.location == guest.location
-                and host_position != guest_position
-            ):
-                must_precede.setdefault(host_position, set()).add(guest_position)
+    must_precede = _same_phase_dependency_edges(base_order, state, board_width)
 
     if not must_precede:
         return base_order
@@ -2698,7 +2812,7 @@ def _order_same_kingdom_pursuits_after_their_target(
     index_by_leader_id = {entries[i][0].leader.leader_id: i for i in eligible_indices}
     for index in eligible_indices:
         tl, _segment_index, phase = entries[index]
-        if phase.action is not ActionCode.PURSUE:
+        if phase.action not in (ActionCode.PURSUE, ActionCode.TRAIL):  # "insegue o pedina"
             continue
         target_index = index_by_leader_id.get(phase.obj)
         if target_index is None or target_index == index:
