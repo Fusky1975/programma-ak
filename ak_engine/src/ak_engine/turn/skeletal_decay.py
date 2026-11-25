@@ -30,31 +30,14 @@ raised graveyard entry (``sum(len(v) for v in state.battle_graveyard.
 values())``) -- summed across the whole world, not per-kingdom; the
 source names one shared pool.
 
-**Gate: only once the 350 cap is actually exceeded.** The rulebook's
-own two sentences read together: the first states the cap and its
-consequence causally ("perciò" -- therefore) in general terms ("dopo le
-prime fasi", once the world has been running long enough to matter);
-the second gives the literal trigger condition in the clearest terms
-this text offers ("quando si supera il limite di 350"). That second
-sentence is what `decompose_graveyard()` implements as its gate -- a
-documented reading, not the only grammatically possible one, but the
-more literal of the two available.
-
-**Rate: ~10% of the graveyard's own size, rounded, each qualifying
-call.** "Un 10% circa" (about 10%) of the *previously-destroyed* pool
--- not 10% of the excess over 350, and not stochastic (no roll is
-described): `round(total_dead * GRAVEYARD_DECAY_FRACTION)`, the same
-"round() for an approximate rulebook percentage" precedent `turn/
-spy_table.py`'s own Spy Table formula already established. No invented
-minimum-of-1 floor: a small graveyard can legitimately round to 0 removed
-even while the world is over cap.
-
-**Priority: oldest-destroyed first.** Since no turn-stamp exists
-anywhere in this project (``GraveyardEntry``'s own Phase 60 note),
-``GraveyardEntry.death_seq`` (Phase 309, a monotonic insertion-order
-counter `GameState.record_battle_death()` stamps) stands in for real
-recency, exactly precise enough for "which died longest ago" without
-inventing a broader turn-history log.
+**Two mechanisms, both applied (user ruling 2026-11-25)**: the rulebook's two
+sentences are read as independent rules -- (1) "dopo le prime fasi, a ogni turno un
+10% circa delle unità distrutte in precedenza è destinato alla decomposizione": from
+``GRAVEYARD_DECAY_FIRST_TURN`` on, each army destroyed in an *earlier* turn rots with a
+10% chance every turn; (2) "quando si supera il limite di 350, le unità distrutte da più
+lungo tempo si decompongono automaticamente": whenever living + dead exceed 350, the
+oldest dead rot until the total is back at 350 (priority by ``GraveyardEntry.death_seq``,
+a monotonic insertion order that stands in for "which died longest ago").
 
 **Wired once per game turn**, at the same end-of-`run_turn()` point
 `turn/turn_processor.py`'s own Gate Angel visit and Analytical
@@ -64,37 +47,51 @@ boundary this project's phase-by-phase loop offers.
 
 from __future__ import annotations
 
+import random
+
 from ak_engine.models.game_state import GameState
 
 WORLD_UNIT_CAP = 350
 GRAVEYARD_DECAY_FRACTION = 0.10
+# "dopo le prime fasi": no decomposition during the first turns of a game (project-original: 3).
+GRAVEYARD_DECAY_FIRST_TURN = 4
 
 
-def decompose_graveyard(state: GameState) -> int:
-    """Prunes the oldest ``battle_graveyard`` entries once the world's
-    total living+dead unit count exceeds ``WORLD_UNIT_CAP`` -- see module
-    docstring for the gate/rate/priority reasoning. Returns how many
-    entries were removed (0 if under the cap, or if the graveyard is too
-    small for ~10% to round up to at least 1).
+def decompose_graveyard(state: GameState, rng: random.Random | None = None) -> int:
+    """Rots away graveyard entries, returning how many were removed. Two independent mechanisms
+    ([4.2.5], user ruling 2026-11-25: they both apply):
+
+    1. From ``GRAVEYARD_DECAY_FIRST_TURN`` on, every turn each army destroyed in a *previous* turn
+       has a ``GRAVEYARD_DECAY_FRACTION`` (10%) chance of decomposing (needs ``rng``).
+    2. Whenever the world total (living + dead) exceeds ``WORLD_UNIT_CAP``, the dead that fell
+       longest ago decompose until the total is back at the cap.
     """
 
+    removed = 0
+    if rng is not None and state.turn_number >= GRAVEYARD_DECAY_FIRST_TURN:
+        for coord in sorted(state.battle_graveyard, key=lambda c: (c.x, c.y)):
+            kept = []
+            for entry in state.battle_graveyard[coord]:
+                if entry.death_turn < state.turn_number and rng.random() < GRAVEYARD_DECAY_FRACTION:
+                    removed += 1
+                else:
+                    kept.append(entry)
+            if kept:
+                state.battle_graveyard[coord] = kept
+            else:
+                del state.battle_graveyard[coord]
+
     total_dead = sum(len(entries) for entries in state.battle_graveyard.values())
-    total_world_units = len(state.armies) + total_dead
-    if total_world_units <= WORLD_UNIT_CAP:
-        return 0
-
-    decay_count = round(total_dead * GRAVEYARD_DECAY_FRACTION)
-    if decay_count <= 0:
-        return 0
-
-    oldest_first = sorted(
-        ((coord, entry) for coord, entries in state.battle_graveyard.items() for entry in entries),
-        key=lambda pair: pair[1].death_seq,
-    )
-    for coord, entry in oldest_first[:decay_count]:
-        remaining = state.battle_graveyard[coord]
-        remaining.remove(entry)
-        if not remaining:
-            del state.battle_graveyard[coord]
-
-    return decay_count
+    excess = len(state.armies) + total_dead - WORLD_UNIT_CAP
+    if excess > 0:
+        oldest_first = sorted(
+            ((coord, entry) for coord, entries in state.battle_graveyard.items() for entry in entries),
+            key=lambda pair: pair[1].death_seq,
+        )
+        for coord, entry in oldest_first[:excess]:
+            remaining = state.battle_graveyard[coord]
+            remaining.remove(entry)
+            removed += 1
+            if not remaining:
+                del state.battle_graveyard[coord]
+    return removed

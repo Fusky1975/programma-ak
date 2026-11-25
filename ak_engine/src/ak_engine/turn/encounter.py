@@ -2537,7 +2537,8 @@ def roll_hand_of_death_damage(
     if target_is_immune or target_has_artificial_organs:
         return 0
 
-    exact = HAND_OF_DEATH_BASE_DAMAGE + HAND_OF_DEATH_DAMAGE_PER_LEVEL * skill_level
+    # User ruling 2026-11-25: like every Personal-Combat spell, Hand of Death stops scaling at level 4.
+    exact = HAND_OF_DEATH_BASE_DAMAGE + HAND_OF_DEATH_DAMAGE_PER_LEVEL * min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
     return _round_randomly(exact, rng)
 
 

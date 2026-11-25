@@ -3371,14 +3371,14 @@ def test_run_turn_decomposes_the_graveyard_once_at_turn_end_when_over_the_world_
         state.add_army(ArmyState(state.new_army_id(), 1, ArmyType.HVY_CAVALRY, Quality.AVERAGE, HexCoord(0, 0)))
     for _ in range(20):
         state.record_battle_death(HexCoord(1, 1), ArmyType.HVY_CAVALRY, Quality.AVERAGE, kingdom_id=1)
-    # 340 + 20 = 360 > 350 -- decay should remove round(20 * 0.10) == 2.
+    # 340 + 20 = 360 > 350 -- the 10 oldest dead rot, bringing the world back to 350.
 
     p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
     leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 1, (), {"P0": p0})]))
 
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
 
-    assert len(state.battle_graveyard[HexCoord(1, 1)]) == 18
+    assert len(state.battle_graveyard[HexCoord(1, 1)]) == 10
 
 
 # -- Per-turn treasury maintenance debit (Phase 404) -----------------------

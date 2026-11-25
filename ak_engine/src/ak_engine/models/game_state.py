@@ -1570,6 +1570,10 @@ class GraveyardEntry:
     # Defaults to 0 so pre-existing direct-construction call sites (tests
     # that don't care about decay ordering) keep working unchanged.
     death_seq: int = 0
+    # The game turn the army died in. A Skeletal Army can only raise units "cadute in battaglia nei
+    # turni precedenti" ([4.2.5]), and only entries from earlier turns are exposed to the ~10%/turn
+    # decomposition. -1 (the default, for hand-built entries) reads as "long ago".
+    death_turn: int = -1
 
 
 @dataclass(slots=True)
@@ -2331,7 +2335,15 @@ class GameState:
 
         return max((*self.leaders.keys(), *self.dead_leaders.keys(), 0)) + 1
 
-    def record_battle_death(self, coord: HexCoord, army_type: ArmyType, quality: Quality, kingdom_id: int | None) -> None:
+    def record_battle_death(
+        self,
+        coord: HexCoord,
+        army_type: ArmyType,
+        quality: Quality,
+        kingdom_id: int | None,
+        *,
+        was_skeletal: bool = False,
+    ) -> None:
         """Appends one ``GraveyardEntry`` for a genuine battle death at ``coord`` -- see
         module docstring for exactly which destruction sites call this.
         Stamps ``death_seq`` from ``graveyard_death_counter`` (Phase 309)
@@ -2339,8 +2351,14 @@ class GameState:
         longest ago, then advances the counter.
         """
 
+        if was_skeletal:
+            # [4.2.5] "When a Skeletal army dies (but not a non-skeletal army), it is reduced in
+            # quality by one level": it goes back to the grave one rank lower (floor: Depleted).
+            quality = Quality(max(Quality.DEPLETED.value, quality.value - 1))
         self.battle_graveyard.setdefault(coord, []).append(
-            GraveyardEntry(army_type, quality, kingdom_id, death_seq=self.graveyard_death_counter)
+            GraveyardEntry(
+                army_type, quality, kingdom_id, death_seq=self.graveyard_death_counter, death_turn=self.turn_number
+            )
         )
         self.graveyard_death_counter += 1
 

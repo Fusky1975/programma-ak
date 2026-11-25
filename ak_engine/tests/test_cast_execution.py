@@ -7,7 +7,7 @@ import pytest
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature, FeatureType
@@ -886,13 +886,30 @@ def test_kill_enemy_puts_a_colocated_target_into_a_coma():
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
 
-    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    # 85% of successes kill, 15% leave a coma: 0.90 falls in the coma band.
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.90, 0.5, 0.5]))
 
     assert result.applied is True
+    assert result.kill_enemy_victim_killed is False
     assert 78 in state.leaders  # comatose, not removed
     assert state.leaders[78].is_comatose is True
     # Phase 447: Grandfather of Assassins merit -- credited only at this
     # real lethal branch.
+    assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 1
+
+
+def test_kill_enemy_kills_the_victim_outright_85_percent_of_the_time():
+    # User ruling 2026-11-25: as an Action spell a success kills 85% of the time (coma 15%).
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.84, 0.5, 0.5]))
+
+    assert result.applied is True
+    assert result.kill_enemy_victim_killed is True
+    assert 78 not in state.leaders
+    assert 78 in state.dead_leaders
     assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 1
 
 
@@ -1035,7 +1052,7 @@ def test_kill_enemy_full_chance_against_an_unled_hero_in_an_ordinary_province():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.20, 0.5, 0.5])
+    rng = ScriptedRandom([0.20, 0.90, 0.5, 0.5])
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -1200,7 +1217,7 @@ def test_kill_enemy_success_roll_uses_necromancy_skill():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.29, 0.5, 0.5])  # 15% + 15%*1 = 30% chance
+    rng = ScriptedRandom([0.29, 0.90, 0.5, 0.5])  # 15% + 15%*1 = 30% chance, then the coma band
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -3164,7 +3181,7 @@ def test_action_spell_chance_caps_at_95_percent_even_at_high_skill_level():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 10)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.94, 0.5, 0.5])  # [0] under the 95% cap, [1:] Add_Experience gain draws
+    rng = ScriptedRandom([0.94, 0.90, 0.5, 0.5])  # [0] under the 95% cap, [1] coma band, [2:] Add_Experience gain draws
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -3197,7 +3214,7 @@ def test_pagan_kingdom_caster_gets_a_10_percent_spell_cast_bonus():
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.35, 0.5, 0.5])  # [0] over the un-bonused 30%, under the bonused 40%, [1:] Add_Experience gain draws
+    rng = ScriptedRandom([0.35, 0.90, 0.5, 0.5])  # [0] over the un-bonused 30%, under the bonused 40%, [1] coma band, [2:] Add_Experience gain draws
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -3935,7 +3952,7 @@ def test_execute_cast_awards_real_add_experience_credit_on_a_successful_relevant
     state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = ScriptedRandom([0.29, 0.5, 0.5])  # [0] under the 45% chance, [1:] Add_Experience gain draws
+    rng = ScriptedRandom([0.29, 0.90, 0.5, 0.5])  # [0] under the 45% chance, [1] coma band, [2:] Add_Experience gain draws
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
@@ -4425,3 +4442,53 @@ def test_tornado_and_earthquake_work_on_an_allied_province():
         )
 
         assert result.applied is True
+
+
+# ---------------------------------------------------------------------------
+# Necromancy audit: Skeletal Army ([4.2.5])
+# ---------------------------------------------------------------------------
+
+
+def test_skeletal_army_cannot_raise_units_that_died_this_very_turn():
+    # "purché il numero di unità cadute in battaglia nei turni precedenti sia sufficiente"
+    state = build_state()
+    state.turn_number = 5
+    state.record_battle_death(LOCATION, ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2)  # died this turn
+    state.turn_number = 5
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 3)
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+
+    result = execute_cast(state, 1, CASTER_ID, request, rng=ScriptedRandom([0.01, 0.5, 0.5]))
+
+    assert result.applied is True
+    assert result.skeletal_army_raised == []
+    assert len(state.battle_graveyard[LOCATION]) == 1  # still waiting for next turn
+
+    state.turn_number = 6
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 3)
+    result = execute_cast(state, 1, CASTER_ID, request, rng=ScriptedRandom([0.01, 0.5, 0.5]))
+    assert len(result.skeletal_army_raised) == 1
+
+
+def test_a_raised_skeletal_army_has_the_full_movement_allowance_of_its_type():
+    state = build_state()
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.VETERAN, kingdom_id=2)]
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+
+    result = execute_cast(state, 1, CASTER_ID, request, rng=ScriptedRandom([0.01, 0.5, 0.5]))
+
+    assert result.skeletal_army_raised[0].movement_points == ARMY_TABLE[ArmyType.LEGION].speed > 0
+
+
+def test_a_skeletal_army_that_dies_returns_to_the_grave_one_quality_level_lower():
+    state = GameState()
+    state.record_battle_death(LOCATION, ArmyType.LEGION, Quality.VETERAN, kingdom_id=1, was_skeletal=True)
+    state.record_battle_death(LOCATION, ArmyType.LEGION, Quality.VETERAN, kingdom_id=1)  # an ordinary army
+    state.record_battle_death(LOCATION, ArmyType.LEGION, Quality.DEPLETED, kingdom_id=1, was_skeletal=True)
+
+    assert [entry.quality for entry in state.battle_graveyard[LOCATION]] == [
+        Quality.AVERAGE,
+        Quality.VETERAN,
+        Quality.DEPLETED,  # already at the floor
+    ]

@@ -20,6 +20,8 @@ from ak_engine.report.turn_report import describe_cast
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import execute_cast
 from ak_engine.turn.combat import Quality
+
+from _helpers import ScriptedRandom
 from ak_engine.turn.sickness import apply_sickness, make_sick
 from ak_engine.turn.turn_processor import TurnLeader, run_turn
 
@@ -138,7 +140,8 @@ def test_kill_enemy_against_hidden_tattoos_makes_the_target_sick_not_dead_nor_co
 def test_kill_enemy_without_the_discovery_does_not_make_anyone_sick():
     state = _state(protected=False)
     with patch("ak_engine.turn.cast_execution._roll_cast_success", return_value=(True, None)):
-        execute_cast(state, 1, 1, CastRequest(Spell.KILL_ENEMY, target=44), random.Random(1), board_width=BW)
+        # 0.90: the 15% coma band of a successful Action Kill Enemy (the victim stays in play).
+        execute_cast(state, 1, 1, CastRequest(Spell.KILL_ENEMY, target=44), ScriptedRandom([0.90, 0.5, 0.5]), board_width=BW)
 
     assert state.leaders[44].sick_this_turn is False
 

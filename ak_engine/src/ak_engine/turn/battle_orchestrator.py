@@ -2312,7 +2312,10 @@ def _apply_pursuit(
     for army_id in destroyed_ids:
         report.pursuit_destroyed_army_ids.append(army_id)
         destroyed_army = state.armies[army_id]
-        state.record_battle_death(destroyed_army.location, destroyed_army.army_type, destroyed_army.quality, destroyed_army.kingdom_id)
+        state.record_battle_death(
+            destroyed_army.location, destroyed_army.army_type, destroyed_army.quality, destroyed_army.kingdom_id,
+            was_skeletal=destroyed_army.is_skeletal,
+        )
         state.remove_army(army_id)
     return destroyed_ids
 
@@ -3539,11 +3542,11 @@ def fight_battle(
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif attacker_clean_swept:
             report.destroyed_army_ids.append(army.army_id)
-            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
+            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
             state.remove_army(army.army_id)
         elif rng.random() < direct_destruction_probability_by_army_id.get(army.army_id, 0.0):
             report.destroyed_army_ids.append(army.army_id)
-            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
+            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
             state.remove_army(army.army_id)
         else:
             old_quality = army.quality
@@ -3588,11 +3591,11 @@ def fight_battle(
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif defender_clean_swept:
             report.destroyed_army_ids.append(army.army_id)
-            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
+            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
             state.remove_army(army.army_id)
         elif rng.random() < direct_destruction_probability_by_army_id.get(army.army_id, 0.0):
             report.destroyed_army_ids.append(army.army_id)
-            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id)
+            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
             state.remove_army(army.army_id)
         else:
             old_quality = army.quality

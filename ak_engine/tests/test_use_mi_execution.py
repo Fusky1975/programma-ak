@@ -77,13 +77,12 @@ def test_execute_use_mi_wand_casts_the_mapped_spell():
     item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=1)
     request = UseMIRequest(item_instance_id=item.item_id, target=78)
 
-    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+    # 0.90: the 15% coma band of a successful Action-cast Kill Enemy (85% kill outright).
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request, rng=ScriptedRandom([0.90, 0.5, 0.5]))
 
     assert result.applied is True
     assert result.cast_result is not None
     assert result.cast_result.request.spell is Spell.KILL_ENEMY
-    # Phase 310: this project's Kill_Enemy always puts a successful
-    # Action-cast target into a coma rather than killing them outright.
     assert 78 in state.leaders
     assert state.leaders[78].is_comatose is True
 
@@ -101,7 +100,7 @@ def test_execute_use_mi_wand_bypasses_the_success_roll_even_with_no_recorded_ski
     state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     item = state.add_item(Treasure.WAND_KILL_ENEMY, owner_leader_id=CASTER_ID, charges=1)
     request = UseMIRequest(item_instance_id=item.item_id, target=78)
-    rng = ScriptedRandom([])  # no .random() call should happen at all
+    rng = ScriptedRandom([0.90])  # only the coma-or-death band: no cast-success .random() call happens
 
     result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request, rng=rng)
 
