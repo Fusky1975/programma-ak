@@ -1536,12 +1536,14 @@ def test_ice_suspension_slowed_bonus_rounds_matches_the_user_supplied_example():
     assert ice_suspension_slowed_bonus_rounds(16, 1) == 1
 
 
-def test_ice_suspension_slowed_bonus_rounds_stays_within_zero_to_three():
+def test_ice_suspension_slowed_bonus_rounds_stays_within_one_to_three():
     # Just above the freeze threshold (16), the fraction approaches but
     # never reaches 1, so floor(4*16/17) = 3 is the practical ceiling.
     assert ice_suspension_slowed_bonus_rounds(17, 4) == 3
-    # A victim with far more HP than the threshold yields 0 (no bonus).
-    assert ice_suspension_slowed_bonus_rounds(1000, 1) == 0
+    # A victim with far more HP than the threshold still gives the minimum of 1 round
+    # ("da 1 a 3 round supplementari").
+    assert ice_suspension_slowed_bonus_rounds(1000, 1) == 1
+    assert ice_suspension_slowed_bonus_rounds(17, 1) == 1
 
 
 def test_ice_suspension_flying_crash_damage_range_constant():
