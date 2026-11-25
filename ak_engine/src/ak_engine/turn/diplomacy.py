@@ -201,7 +201,13 @@ def is_attackable_at(
     return True
 
 
-def set_relation(state: GameState, kingdom_a: int, kingdom_b: int, relation: DiplomaticRelation) -> None:
+def set_relation(
+    state: GameState,
+    kingdom_a: int,
+    kingdom_b: int,
+    relation: DiplomaticRelation,
+    since_turn: int | None = None,
+) -> None:
     """Writes a Kingdom pair's own ``diplomatic_relations`` entry, keeping
     ``allied_kingdoms``/``diplomatic_relations_since`` in sync -- the one
     real primitive both ``apply_treat_orders()`` (below) and the GM web
@@ -238,7 +244,7 @@ def set_relation(state: GameState, kingdom_a: int, kingdom_b: int, relation: Dip
     state.diplomatic_relations[pair] = relation
     if relation is DiplomaticRelation.ALLIED:
         state.allied_kingdoms.add(pair)
-        state.diplomatic_relations_since[pair] = state.turn_number
+        state.diplomatic_relations_since[pair] = state.turn_number if since_turn is None else since_turn
     else:
         state.allied_kingdoms.discard(pair)
 
@@ -383,15 +389,13 @@ def _note_orders(
     a_treat: bool,
     b_treat: bool,
 ) -> None:
-    """Records what became of each order of the pair, for its issuer's own report (``GameState.diplomacy_
-    order_notes``): a Break Treat that really lowered the relation is "broken"; a Treat is "already_allied"
-    toward an Ally, "accepted" when the relation moves up, "refused" otherwise (not reciprocated, or vetoed by
-    a Break Treat)."""
+    """Records what became of each Treat of the pair, for its issuer's own report (``GameState.diplomacy_
+    order_notes``): "already_allied" toward an Ally, "accepted" when the relation moves up, "refused" otherwise
+    (not reciprocated, or vetoed by a Break Treat). A Break Treat leaves no note here: the real reports tell it
+    to the King it hits (BREAK.X), see ``GameState.diplomacy_notice_issuers``."""
 
     break_driven = a_break or b_break
-    for issuer, target, broke, treated in ((kingdom_a, kingdom_b, a_break, a_treat), (kingdom_b, kingdom_a, b_break, b_treat)):
-        if broke and new_relation is not current:
-            state.diplomacy_order_notes.append((issuer, target, "broken"))
+    for issuer, target, treated in ((kingdom_a, kingdom_b, a_treat), (kingdom_b, kingdom_a, b_treat)):
         if not treated:
             continue
         if break_driven:
@@ -502,7 +506,9 @@ def advance_pending_diplomacy(state: GameState) -> None:
 
     for pair, (_old_relation, new_relation) in state.pending_treat_transitions.items():
         kingdom_a, kingdom_b = sorted(pair)
-        set_relation(state, kingdom_a, kingdom_b, new_relation)
+        # The treaty was struck at the end of the previous turn: for [8.4] ("alleati in un turno precedente") the
+        # two are Allies from that turn, so they can already trade discoveries this turn.
+        set_relation(state, kingdom_a, kingdom_b, new_relation, since_turn=state.turn_number - 1)
     state.pending_treat_transitions = {}
 
 

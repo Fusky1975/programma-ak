@@ -35,6 +35,7 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.parser.gw_world import DiplomaticRelation
+from ak_engine.turn.diplomacy import set_relation
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
 from ak_engine.turn.movement import Direction, neighbor_in_direction_wrapped
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
@@ -18373,10 +18374,14 @@ def _two_kings_state() -> GameState:
     return state
 
 
-def test_render_treaty_broken_names_both_kings():
-    for seed in range(6):
-        line = render_treaty_broken("Aldric", "Borin", random.Random(seed))
-        assert "Borin" in line and ("Aldric" in line or "our" in line)
+def test_render_treaty_broken_is_told_to_the_victim_like_the_real_reports():
+    # SE3__T2.K1: "Shaman Uga-Buga Makumb ... has been informed by Prometeo (#5) that his cooperation has become
+    # expendable, ..." / "Hokuto (#4) informed Shaman Uga-Buga ... that our former amicable relationship has been
+    # rendered meaningless by Uga-Buga Makumb's outrageous provocations."
+    lines = {render_treaty_broken("Prometeo (#5)", "Uga-Buga", "his", random.Random(seed)) for seed in range(12)}
+
+    assert any(line.startswith("Prometeo (#5) informed Uga-Buga that our") and "by Uga-Buga's outrageous" in line for line in lines)
+    assert any(line.startswith("Uga-Buga has been informed by Prometeo (#5) that his cooperation has become") for line in lines)
 
 
 def test_render_diplomatic_furor_uses_the_original_sentence():
@@ -18388,28 +18393,50 @@ def test_render_diplomatic_furor_uses_the_original_sentence():
 
 def test_only_the_issuer_reads_the_order_notes():
     state = _two_kings_state()
-    state.diplomacy_order_notes = [(1, 2, "refused"), (1, 2, "already_allied"), (1, 2, "broken"), (1, 2, "accepted")]
+    state.diplomacy_order_notes = [(1, 2, "refused"), (1, 2, "already_allied"), (1, 2, "accepted")]
 
     assert describe_diplomacy_order_notes(state, 2, random.Random(0)) == []
     lines = describe_diplomacy_order_notes(state, 1, random.Random(0))
-    assert len(lines) == 4
-    assert "Aldric treated with Aldric's ally Borin." in lines
-    assert any(line.startswith("Aldric Treated with Borin, but Borin") and ". It is hoped" in line for line in lines)
+    assert len(lines) == 3
+    # the real wording (SE3 reports): "Uga-Buga Makumb treated with his ally Lord Babba Sissoko ... (#0)."
+    assert "Aldric treated with his ally Borin (#2)." in lines
+    assert any(line.startswith("Aldric Treated with Borin (#2), but") and ". It is hoped" in line for line in lines)
 
 
-def test_the_furor_reaches_both_kings():
+def test_the_furor_reaches_both_kings_in_the_real_form():
+    # SE3__T8.K1 (Mugai's own report): "a diplomatic furor erupted between the Realms of Mugai (whose alliances
+    # are too incompatible) and Hokuto (#4), degrading their diplomatic relations 1 level(s)!"
     state = _two_kings_state()
     state.diplomacy_fury_notices = [(1, 2, 1)]
+    set_relation(state, 1, 2, DiplomaticRelation.NEUTRAL)
 
-    for kingdom_id in (1, 2):
-        (line,) = describe_diplomatic_furors(state, kingdom_id, random.Random(0))
-        assert "Aldric" in line and "Borin" in line and "1 level(s)" in line
+    (as_aldric,) = describe_diplomatic_furors(state, 1, random.Random(0))
+    (as_borin,) = describe_diplomatic_furors(state, 2, random.Random(0))
+
+    assert as_aldric == (
+        "A diplomatic furor erupted between the Realms of Aldric (whose alliances are too incompatible) "
+        "and Borin (#2), degrading their diplomatic relations 1 level(s)!"
+    )
+    assert as_borin == (
+        "A diplomatic furor erupted between the Realms of Aldric (#1) (whose alliances are too incompatible) "
+        "and Borin, degrading their diplomatic relations 1 level(s)!"
+    )
 
 
-def test_the_break_treat_issuer_does_not_read_that_he_has_broken_his_own_treaty():
+def test_the_king_a_break_treat_hits_reads_the_breakers_own_words():
     state = _two_kings_state()
     state.diplomacy_relation_change_notices = [(1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL)]
     state.diplomacy_notice_issuers = {frozenset({1, 2}): frozenset({1})}
 
-    assert describe_diplomacy_change_notices(state, 1) == []
-    assert len(describe_diplomacy_change_notices(state, 2)) == 1
+    assert describe_diplomacy_change_notices(state, 1) == []  # the breaker reads nothing about it
+    (line,) = describe_diplomacy_change_notices(state, 2, random.Random(0))
+    assert "Aldric (#1)" in line and "Borin" in line
+
+
+def test_a_mutual_break_treat_is_read_by_both():
+    state = _two_kings_state()
+    state.diplomacy_relation_change_notices = [(1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.ENEMY)]
+    state.diplomacy_notice_issuers = {frozenset({1, 2}): frozenset({1, 2})}
+
+    assert len(describe_diplomacy_change_notices(state, 1, random.Random(0))) == 1
+    assert len(describe_diplomacy_change_notices(state, 2, random.Random(0))) == 1

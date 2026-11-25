@@ -323,3 +323,92 @@ def test_no_long_range_trade_routes_explorer_still_fails_non_adjacent_no_presenc
     results = execute_scientific_treaties(state, **BOUNDS)
 
     assert results == []
+
+
+# -- audit 2026-11-26 -----------------------------------------------------------
+
+
+def _explorer(state: GameState, leader_id: int, kingdom_id: int, location: HexCoord) -> None:
+    scout = LeaderState(leader_id, kingdom_id=kingdom_id, name=f"Scout{leader_id}", location=location)
+    scout.advanced_abilities.add(AdvancedAbility.EXPLORERS_LONG_RANGE_TRADE_ROUTES)
+    state.add_leader(scout)
+
+
+def _three_far_kingdoms(explorers_of_1: int) -> GameState:
+    """Kingdom 1 trades with the faraway 2 and 3 (all Allies, mutual Treat)."""
+
+    state = GameState()
+    homes = {1: HexCoord(3, 3), 2: HexCoord(20, 10), 3: HexCoord(10, 12)}
+    for kid, home in homes.items():
+        state.add_kingdom(KingdomState(kid, f"K{kid}", Race.HUMAN, Alignment.GOOD, home))
+        state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=kid))
+    for a, b in ((1, 2), (1, 3)):
+        state.allied_kingdoms.add(frozenset({a, b}))
+        state.treat_permissions.update({(a, b), (b, a)})
+    for index in range(explorers_of_1):
+        _explorer(state, 100 + index, 1, homes[1])
+    state.kingdoms[1].discoveries.update({Discovery.COMPASS, Discovery.PONY_EXPRESS})
+    return state
+
+
+def test_each_explorer_pays_for_one_faraway_exchange_a_turn():
+    state = _three_far_kingdoms(explorers_of_1=1)
+
+    results = execute_scientific_treaties(state, **BOUNDS)
+
+    assert [(r.kingdom_a_id, r.kingdom_b_id) for r in results] == [(1, 2)]  # the second faraway pair has no slot
+    assert state.kingdoms[3].discoveries == set()
+
+
+def test_two_explorers_allow_two_faraway_exchanges():
+    state = _three_far_kingdoms(explorers_of_1=2)
+
+    results = execute_scientific_treaties(state, **BOUNDS)
+
+    assert [(r.kingdom_a_id, r.kingdom_b_id) for r in results] == [(1, 2), (1, 3)]
+
+
+def test_an_exchange_that_gives_nothing_does_not_use_a_slot():
+    state = _three_far_kingdoms(explorers_of_1=1)
+    state.kingdoms[2].discoveries.update(state.kingdoms[1].discoveries)  # nothing to trade with 2
+
+    results = execute_scientific_treaties(state, **BOUNDS)
+
+    assert [(r.kingdom_a_id, r.kingdom_b_id) for r in results] == [(1, 3)]
+
+
+def test_adjacent_kingdoms_never_use_a_slot():
+    state = build_state()  # adjacent
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    assert len(execute_scientific_treaties(state, **BOUNDS)) == 1
+
+
+def test_the_exchange_attribution_only_lasts_one_turn():
+    # The real SE3 reports show "(Sent to / Received from player(s) #k by scientific treaty)" only on the turn of
+    # the exchange: a quiet turn must not repeat last turn's lines.
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+    execute_scientific_treaties(state, **BOUNDS)
+    assert state.discovery_exchanged_from == {(1, 2): Discovery.COMPASS}
+
+    execute_scientific_treaties(state, **BOUNDS)  # nothing left to exchange
+
+    assert state.discovery_exchanged_from == {}
+
+
+def test_pairs_are_resolved_in_id_order():
+    # 1 -> 2 comes before 2 -> 3, so a secret can travel the chain in one turn; the other order never could.
+    state = GameState()
+    for kid, x in ((1, 3), (2, 4), (3, 5)):
+        state.add_kingdom(KingdomState(kid, f"K{kid}", Race.HUMAN, Alignment.GOOD, HexCoord(x, 3)))
+        state.add_province(ProvinceState(HexCoord(x, 3), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=kid))
+    for a, b in ((2, 3), (1, 2)):
+        state.allied_kingdoms.add(frozenset({a, b}))
+        state.treat_permissions.update({(a, b), (b, a)})
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+
+    results = execute_scientific_treaties(state, **BOUNDS)
+
+    assert [(r.kingdom_a_id, r.kingdom_b_id) for r in results] == [(1, 2), (2, 3)]
+    assert Discovery.COMPASS in state.kingdoms[3].discoveries
