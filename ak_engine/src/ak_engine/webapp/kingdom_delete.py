@@ -115,5 +115,12 @@ def delete_kingdom(state: GameState, kingdom_id: int) -> None:
     state.pending_treat_transitions = {
         pair: transition for pair, transition in state.pending_treat_transitions.items() if kingdom_id not in pair
     }
+    state.pending_fury_levels = {
+        pair: levels for pair, levels in state.pending_fury_levels.items() if kingdom_id not in pair
+    }
+    state.pending_break_issuers = {p: i for p, i in state.pending_break_issuers.items() if kingdom_id not in p}
+    state.diplomacy_notice_issuers = {p: i for p, i in state.diplomacy_notice_issuers.items() if kingdom_id not in p}
+    state.diplomacy_fury_notices = [n for n in state.diplomacy_fury_notices if kingdom_id not in n[:2]]
+    state.diplomacy_order_notes = [n for n in state.diplomacy_order_notes if kingdom_id not in n[:2]]
 
     del state.kingdoms[kingdom_id]

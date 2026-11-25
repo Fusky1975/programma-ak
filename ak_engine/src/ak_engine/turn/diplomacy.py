@@ -127,6 +127,7 @@ contingent for it to join.
 
 from __future__ import annotations
 
+import random
 from collections.abc import Iterator, Mapping
 
 from ak_engine.models.alignment import Alignment
@@ -329,6 +330,8 @@ def apply_treat_orders(state: GameState) -> None:
         ):
             new_relation = DiplomaticRelation.ALLIED
 
+        _note_orders(state, kingdom_a, kingdom_b, current, new_relation, a_break, b_break, a_treat, b_treat)
+
         if new_relation is current:
             continue
 
@@ -342,11 +345,14 @@ def apply_treat_orders(state: GameState) -> None:
             immediate = (a_break and _is_evil_or_undead(state, kingdom_a)) or (
                 b_break and _is_evil_or_undead(state, kingdom_b)
             )
+            issuers = frozenset(k for k, gave in ((kingdom_a, a_break), (kingdom_b, b_break)) if gave)
             if immediate:
                 set_relation(state, kingdom_a, kingdom_b, new_relation)
                 state.diplomacy_relation_change_notices.append((kingdom_a, kingdom_b, current, new_relation))
+                state.diplomacy_notice_issuers[pair] = issuers
             else:
                 state.pending_break_treat_transitions[pair] = (current, new_relation)
+                state.pending_break_issuers[pair] = issuers
             continue
 
         # [8.2]'s own timing exception: a *mutual* Treat with at least
@@ -364,6 +370,98 @@ def apply_treat_orders(state: GameState) -> None:
             state.diplomacy_relation_change_notices.append((kingdom_a, kingdom_b, current, new_relation))
         else:
             state.pending_treat_transitions[pair] = (current, new_relation)
+
+
+def _note_orders(
+    state: GameState,
+    kingdom_a: int,
+    kingdom_b: int,
+    current: DiplomaticRelation,
+    new_relation: DiplomaticRelation,
+    a_break: bool,
+    b_break: bool,
+    a_treat: bool,
+    b_treat: bool,
+) -> None:
+    """Records what became of each order of the pair, for its issuer's own report (``GameState.diplomacy_
+    order_notes``): a Break Treat that really lowered the relation is "broken"; a Treat is "already_allied"
+    toward an Ally, "accepted" when the relation moves up, "refused" otherwise (not reciprocated, or vetoed by
+    a Break Treat)."""
+
+    break_driven = a_break or b_break
+    for issuer, target, broke, treated in ((kingdom_a, kingdom_b, a_break, a_treat), (kingdom_b, kingdom_a, b_break, b_treat)):
+        if broke and new_relation is not current:
+            state.diplomacy_order_notes.append((issuer, target, "broken"))
+        if not treated:
+            continue
+        if break_driven:
+            outcome = "refused"
+        elif current is DiplomaticRelation.ALLIED:
+            outcome = "already_allied"
+        elif new_relation is not current:
+            outcome = "accepted"
+        else:
+            outcome = "refused"
+        state.diplomacy_order_notes.append((issuer, target, outcome))
+
+
+# -- "Furore Diplomatico" ("Scrittura gioco.txt"): two Allies more than three Alignment positions apart may see
+# -- their treaty break by itself, normally at the end of the turn, rarely during the turn. The rulebook gives no
+# -- numbers; these are the user's own (2026-11-26).
+FURY_ALIGNMENT_SCALE = (
+    Alignment.DIVINE,
+    Alignment.GOOD,
+    Alignment.DRUID,
+    Alignment.NEUTRAL,
+    Alignment.PAGAN,
+    Alignment.EVIL,
+    Alignment.UNDEAD,
+)  # the rulebook's own order of Kingdom alignments (Divino ... Non-Morto): Divino-Pagano is 4 apart
+FURY_MIN_DISTANCE = 4  # "più di tre posizioni"
+FURY_CHANCE_BY_DISTANCE = {4: 0.06, 5: 0.12, 6: 0.20}  # per turn, per pair of Allies
+FURY_TWO_LEVELS_CHANCE = 0.30  # Allied -> Enemy instead of Allied -> Neutral
+FURY_IMMEDIATE_MIN_DISTANCE = 5  # only a very marked difference can blow up during the turn...
+FURY_IMMEDIATE_CHANCE = 0.20  # ...and then only this often
+
+
+def alignment_distance(state: GameState, kingdom_a: int, kingdom_b: int) -> int | None:
+    """How many Alignment positions apart two Kingdoms are (``None`` if either alignment is off the scale)."""
+
+    a = state.kingdoms.get(kingdom_a)
+    b = state.kingdoms.get(kingdom_b)
+    if a is None or b is None:
+        return None
+    if a.alignment not in FURY_ALIGNMENT_SCALE or b.alignment not in FURY_ALIGNMENT_SCALE:
+        return None
+    return abs(FURY_ALIGNMENT_SCALE.index(a.alignment) - FURY_ALIGNMENT_SCALE.index(b.alignment))
+
+
+def apply_diplomatic_fury(state: GameState, rng: random.Random) -> None:
+    """Rolls the Diplomatic Furor of every pair of Allies too far apart in Alignment. A furor lowers their
+    relation one level (Neutral) or two (Enemy); at the end of the turn by default (parked in
+    ``pending_break_treat_transitions``, effective from next turn like an ordinary Break Treat), during the
+    turn only for the most marked differences. No random draw is made when no pair qualifies."""
+
+    kingdom_ids = sorted(state.kingdoms)
+    for index, kingdom_a in enumerate(kingdom_ids):
+        for kingdom_b in kingdom_ids[index + 1 :]:
+            pair = frozenset({kingdom_a, kingdom_b})
+            distance = alignment_distance(state, kingdom_a, kingdom_b)
+            if distance is None or distance < FURY_MIN_DISTANCE:
+                continue
+            if not state.is_allied(kingdom_a, kingdom_b) or pair in state.pending_break_treat_transitions:
+                continue
+            if rng.random() >= FURY_CHANCE_BY_DISTANCE.get(distance, FURY_CHANCE_BY_DISTANCE[6]):
+                continue
+            levels = 2 if rng.random() < FURY_TWO_LEVELS_CHANCE else 1
+            new_relation = DiplomaticRelation.ENEMY if levels == 2 else DiplomaticRelation.NEUTRAL
+            current = state.diplomatic_relation(kingdom_a, kingdom_b)
+            if distance >= FURY_IMMEDIATE_MIN_DISTANCE and rng.random() < FURY_IMMEDIATE_CHANCE:
+                set_relation(state, kingdom_a, kingdom_b, new_relation)
+                state.diplomacy_fury_notices.append((kingdom_a, kingdom_b, levels))
+            else:
+                state.pending_break_treat_transitions[pair] = (current, new_relation)
+                state.pending_fury_levels[pair] = levels
 
 
 def advance_pending_diplomacy(state: GameState) -> None:
@@ -391,8 +489,16 @@ def advance_pending_diplomacy(state: GameState) -> None:
     for pair, (old_relation, new_relation) in state.pending_break_treat_transitions.items():
         kingdom_a, kingdom_b = sorted(pair)
         set_relation(state, kingdom_a, kingdom_b, new_relation)
-        state.diplomacy_relation_change_notices.append((kingdom_a, kingdom_b, old_relation, new_relation))
+        levels = state.pending_fury_levels.get(pair)
+        if levels is not None:
+            state.diplomacy_fury_notices.append((kingdom_a, kingdom_b, levels))
+        else:
+            state.diplomacy_relation_change_notices.append((kingdom_a, kingdom_b, old_relation, new_relation))
+            if pair in state.pending_break_issuers:
+                state.diplomacy_notice_issuers[pair] = state.pending_break_issuers[pair]
     state.pending_break_treat_transitions = {}
+    state.pending_fury_levels = {}
+    state.pending_break_issuers = {}
 
     for pair, (_old_relation, new_relation) in state.pending_treat_transitions.items():
         kingdom_a, kingdom_b = sorted(pair)

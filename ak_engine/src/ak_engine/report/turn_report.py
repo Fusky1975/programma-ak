@@ -8087,6 +8087,37 @@ def render_ally_proposed(character_name: str, king_name: str, rng: random.Random
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/PROSE/BREAK.X -- a Break Treat order, told to the King who gave it.
+_BREAK_TEMPLATES: list[str] = [
+    "< informed/Rnotified [3 that our {former }friendship/Ramicable_relationship has been "
+    "rendered worthless/Rmeaningless by ['s outrageous/Rdespicable provocations.",
+    "[3 has been notified/Rinformed by < that ] cooperation has become expendable/Runnecessary, "
+    "and thus/Rtherefore our formerly/Rpreviously friendly/Ramicable relations are now severed/Rbroken.",
+]
+
+
+def render_treaty_broken(character_name: str, king_name: str, rng: random.Random) -> str:
+    """Renders BREAK.X's sentence for a Break Treat order that lowered the relation."""
+
+    variant = pick_variant(_BREAK_TEMPLATES, rng)
+    values = {"<": character_name, "[3": king_name, "[": king_name, "]": f"{king_name}'s", ">": f"{character_name}'s"}
+    return render(variant, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS _LIncid -- the Diplomatic Furor ("Scrittura gioco.txt": the Furore Diplomatico).
+DIPLOMATIC_FUROR_TEMPLATE = (
+    "a diplomatic furor erupted between the Realms of < and [, degrading their diplomatic relations # level(s)!"
+)
+
+
+def render_diplomatic_furor(king_a: str, king_b: str, levels: int, rng: random.Random) -> str:
+    """Renders ``_LIncid``'s sentence."""
+
+    values = {"<": king_a, "[": king_b, "#": str(levels)}
+    sentence = render(DIPLOMATIC_FUROR_TEMPLATE, values, rng=rng)
+    return sentence[:1].upper() + sentence[1:]
+
+
 # HostAK/TP/SAY.PAS _LATreat -- a single, real, hardcoded template (no
 # file), an already-allied notice distinct from render_ally_proposed()'s
 # own first-time proposal. See module docstring's Phase 116 addendum.
@@ -13508,10 +13539,62 @@ def describe_diplomacy_change_notices(state: GameState, kingdom_id: int) -> list
         if kingdom_id not in (kingdom_a, kingdom_b):
             continue
         other_kingdom_id = kingdom_b if kingdom_id == kingdom_a else kingdom_a
+        # The King who gave the Break Treat order already read BREAK.X (``describe_diplomacy_order_notes()``):
+        # "he has broken his treaty with us" is news for the other King only.
+        if kingdom_id in state.diplomacy_notice_issuers.get(frozenset({kingdom_a, kingdom_b}), frozenset()):
+            continue
         template = _DIPLOMACY_CHANGE_TEMPLATES.get((old_relation, new_relation))
         if template is None:
             continue
         lines.append(template.format(name=_kingdom_display_name(state, other_kingdom_id)))
+    return lines
+
+
+def _plain_king_name(state: GameState, kingdom_id: int) -> str:
+    king_id = _king_leader_id(state, kingdom_id)
+    return state.leaders[king_id].name if king_id is not None else state.kingdoms[kingdom_id].name
+
+
+def _tidy_sentences(text: str) -> str:
+    """The prose templates join their sentences with nothing in between (the original ``Say()`` spaced and
+    capitalized them itself): put back the space and the capital after a full stop."""
+
+    text = re.sub(r"([.!?])([A-Za-z])", r"\1 \2", text)
+    return re.sub(r"([.!?]) ([a-z])", lambda m: f"{m.group(1)} {m.group(2).upper()}", text)
+
+
+def describe_diplomacy_order_notes(state: GameState, kingdom_id: int, rng: random.Random) -> list[str]:
+    """One original-game sentence per Treat / Break Treat order ``kingdom_id`` gave this turn
+    (``state.diplomacy_order_notes``): alliance accepted (ALLY.X), refused (``_LRefA``), already allied
+    (``_LATreat``) or treaty broken (BREAK.X). Only the issuing King reads it; the other King's own news is
+    in ``describe_diplomacy_change_notices()`` and the DIPLOMACY section."""
+
+    lines: list[str] = []
+    for issuer, target, outcome in state.diplomacy_order_notes:
+        if issuer != kingdom_id or target not in state.kingdoms:
+            continue
+        me = _plain_king_name(state, issuer)
+        other = _plain_king_name(state, target)
+        if outcome == "accepted":
+            lines.append(_tidy_sentences(render_ally_proposed(me, other, rng)))
+        elif outcome == "refused":
+            lines.append(_tidy_sentences(render_ally_refused(me, other, rng)))
+        elif outcome == "already_allied":
+            lines.append(render_already_allied(me, other, rng))
+        elif outcome == "broken":
+            lines.append(render_treaty_broken(me, other, rng))
+    return lines
+
+
+def describe_diplomatic_furors(state: GameState, kingdom_id: int, rng: random.Random) -> list[str]:
+    """The Diplomatic Furor sentence of every pair involving ``kingdom_id`` made visible this turn."""
+
+    lines: list[str] = []
+    for kingdom_a, kingdom_b, levels in state.diplomacy_fury_notices:
+        if kingdom_id in (kingdom_a, kingdom_b):
+            lines.append(
+                render_diplomatic_furor(_plain_king_name(state, kingdom_a), _plain_king_name(state, kingdom_b), levels, rng)
+            )
     return lines
 
 
@@ -19618,7 +19701,11 @@ def compose_letter_report(
     # REPORT addition below: a Break Treat relation change must read
     # first, ahead of the ordinary turn narrative -- see `describe_
     # diplomacy_change_notices()`'s own docstring for why.
-    diplomacy_notices = describe_diplomacy_change_notices(state, kingdom_id)
+    diplomacy_notices = (
+        describe_diplomacy_change_notices(state, kingdom_id)
+        + describe_diplomatic_furors(state, kingdom_id, rng)
+        + describe_diplomacy_order_notes(state, kingdom_id, rng)
+    )
     if pascal_layout:
         story_lines: list[str] = []
         turn_story_lines: list[str] = []

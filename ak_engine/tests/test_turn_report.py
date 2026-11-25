@@ -93,6 +93,9 @@ from ak_engine.report.turn_report import (
     describe_diplomacy_report,
     describe_feature_discovery,
     render_battlefield_discovery,
+    describe_diplomacy_change_notices,
+    describe_diplomacy_order_notes,
+    describe_diplomatic_furors,
     describe_finances_report,
     describe_home_province_neighbors,
     describe_letter_reports,
@@ -174,6 +177,8 @@ from ak_engine.report.turn_report import (
     render_scar_terrain_zero,
     render_wind_walk_move_world_event,
     render_already_allied,
+    render_diplomatic_furor,
+    render_treaty_broken,
     render_ally_proposed,
     render_ally_refused,
     render_assassinate_encounter_note,
@@ -18354,3 +18359,57 @@ def test_describe_finances_report_narrates_the_unpaid_armies():
     assert "The 2nd Legion went unpaid and lost a rank." in lines
     assert any(line.startswith("The 3rd Legion, left unpaid, deserted") for line in lines)
     assert any(line.startswith("The 4th Legion, left unpaid, dissolved") for line in lines)
+
+
+# -- Diplomacy: the issuer's order notes, BREAK.X and the Diplomatic Furor ---------
+
+
+def _two_kings_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Aldria", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Borgia", Race.HUMAN, Alignment.EVIL, HexCoord(1, 0)))
+    state.add_leader(LeaderState(10, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(20, 2, "Borin", HexCoord(1, 0), is_king=True))
+    return state
+
+
+def test_render_treaty_broken_names_both_kings():
+    for seed in range(6):
+        line = render_treaty_broken("Aldric", "Borin", random.Random(seed))
+        assert "Borin" in line and ("Aldric" in line or "our" in line)
+
+
+def test_render_diplomatic_furor_uses_the_original_sentence():
+    line = render_diplomatic_furor("Aldric", "Borin", 2, random.Random(0))
+    assert line == (
+        "A diplomatic furor erupted between the Realms of Aldric and Borin, degrading their diplomatic relations 2 level(s)!"
+    )
+
+
+def test_only_the_issuer_reads_the_order_notes():
+    state = _two_kings_state()
+    state.diplomacy_order_notes = [(1, 2, "refused"), (1, 2, "already_allied"), (1, 2, "broken"), (1, 2, "accepted")]
+
+    assert describe_diplomacy_order_notes(state, 2, random.Random(0)) == []
+    lines = describe_diplomacy_order_notes(state, 1, random.Random(0))
+    assert len(lines) == 4
+    assert "Aldric treated with Aldric's ally Borin." in lines
+    assert any(line.startswith("Aldric Treated with Borin, but Borin") and ". It is hoped" in line for line in lines)
+
+
+def test_the_furor_reaches_both_kings():
+    state = _two_kings_state()
+    state.diplomacy_fury_notices = [(1, 2, 1)]
+
+    for kingdom_id in (1, 2):
+        (line,) = describe_diplomatic_furors(state, kingdom_id, random.Random(0))
+        assert "Aldric" in line and "Borin" in line and "1 level(s)" in line
+
+
+def test_the_break_treat_issuer_does_not_read_that_he_has_broken_his_own_treaty():
+    state = _two_kings_state()
+    state.diplomacy_relation_change_notices = [(1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL)]
+    state.diplomacy_notice_issuers = {frozenset({1, 2}): frozenset({1})}
+
+    assert describe_diplomacy_change_notices(state, 1) == []
+    assert len(describe_diplomacy_change_notices(state, 2)) == 1
