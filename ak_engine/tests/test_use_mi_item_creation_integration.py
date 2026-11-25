@@ -187,13 +187,15 @@ def _generate_game(king_count: int = 10) -> GameState:
 
 def test_world_generated_treasure_reaches_state_items_via_a_search_win():
     state = _generate_game()
-    feature = next(f for f in state.features.values() if f.treasure is not None and f.guardian_monster is not None)
+    # A magic item (a Hoard of Gold is paid as gold into the treasury instead of becoming an item): the
+    # feature the book test below also uses, with the seed tuned to win against its guardian.
+    feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)
     state.leaders[_SEARCHER_LEADER_ID] = LeaderState(
         leader_id=_SEARCHER_LEADER_ID, kingdom_id=0, name="Searcher", location=feature.coord, skills=None
     )
     request = SearchRequest(feature_id=feature.feature_id, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.MELEE)])
 
-    result = execute_search(state, _SEARCHER_LEADER_ID, request, rng=random.Random(_SEARCH_WIN_SEED))
+    result = execute_search(state, _SEARCHER_LEADER_ID, request, rng=random.Random(_BOOK_SEARCH_WIN_SEED))
 
     assert result.winner == "leader"
     assert feature.looted is True
