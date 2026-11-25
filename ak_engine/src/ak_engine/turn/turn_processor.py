@@ -334,7 +334,11 @@ from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursu
 from ak_engine.turn.scientific_treaty import execute_scientific_treaties
 from ak_engine.turn.sep_decode import decode_special_encounter_plan
 from ak_engine.turn.skeletal_decay import decompose_graveyard
-from ak_engine.turn.monster_raids import age_all_feature_guardians, maybe_dissipate_hidden_feature
+from ak_engine.turn.monster_raids import (
+    age_all_feature_guardians,
+    maybe_dissipate_hidden_feature,
+    maybe_repopulate_dead_feature,
+)
 from ak_engine.turn.tax_base import apply_turn_revenue
 from ak_engine.turn.wandering_units import MercenaryQualityEvent, resolve_wandering
 from ak_engine.turn.trail_decode import decode_trail_phase
@@ -910,6 +914,9 @@ def run_turn(
     # the maturation routine's own "Season" gate has one).
     for feature in state.features.values():
         maybe_dissipate_hidden_feature(feature, rng)
+    # A feature whose guardian was eliminated may be taken over by a second monster (user ruling 2026-11-25).
+    for feature in state.features.values():
+        maybe_repopulate_dead_feature(feature, rng)
     # Phase 724: Illusory Terrain's own real 15%/turn dissolve chance
     # (rulebook [4.23.1]) -- identical shape/placement to Hide Feature's
     # dissipation roll right above, just per-province instead of

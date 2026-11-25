@@ -601,7 +601,63 @@ def test_execute_search_routes_a_gold_hoard_to_the_king_when_the_visitor_wins():
     assert state.items_held_by(199) == []
     king_items = state.items_held_by(1)
     assert len(king_items) == 1
-    assert king_items[0].treasure is Treasure.GOLD_HOARD_LARGE
+    assert king_items[0].treasure is Treasure.GOLD_HOARD_LARGE  # no Kingdom registered: the item itself is routed
+
+
+def test_execute_search_pays_the_visitors_gold_hoard_into_the_kingdom_treasury():
+    raw = [0] * 30
+    raw[Ability.MELEE.value * 2] = 9
+    raw[Ability.MELEE.value * 2 + 1] = 9
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Foo", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "King Foo", LOCATION, is_king=True))
+    state.add_leader(
+        LeaderState(199, 1, "Visitor", LOCATION, skills=SkillTable(raw_values=raw), valhalla_active_turn=1)
+    )
+    state.add_feature(
+        Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE, treasure=Treasure.GOLD_HOARD_LARGE)
+    )
+
+    result = execute_search(state, 199, _melee_request(1), ScriptedRandom([0.1, 0.5, 0.9] * 20))
+
+    assert result.winner == "leader"
+    assert 10 <= result.gold_found <= 25
+    assert state.kingdoms[1].treasury == result.gold_found
+    assert state.items == {}
+
+
+def test_a_captured_gold_hoard_pays_its_tier_into_the_treasury_and_leaves_no_item():
+    from ak_engine.turn.search_execution import GOLD_HOARD_PAYOUT
+
+    assert GOLD_HOARD_PAYOUT == {
+        Treasure.GOLD_HOARD_LARGE: (10, 25),
+        Treasure.GOLD_HOARD_HUGE: (15, 35),
+        Treasure.GOLD_HOARD_FABULOUS: (25, 50),
+    }
+    for tier, (low, high) in GOLD_HOARD_PAYOUT.items():
+        raw = [0] * 31
+        raw[Ability.MELEE.value * 2] = 9
+        state = _state_with_leader(skills=SkillTable(raw_values=raw))
+        state.add_kingdom(KingdomState(1, "Foo", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+        state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE, treasure=tier))
+
+        result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.1, 0.5, 0.9] * 20))
+
+        assert low <= result.gold_found <= high
+        assert state.kingdoms[1].treasury == result.gold_found
+        assert state.items == {}
+
+
+def test_a_hero_without_a_treasury_keeps_the_hoard_as_an_item():
+    raw = [0] * 31
+    raw[Ability.MELEE.value * 2] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))  # kingdom 1 is not registered
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE, treasure=Treasure.GOLD_HOARD_LARGE))
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.1, 0.5, 0.9] * 20))
+
+    assert result.gold_found == 0
+    assert [i.treasure for i in state.items_held_by(LEADER_ID)] == [Treasure.GOLD_HOARD_LARGE]
 
 
 def test_execute_search_grants_a_non_gold_treasure_to_the_visitor_directly():

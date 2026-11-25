@@ -519,3 +519,56 @@ def test_resolve_province_raids_non_gated_reply_raids_normally():
     assert len(events) == 1
     assert events[0].kind == "raid"
     assert income < 700
+
+
+# -- the second monster of a dead feature (user ruling 2026-11-25) --
+
+
+def _dead_feature(kind=FeatureType.DUNGEON, monster=Monster.TROLL):
+    feature = Feature(feature_id=1, coord=HexCoord(3, 3), kind=kind, guardian_monster=monster, treasure=Treasure.GOLD_HOARD_LARGE)
+    feature.looted = True
+    feature.guardian_state = MonsterEngagementState.BOLD
+    feature.guardian_talk_reply_id = 5
+    return feature
+
+
+def test_a_living_feature_is_never_repopulated_and_no_roll_is_spent():
+    from ak_engine.turn.monster_raids import maybe_repopulate_dead_feature
+
+    feature = _dead_feature()
+    feature.looted = False
+    assert maybe_repopulate_dead_feature(feature, ScriptedRandom([])) is False
+    assert feature.guardian_monster is Monster.TROLL
+
+
+def test_a_dead_feature_is_taken_over_by_a_species_that_fits_its_kind_with_no_treasure():
+    from ak_engine.turn.monster_raids import REPOPULATION_CHANCE, maybe_repopulate_dead_feature, monsters_for_feature_kind
+
+    feature = _dead_feature()
+    fits = monsters_for_feature_kind(FeatureType.DUNGEON)
+    assert fits and Monster.TROLL in fits
+
+    assert maybe_repopulate_dead_feature(feature, ScriptedRandom([REPOPULATION_CHANCE - 0.01, 0.5, 0.5], choice_indices=[0])) is True
+
+    assert feature.guardian_monster in fits
+    assert feature.looted is False
+    assert feature.treasure is None
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+    assert feature.guardian_talk_reply_id is None
+
+
+def test_a_dead_feature_stays_empty_when_the_roll_fails():
+    from ak_engine.turn.monster_raids import REPOPULATION_CHANCE, maybe_repopulate_dead_feature
+
+    feature = _dead_feature()
+    assert maybe_repopulate_dead_feature(feature, ScriptedRandom([REPOPULATION_CHANCE])) is False
+    assert feature.looted is True and feature.treasure is Treasure.GOLD_HOARD_LARGE
+
+
+def test_every_feature_kind_has_some_species_that_can_move_in():
+    from ak_engine.turn.monster_raids import monsters_for_feature_kind
+
+    for kind in FeatureType:
+        if kind.name.startswith("EF") or kind is FeatureType.NOFTYPE:
+            continue
+        assert monsters_for_feature_kind(kind), kind
