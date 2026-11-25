@@ -5614,6 +5614,65 @@ def test_execute_search_fulfill_honored_pacifies_a_bold_guardian_to_mercenary():
     assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
+def test_execute_search_fulfill_honored_pays_no_defender_points_when_there_is_nobody_to_pacify():
+    # Carica di Difensore, nota 2: no points "per avere ottemperato ai termini di un accordo (Fulfill)"; only a
+    # monster persuaded to stop raiding pays half its HP. A guardian already Calm has nothing to stop.
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+        guardian_state=MonsterEngagementState.CALM,
+    )
+    state.add_feature(feature)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.accepted is True
+    assert state.leaders[LEADER_ID].merit_tally.monster_hp_neutralized == 0
+
+
+def test_execute_search_intimidating_the_guardian_pays_half_its_hit_points_to_the_defender():
+    # nota 2 again: "danneggiarlo persuaderà quest'ultimo a smettere di fare scorrerie" -> half the HP.
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_monster_wins_after_melee_damage(15)
+    ):
+        result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.1] * 20))
+
+    assert result.guardian_intimidated is True
+    # the leader died in that fight (the 25% death penalty already took its share of what he had earned)
+    assert state.dead_leaders[LEADER_ID].merit_tally.monster_hp_neutralized > 0
+
+
+def test_execute_search_a_guardian_that_is_not_intimidated_pays_nothing():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_monster_wins_after_melee_damage(1)
+    ):
+        result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.1] * 20))
+
+    assert result.guardian_intimidated is False
+    assert state.dead_leaders[LEADER_ID].merit_tally.monster_hp_neutralized == 0
+
+
 def test_execute_search_fulfill_honored_pacifies_a_mercenary_guardian_to_calm():
     state = _state_with_leader()
     feature = Feature(

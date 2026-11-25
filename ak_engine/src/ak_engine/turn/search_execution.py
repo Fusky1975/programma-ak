@@ -3359,6 +3359,10 @@ def _resolve_search_encounter_body(
         packets = [swing.damage for swing in melee_swings if swing.attacker == "a"]
         packets += [shot.damage for shot in fire_arrow_shots if shot.shooter == "a"]
         if roll_guardian_intimidation(feature, packets, combat_temper, rng):
+            # Rulebook, Carica di Difensore, nota 2: a monster that the character's efforts ("negoziare... o
+            # danneggiarlo") persuade to stop raiding earns half its Hit Points (``defender_merit_points()``
+            # halves the raw neutralized total).
+            leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
             return True, False
         took_damage = monster_combatant.hit_points != monster_starting_hit_points
         return False, guardian_undeterred(feature, took_damage)
@@ -3910,12 +3914,17 @@ def _resolve_search_encounter_body(
             )
         )
         if honored:
-            leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
             # Phase 671: THUNDERBIRD.md section 4.2's own compiled
             # pacification snippet -- see turn/monster_raids.py apply_
             # fulfill_pacification()'s own docstring for why this applies
             # to any honored deal, not a narrower "stop raiding" one.
             pacified = apply_fulfill_pacification(feature)
+            # Rulebook, Carica di Difensore, nota 2: "Non viene attribuito nessun punto ... per avere
+            # ottemperato ai termini di un accordo (Fulfill)" -- but a monster persuaded to stop raiding earns
+            # half its Hit Points: so only a deal that really pacified the guardian pays (2026-11-26; before,
+            # every honored deal did, even with nothing left to pacify).
+            if pacified:
+                leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
             return SearchExecutionResult(
                 accepted=True, combat_resolved=False, winner="leader", guardian_pacified_by_fulfill=pacified
             )

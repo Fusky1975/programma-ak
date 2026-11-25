@@ -214,6 +214,13 @@ successfully honored. Both writers confirmed current as of Phase
 441 -- this paragraph itself had drifted stale after Phase 258 landed,
 still describing the pre-258 state until corrected.
 
+**2026-11-26 audit of footnote 2.** "Non viene attribuito nessun punto ... per avere ottemperato ai termini di un
+accordo (Fulfill)" and, in the same footnote, a monster that the character's efforts ("negoziare... o
+danneggiarlo") persuade to stop raiding earns half: so the half credit is now paid exactly when the guardian
+really stops raiding -- an honored Fulfill that actually pacifies it (``apply_fulfill_pacification()`` changed its
+state; a deal with an already-Calm guardian pays nothing) and a successful intimidation by damage
+(``roll_guardian_intimidation()``), which used to pay nothing.
+
 ## Gran Sacerdote / Priest (10%)
 "Per ogni incantesimo Resurrection o Bless riuscito +1" (either spell,
 same +1 -- the table doesn't distinguish) plus "+2 per ciascun livello
