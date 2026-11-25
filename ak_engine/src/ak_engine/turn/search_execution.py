@@ -1125,6 +1125,8 @@ class SearchExecutionResult:
     # fallback, ...) -- a real, separate, larger follow-up, not attempted
     # here.
     ice_suspend_immobilized: bool = False
+    # An intelligent guardian ran away wounded (its plan's FLEE): the leader won the field without a kill.
+    monster_fled: bool = False
     # Phase 1027: which of the 7 real `report/turn_report.py
     # QUEST_RIDDLE_TEXT` entries this guardian poses, set only when a
     # Talk's own resolved reply is `MonsterTalkReply.R_RIDDLE` -- see
@@ -1936,8 +1938,17 @@ def _resolve_search_encounter(
     # of the leader's -- only consulted for whether it wants to Shoot
     # before Melee (its own CAST entries stay unwired). See module
     # docstring's own Phase 178 addendum.
+    # The intelligent monsters' varied plans come from their own stream, seeded by game/turn/leader/place
+    # and the leader's running experience credit (the same convention `turn/command_experience.py` uses), so
+    # the encounter's own dice are untouched.
+    variety_rng = random.Random(
+        f"monster-plan:{state.game_number}:{state.turn_number}:{leader_id}:{feature.feature_id}:{leader.experience_credit}"
+    )
     monster_plan = roll_monster_encounter_plan(
-        feature.guardian_monster, rng, attacker_is_undead=leader.alignment is Alignment.UNDEAD
+        feature.guardian_monster,
+        rng,
+        attacker_is_undead=leader.alignment is Alignment.UNDEAD,
+        variety_rng=variety_rng,
     )
     monster_wants_shoot = monster_plan is not None and any(t.maneuver is Maneuver.SHOOT for t in monster_plan)
     # Phase 209: the guardian's own CAST entries, resolved once, right
@@ -3159,12 +3170,20 @@ def _resolve_search_encounter(
                 return None
             if current.maneuver is Maneuver.CAST:
                 return current
+            if current.maneuver is Maneuver.FLEE:
+                # An intelligent guardian's wounded retreat: it only runs once it is down to half its
+                # starting hit points or less; until then it keeps fighting in Melee.
+                if monster_combatant.hit_points * 2 <= monster_starting_hit_points:
+                    return current
+                return None
             monster_tactic_index += 1  # not a shape this data table ever uses -- skip defensively
         return None
 
     def _advance_monster_tactic() -> None:
         nonlocal monster_tactic_index
         if monster_plan is not None and monster_tactic_index < len(monster_plan):
+            if monster_plan[monster_tactic_index].maneuver is Maneuver.FLEE:
+                return  # a pending wounded retreat stays pending until the guardian is hurt enough
             monster_tactic_index += 1
 
     def _is_summon_cast(tactic) -> bool:
@@ -3218,7 +3237,7 @@ def _resolve_search_encounter(
         waiting a few rounds later.
         """
 
-        return any(t.maneuver is Maneuver.CAST for t in (monster_plan or ())[monster_tactic_index:])
+        return any(t.maneuver in (Maneuver.CAST, Maneuver.FLEE) for t in (monster_plan or ())[monster_tactic_index:])
 
     monster_cast_resolved = False
 
@@ -3311,6 +3330,23 @@ def _resolve_search_encounter(
             accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
         )
 
+    def _monster_flees_outcome() -> SearchExecutionResult:
+        """A wounded intelligent guardian runs away: the leader holds the field and takes the feature's
+        treasure, but nothing was defeated (no hit-point or duel merit)."""
+
+        feature.looted = True
+        if feature.treasure is not None:
+            _grant_search_treasure(state, leader_id, feature.treasure)
+        outcome = SearchExecutionResult(
+            accepted=True, combat_resolved=True, winner="leader", feature_looted=True, monster_fled=True
+        )
+        outcome.fire_arrow_shots = fire_arrow_shots
+        outcome.melee_swings = tuple(melee_swings)
+        outcome.fizzled_spells = tuple(fizzled_spells)
+        outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
+        outcome.guardian_monster = feature.guardian_monster
+        return outcome
+
     def _finish_melee_outcome(combat_result: EncounterCombatResult) -> SearchExecutionResult:
         """Wraps ``_outcome_from()`` for a genuinely concluded Melee duel
         (winner always set, in every real call site below) and attaches
@@ -3377,6 +3413,9 @@ def _resolve_search_encounter(
             melee_setup_done = True
 
         monster_tactic = _peek_monster_action()
+
+        if monster_tactic is not None and monster_tactic.maneuver is Maneuver.FLEE:
+            return _monster_flees_outcome()
 
         if leader_tactic.maneuver is Maneuver.MELEE and monster_tactic is None:
             round_outcome = resolve_one_melee_round(leader_combatant, monster_combatant, rng)

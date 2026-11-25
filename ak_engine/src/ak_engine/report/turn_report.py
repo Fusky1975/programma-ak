@@ -12798,6 +12798,25 @@ def render_guardian_talk_offer(
     return [f"{character_name} spoke with {monster_name}.", offer]
 
 
+# HostAK/TP/PROSE/FLED.X -- a combatant runs away from the fight; here the wounded guardian of a Special
+# Place that gave up (an intelligent monster's FLEE tactic). "<" the fugitive, "[" the one who stays on the
+# field.
+_FLED_TEMPLATES: list[str] = [
+    "< stuck > tail/Stailfin between > legs and fled from [ as fast as > legs could carry <2!",
+    "< ran/Sswam shamelessly/Rfuriously and fled from the combat/Rencounter.",
+    "{deciding/Rrealizing that discretion is often/Rsometimes the better part of valor, }< fled "
+    "{unceremoniously }from the {dangerous }combat/Rscene.",
+]
+
+
+def render_monster_fled(monster_name: str, opponent_name: str, rng: random.Random) -> str:
+    """FLED.X: the wounded guardian runs away and leaves the field (and the treasure) to the hero."""
+
+    variant = pick_variant(_FLED_TEMPLATES, rng)
+    values = {"<": monster_name, "<2": "it", ">": "its", "[": opponent_name, "[1": opponent_name}
+    return render(variant, values, rng=rng)
+
+
 def describe_search(
     result: SearchExecutionResult,
     *,
@@ -13069,6 +13088,9 @@ def describe_search(
     if result.ice_suspend_immobilized:
         frozen_name = monster_name if result.winner == "leader" else character_name
         lines.append(render_ice_immobilized(frozen_name, rng))
+
+    if result.monster_fled:
+        lines.append(render_monster_fled(monster_name, character_name, rng))
 
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
