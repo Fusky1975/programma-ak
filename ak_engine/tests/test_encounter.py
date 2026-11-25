@@ -594,6 +594,29 @@ def test_resolve_fire_arrow_duel_archery_free_attack_bonus_grants_an_extra_shot(
     assert result.shots[0].shooter == "b"
 
 
+def test_resolve_fire_arrow_duel_a_victim_of_spiritwrack_or_hand_of_death_fires_no_return_shots():
+    # "La vittima non può lanciare incantesimi né tirare con l'arco": the blocked side never shoots back
+    # when the other side opens the exchange, whichever side it is.
+    a = Combatant("A", archery_skill=3, hit_points=10)
+    b = Combatant("B", archery_skill=3, hit_points=10, blocked_from_archery=True)
+    result = resolve_fire_arrow_duel(a, b, ScriptedRandom([0.99] * 10))
+    assert {shot.shooter for shot in result.shots} == {"a"}
+    assert len(result.shots) == 3
+
+    a = Combatant("A", archery_skill=3, hit_points=10, blocked_from_archery=True)
+    b = Combatant("B", archery_skill=2, hit_points=10)
+    result = resolve_fire_arrow_duel(a, b, ScriptedRandom([0.99] * 10))
+    assert {shot.shooter for shot in result.shots} == {"b"}
+    assert len(result.shots) == 2
+
+
+def test_resolve_fire_arrow_duel_two_blocked_archers_fire_nothing():
+    a = Combatant("A", archery_skill=3, hit_points=10, blocked_from_archery=True)
+    b = Combatant("B", archery_skill=3, hit_points=10, blocked_from_archery=True)
+    result = resolve_fire_arrow_duel(a, b, ScriptedRandom([]))
+    assert result.winner is None and result.shots == ()
+
+
 # -- Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY --
 
 
