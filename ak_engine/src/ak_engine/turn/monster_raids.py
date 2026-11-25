@@ -145,13 +145,14 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.feature import Feature, RaidEvent
+from ak_engine.models.feature import Feature, FeatureType, RaidEvent
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.monster import (
     MONSTER_INTELLIGENCE_ORDINAL,
     MONSTER_RUNTIME_PROFILE,
     Monster,
     MonsterEngagementState,
+    roll_monster_alignment,
 )
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
@@ -255,6 +256,44 @@ def maybe_dissipate_hidden_feature(feature: Feature, rng: random.Random) -> None
         return
     if rng.random() < MONSTER_HIDE_DISSIPATION_CHANCE:
         feature.magically_hidden = False
+
+
+# [Regolamento, Mappa e giocatori]: "Un Luogo Speciale a volte può venire occupato da un secondo mostro,
+# dopo che il 'titolare' è stato eliminato." No algorithm survives (`Maybe_Repopulate_Dead_Feature`), so, by
+# the user's ruling (2026-11-25): each turn a feature whose guardian is dead has this chance of being
+# taken over by a new monster -- one of the species the world generator could have put in a feature of
+# that kind (`worldgen/feature_generation.py MFEAT_RANGE`) -- but there is no new treasure: the new
+# occupant only guards an empty place (defeating it still earns Defender points).
+REPOPULATION_CHANCE = 0.05
+
+
+def monsters_for_feature_kind(kind: FeatureType) -> list[Monster]:
+    from ak_engine.worldgen.feature_generation import MFEAT_RANGE
+
+    return [monster for monster, (first, last) in MFEAT_RANGE.items() if first.value <= kind.value <= last.value]
+
+
+def maybe_repopulate_dead_feature(feature: Feature, rng: random.Random) -> bool:
+    """Rolls the second occupant of a feature whose guardian is dead. No roll is consumed for a living
+    feature. Returns True when a new monster moved in."""
+
+    if not feature.looted or feature.guardian_monster is None:
+        return False
+    if rng.random() >= REPOPULATION_CHANCE:
+        return False
+    candidates = monsters_for_feature_kind(feature.kind)
+    if not candidates:
+        return False
+    monster = rng.choice(candidates)
+    feature.guardian_monster = monster
+    feature.guardian_alignment = roll_monster_alignment(monster, rng)
+    feature.guardian_state = MonsterEngagementState.MERCENARY
+    feature.looted = False
+    feature.treasure = None  # a new tenant, an empty place
+    feature.guardian_talk_reply_id = None
+    feature.pending_deal_leader_id = None
+    feature.psychic_mage_sensed_fulfill_honor = None
+    return True
 
 
 # Phase 679's own real cutoff for "is this a purchasable magic-item

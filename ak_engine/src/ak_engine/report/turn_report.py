@@ -13119,6 +13119,9 @@ def describe_search(
     if result.monster_fled:
         lines.append(render_monster_fled(monster_name, character_name, rng))
 
+    if result.gold_found > 0:
+        lines.append(render_gold_spoils(character_name, monster_name, result.gold_found, rng))
+
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
         lines.append(render_character_death(character_name, rng))

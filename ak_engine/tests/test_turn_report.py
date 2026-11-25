@@ -9297,6 +9297,17 @@ def test_describe_search_accepted_no_combat_renders_only_the_opening_line():
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
 
 
+def test_describe_search_narrates_the_gold_a_captured_hoard_paid():
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="leader", feature_looted=True, gold_found=18, guardian_monster=Monster.TROLL
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0] * 10)
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert any("18 gold" in line for line in lines)
+
+
 def test_describe_search_guardian_riddle_appends_the_riddle_line():
     result = SearchExecutionResult(
         accepted=True,

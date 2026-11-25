@@ -978,6 +978,7 @@ class SearchExecutionResult:
     # ends the Search peacefully, with no duel ever fought.
     winner: str | None = None
     feature_looted: bool = False
+    gold_found: int = 0  # gold a captured Hoard paid into the Kingdom treasury (GOLD_HOARD_PAYOUT)
     leader_killed: bool = False
     rescued_items: tuple[RescuedItem, ...] = ()  # legendary items of the fallen hero (turn/legendary_item_rescue.py)
     fled: bool = False
@@ -1780,30 +1781,44 @@ def _select_guardian_item(monster: Monster, feature_id: int, items: tuple[Treasu
     return items[index]
 
 
-def _grant_search_treasure(state: GameState, leader_id: int, treasure: Treasure) -> None:
-    """Phase 548 -- ``VALHALLA.txt`` rule 1: "If Vahlalla visitor
-    searches a feature, any monetary treasure Vahlalla visitor captures
-    will be given to you" -- an immediate hand-off to the Kingdom's own
-    King, distinct from rule 2's magic treasure (stays with the visitor
-    until departure, see ``turn/valhalla_execution.py process_valhalla_
-    departure()``). This project has no "convert a held Gold Hoard item
-    into ``KingdomState.treasury``" mechanic anywhere -- Gold Hoards are
-    ``TreasureCategory.GOLD_HOARD`` items like any other (confirmed via
-    ``turn/cast_execution.py ENHANCED_CHARM_ELIGIBLE_CATEGORIES``/``turn/
-    use_mi_execution.py USE_MI_TARGET_CATEGORIES``, both of which
-    exclude it). The honest, sourced reading: route the item itself to
-    the King immediately, the same item hand-off idiom departure already
-    uses for everything else. Every other leader (and the visitor on any
-    other turn, or for any other treasure category) is unaffected --
-    falls straight through to the ordinary grant.
+# What a "Hoard of Gold" treasure pays when it is captured (user ruling 2026-11-25; the tiers' names are
+# the game's own, ``GOLD_HOARD_DISPLAY_NAME``). The gold goes straight into the treasury of the hero's
+# Kingdom -- there is no Hoard "item" to carry about.
+GOLD_HOARD_PAYOUT: dict[Treasure, tuple[int, int]] = {
+    Treasure.GOLD_HOARD_LARGE: (10, 25),
+    Treasure.GOLD_HOARD_HUGE: (15, 35),
+    Treasure.GOLD_HOARD_FABULOUS: (25, 50),
+}
+
+
+def _grant_search_treasure(
+    state: GameState, leader_id: int, treasure: Treasure, rng: random.Random, gold_log: list[int]
+) -> None:
+    """The captured treasure of a feature. A magic item goes to the leader's inventory (the Valhalla
+    visitor's own hand-off to the King is ``turn/valhalla_execution.py``'s business). A Hoard of Gold
+    pays gold into the treasury of the leader's Kingdom (the Valhalla visitor's Kingdom is the King's
+    own: VALHALLA.txt rule 1, "any monetary treasure ... will be given to you") and the amount is
+    appended to ``gold_log`` for the report. A leader without a Kingdom has no treasury to pay into:
+    he keeps the Hoard as an item, as before.
     """
 
-    visitor = state.leaders.get(leader_id)
-    is_active_visitor = (
-        leader_id == VALHALLA_VISITOR_LEADER_ID and visitor is not None and visitor.valhalla_active_turn == state.turn_number
-    )
-    if is_active_visitor and TREASURE_CATEGORY.get(treasure) is TreasureCategory.GOLD_HOARD:
-        king = find_king_of_kingdom(state, visitor.kingdom_id)
+    payout = GOLD_HOARD_PAYOUT.get(treasure)
+    leader = state.leaders.get(leader_id)
+    kingdom = state.kingdoms.get(leader.kingdom_id) if payout is not None and leader is not None and leader.kingdom_id is not None else None
+    if payout is not None and kingdom is not None:
+        gold = rng.randint(*payout)
+        kingdom.treasury += gold
+        gold_log.append(gold)
+        return
+    # No treasury to pay into: the Hoard stays an item. The Valhalla visitor's own hand-off to the King
+    # (VALHALLA.txt rule 1) still applies to it.
+    if (
+        leader is not None
+        and leader_id == VALHALLA_VISITOR_LEADER_ID
+        and leader.valhalla_active_turn == state.turn_number
+        and TREASURE_CATEGORY.get(treasure) is TreasureCategory.GOLD_HOARD
+    ):
+        king = find_king_of_kingdom(state, leader.kingdom_id)
         if king is not None:
             state.add_item(treasure, king.leader_id)
             return
@@ -1832,6 +1847,21 @@ def _resolve_search_encounter(
     leader_id: int,
     request: SearchRequest,
     rng: random.Random,
+) -> SearchExecutionResult:
+    """``_resolve_search_encounter_body()`` plus the gold a captured Hoard paid out, for the report."""
+
+    gold_log: list[int] = []
+    result = _resolve_search_encounter_body(state, leader_id, request, rng, gold_log)
+    result.gold_found = sum(gold_log)
+    return result
+
+
+def _resolve_search_encounter_body(
+    state: GameState,
+    leader_id: int,
+    request: SearchRequest,
+    rng: random.Random,
+    gold_log: list[int],
 ) -> SearchExecutionResult:
     """The real Search-encounter resolution body -- see module docstring
     for exactly which cases resolve real combat and which honestly
@@ -2024,7 +2054,7 @@ def _resolve_search_encounter(
             # that pipeline, e.g. most existing tests) to the winning
             # leader via the existing item registry (Phase 140).
             if feature.treasure is not None:
-                _grant_search_treasure(state, leader_id, feature.treasure)
+                _grant_search_treasure(state, leader_id, feature.treasure, rng, gold_log)
             # Phase 255: every "a" win here is a real combat defeat of the
             # guardian (melee, fire arrow, or a spell's own instant-kill
             # branch) -- never the rulebook's separate "neutralized via
@@ -3340,7 +3370,7 @@ def _resolve_search_encounter(
 
         feature.looted = True
         if feature.treasure is not None:
-            _grant_search_treasure(state, leader_id, feature.treasure)
+            _grant_search_treasure(state, leader_id, feature.treasure, rng, gold_log)
         outcome = SearchExecutionResult(
             accepted=True, combat_resolved=True, winner="leader", feature_looted=True, monster_fled=True
         )
@@ -3738,7 +3768,7 @@ def _resolve_search_encounter(
         if holds_monster_command_item_for(state, leader_id, feature.guardian_monster):
             feature.looted = True
             if feature.treasure is not None:
-                _grant_search_treasure(state, leader_id, feature.treasure)
+                _grant_search_treasure(state, leader_id, feature.treasure, rng, gold_log)
             return SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader", feature_looted=True)
 
         druid_level = effective_skill_level(state, leader, Ability.DRUID)
@@ -3942,7 +3972,7 @@ def _resolve_search_encounter(
             if requested_treasure is not None and requested_treasure != feature.treasure.value:
                 return None  # asked for a specific treasure the monster doesn't have
         state.remove_item(item.item_id)
-        _grant_search_treasure(state, leader_id, feature.treasure)
+        _grant_search_treasure(state, leader_id, feature.treasure, rng, gold_log)
         feature.treasure = None
         return None  # peaceful -- the plan continues to its next tactic
 
