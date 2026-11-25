@@ -1002,20 +1002,14 @@ def _resolve_personal_combat_cast(
     if not try_consume_combat_cast_slot(ability, spell, level, cast_slots_used, cast_spells_attempted):
         return None
 
-    # Kill Enemy [4.25.2]: "la possibilità di riuscita è ridotta alla
-    # metà in un incontro in un Luogo Speciale o contro un Eroe che
-    # comanda unità militari" -- same two OR'd triggers as the Action-
-    # Cast form (`cast_execution.py _execute_kill_enemy()`), reusing
-    # its own "any Feature at the caster's own province" reading of
-    # "Luogo Speciale" (this module has no Search-style guaranteed-at-
-    # a-Feature context to make that half unconditionally true, unlike
-    # `turn/search_execution.py`'s own Kill Enemy branch).
+    # Kill Enemy [4.25.2]: "la possibilità di riuscita è ridotta alla metà in un incontro in un
+    # Luogo Speciale o contro un Eroe che comanda unità militari" -- used in an encounter plan
+    # (this duel) it is always halved; see the ruling below.
     kill_enemy_multiplier = 1.0
     if spell is Spell.KILL_ENEMY:
-        halving_applies = bool(state.features_at(caster_leader.location)) or (
-            target_leader is not None and bool(state.armies_commanded_by(target_leader.leader_id))
-        )
-        kill_enemy_multiplier = 0.5 if halving_applies else 1.0
+        # User ruling 2026-11-25: the halving applies whenever Kill Enemy is used in an encounter plan
+        # (it needs the figurine prepared on guesswork), not only inside a Special Place.
+        kill_enemy_multiplier = 0.5
     succeeded = resolve_personal_combat_spell_cast(
         level, rng, caster_is_pagan=caster_is_pagan, success_chance_multiplier=kill_enemy_multiplier
     )

@@ -1030,19 +1030,19 @@ def test_kill_enemy_halves_the_chance_against_an_army_leading_hero():
     assert result.reason == "spell failed"
 
 
-def test_kill_enemy_halves_the_chance_in_a_special_place_province():
-    # Same seed-3 reasoning as the army-leading-Hero test above.
+def test_kill_enemy_as_an_action_spell_is_not_halved_by_a_special_place_in_the_province():
+    # The halving is for encounter plans in a Special Place or against an army-leading Hero; a plain
+    # Action cast merely standing in a province with a feature keeps the full chance (user ruling
+    # 2026-11-25). Seed 3's first roll (~0.238) is under the full 30% but over the halved 15%.
     state = build_state()
-    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% base, 15% halved
-    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))  # leads no army -- the province alone triggers it
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)  # 30% base
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
     state.add_feature(Feature(1, LOCATION, FeatureType.TOWER))
     request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
-    rng = random.Random(3)
 
-    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=random.Random(3))
 
-    assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.applied is True
 
 
 def test_kill_enemy_full_chance_against_an_unled_hero_in_an_ordinary_province():

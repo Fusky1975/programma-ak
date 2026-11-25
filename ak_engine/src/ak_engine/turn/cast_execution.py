@@ -2103,7 +2103,11 @@ def _execute_kill_enemy(
         # applicability first" order the King immunity above uses.
         return CastExecutionResult(request, applied=False, reason="target is Undead, immune to Kill Enemy")
 
-    halving_applies = bool(state.features_at(caster.location)) or bool(state.armies_commanded_by(target.leader_id))
+    # [4.25.2]: halved "in un incontro in un Luogo Speciale o contro un Eroe che comanda unità
+    # militari". As an Action spell (no encounter plan involved) only the second case applies --
+    # user ruling 2026-11-25; the encounter-plan uses halve it in turn/challenge_execution.py and
+    # turn/search_execution.py.
+    halving_applies = bool(state.armies_commanded_by(target.leader_id))
     multiplier = 0.5 if halving_applies else 1.0
     succeeded, reason = _roll_cast_success(
         state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=multiplier
