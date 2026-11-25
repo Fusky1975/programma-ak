@@ -29,6 +29,12 @@ PARAGRAPH_INDENT = "  "
 _SENTENCE_END = re.compile(r"([.!?][\"')]?)(?=[A-Z])")
 _SPACE_AFTER_SENTENCE = re.compile(r"([.!?][\"')]?) (?=[A-Z])")
 _SPACE_RUN = re.compile(r" {2,}")
+# A sentence that ends right against a lower-case word ("...a ford.but their enemy...", "...in the world.his infamy
+# ...", "...supply contracts.any unit..."): how several of PROSE.TXT's templates are written. The original's
+# ``Spread`` writes a sentence start capitalized after the two spaces (the real reports read "go through a ford.
+# But their enemy attacked"), so this does the same. Only a lower-case letter right before the stop and a
+# lower-case word of two or more letters right after it, so "e.g." and the like are left alone.
+_RUN_ON_LOWER = re.compile(r"(?<=[a-z])([.!?])([a-z]{2})")
 _ENDS_SENTENCE = re.compile(r"[.!?][\"')]?$")
 
 
@@ -37,6 +43,7 @@ def normalize_sentences(text: str) -> str:
     ``"...here. The next"`` both become ``"...here.  The next"``."""
 
     text = _SPACE_RUN.sub(" ", text)
+    text = _RUN_ON_LOWER.sub(lambda m: f"{m.group(1)}  {m.group(2)[0].upper()}{m.group(2)[1:]}", text)
     text = _SENTENCE_END.sub(r"\1  ", text)
     text = _SPACE_AFTER_SENTENCE.sub(r"\1  ", text)
     return text

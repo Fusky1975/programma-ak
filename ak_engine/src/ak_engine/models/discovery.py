@@ -713,6 +713,16 @@ DISCOVERY_SPREAD_CATEGORY: dict[Discovery, int] = {
 }
 
 
+def discovery_benefits_text(discovery: Discovery) -> str:
+    """The explanation the real reports print under "The following benefits are conferred by the <name>:" when a
+    Discovery is made or received: the description up to its "From now on, ..." addendum, which belongs to a
+    different report."""
+
+    text = DISCOVERY_DESCRIPTION[discovery]
+    cut = text.find(" From now on,")
+    return (text if cut == -1 else text[:cut]).strip()
+
+
 def discovery_effect_description(discovery: Discovery) -> str:
     """The parenthesized effect text REPORTS.PAS prints after each
     Discovery's own name -- see module docstring's Phase 268 quote:
