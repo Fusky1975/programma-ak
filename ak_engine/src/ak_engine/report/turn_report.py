@@ -7358,7 +7358,7 @@ def _unled_army_commander_name(province: ProvinceState) -> str:
 
     return (
         "the provincial garrison commander"
-        if province.race in HUMANOID_RACES
+        if province.race in HUMANOID_RACES or province.race is Race.NO_RACE
         else f"the provincial {RACE_NAME[province.race]} chieftain"
     )
 
@@ -18090,6 +18090,137 @@ def record_move_world_events(state: GameState, results: list[PhaseDispatchResult
         state.record_world_event(new_location, [prefix + line], phase=entry.phase_label)
 
 
+def _gir_name(state: GameState, leader_id: int, announced: set[int]) -> str | None:
+    """A character's name as the GENERAL INTELLIGENCE REPORT writes it: with his "(#id)" the first time he is
+    named in the turn, the bare name afterwards (``announced`` is the set of those already named)."""
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return None
+    if leader_id in announced:
+        return leader.name
+    announced.add(leader_id)
+    return f"{leader.name} (#{leader.leader_id})"
+
+
+def record_ordinary_move_world_events(
+    state: GameState, results: list[PhaseDispatchResult], rng: random.Random, announced: set[int] | None = None
+) -> None:
+    """The ordinary Moves of the turn as news (rulebook [1.4]: a King "può anche ricevere informazioni sulle
+    attività di personaggi controllati da un altro Re quando agiscono entro i confini del suo Reame"): the real
+    GIRs are full of "In late summer, Samantha travelled to Ngara." / "Hokuto (#4) journeyed to Cherrywood." /
+    "Girard (#15) marched his forces into Belladonna (#302)." -- not only flying armies. The mover's first
+    sentence of the turn carries his "(#id)", the later ones only the name, as the real reports do. A Move that
+    conquered or fought has its own news (battle / conquest recorders) and is left out here, as are the flights
+    ``record_move_world_events()`` already tells."""
+
+    announced = announced if announced is not None else set()
+    for entry in results:
+        result = entry.result
+        if not getattr(result, "moved", None) or getattr(result, "conquered", False):
+            continue
+        if getattr(result, "battle_report", None) is not None or getattr(result, "wind_walking", False):
+            continue
+        new_location = getattr(result, "new_location", None)
+        leader = state.leaders.get(entry.leader_id)
+        if new_location is None or leader is None:
+            continue
+        armies = [army for army in state.armies_commanded_by(entry.leader_id) if army.location == new_location]
+        if armies and all(is_overflight_unit(army.army_type) for army in armies):
+            continue  # told by record_move_world_events()
+        name = leader.name if entry.leader_id in announced else f"{leader.name} (#{leader.leader_id})"
+        sentence = describe_move(result, state, character_name=name, rng=rng)
+        if not sentence:
+            continue
+        announced.add(entry.leader_id)
+        state.record_world_event(
+            new_location, [_season_phrase_for_phase_label(entry.phase_label) + sentence], phase=entry.phase_label
+        )
+        # A Special Place the Move turned up is news too.
+        for feature in getattr(result, "discovered_features", ()):
+            state.record_world_event(
+                feature.coord,
+                [_feature_discovery_news(feature, leader.name, _province_label(state, feature.coord), rng)],
+                phase=entry.phase_label,
+            )
+
+
+def _feature_discovery_news(feature: Feature, character_name: str, province_name: str, rng: random.Random) -> str:
+    """FINDFEAT.X as the GENERAL INTELLIGENCE REPORT tells it (SE3__T9.K1: "Saladin located a previously unknown
+    Catacombs in Mare Tarkium, inhabited by the Black Dragon.", "... informed by some peasants of a perilous
+    feature in Mare Tarkium previously unknown to us, an Ancient Megaliths where dwells the Werewolf."): the
+    feature by name, without its number, and without the guardian's description."""
+
+    name = FEATURE_TYPE_NAMES[feature.kind]
+    article = "an" if name[:1].upper() in "AEIOU" else "a"
+    values = {
+        "<": character_name,
+        "@": province_name,
+        "&": f"{article} {name}",
+        "+": MONSTER_NAMES[feature.guardian_monster],
+    }
+    variant = pick_variant(_FINDFEAT_TEMPLATES, rng).replace("§", name)
+    return _tidy_sentences(render(variant, values, rng=rng))
+
+
+def record_exploration_world_events(
+    state: GameState, results: list[PhaseDispatchResult], rng: random.Random, announced: set[int] | None = None
+) -> None:
+    """Explorations as news ("In early winter, Saladin explored Mare Tarkium carefully, leaving no stone
+    unturned.", "Saladin located a previously unknown Catacombs in Mare Tarkium, inhabited by the Black
+    Dragon.") -- in the real GIRs for every foreign explorer working inside the reader's borders."""
+
+    announced = announced if announced is not None else set()
+    for entry in results:
+        result = entry.result
+        if entry.action is not ActionCode.EXPLORE or not isinstance(result, ExploreResult):
+            continue
+        coord = _leader_location(state, entry.leader_id)
+        leader = state.leaders.get(entry.leader_id)
+        if coord is None or leader is None:
+            continue
+        province = state.provinces.get(coord)
+        is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+        name = _gir_name(state, entry.leader_id, announced)
+        province_name = _province_label(state, coord)
+        prefix = _season_phrase_for_phase_label(entry.phase_label)
+        if result.fully_explored and result.delta_applied == 0:
+            sentence = render_explore_already_maxed(name, province_name, rng)
+        else:
+            sentence = render_explore_progress(name, province_name, result.new_percent, rng, is_sea=is_sea)
+        state.record_world_event(coord, [prefix + sentence], phase=entry.phase_label)
+        for feature in result.discovered_features:
+            state.record_world_event(
+                feature.coord,
+                [_feature_discovery_news(feature, leader.name, _province_label(state, feature.coord), rng)],
+                phase=entry.phase_label,
+            )
+
+
+def record_recruit_world_events(
+    state: GameState, results: list[PhaseDispatchResult], rng: random.Random, announced: set[int] | None = None
+) -> None:
+    """Recruitments as news ("In spring, Hawkins (#56) recruited enough men in Bronzeleaf to form the 63rd
+    Legion for the army of Hawkins.") -- visible, in the real GIRs, to the Kings whose borders it happens in."""
+
+    announced = announced if announced is not None else set()
+    for entry in results:
+        if entry.action is not ActionCode.RECRUIT or not isinstance(entry.result, RecruitExecutionResult):
+            continue
+        if not entry.result.recruited:
+            continue
+        coord = _leader_location(state, entry.leader_id)
+        province = state.provinces.get(coord) if coord is not None else None
+        name = _gir_name(state, entry.leader_id, announced)
+        if province is None or name is None:
+            continue
+        lines = describe_recruit(entry.result, state, recruiter_name=name, province=province, rng=rng)
+        if lines:
+            state.record_world_event(
+                coord, [_season_phrase_for_phase_label(entry.phase_label) + lines[0], *lines[1:]], phase=entry.phase_label
+            )
+
+
 def record_illusory_fog_foreign_entry_world_events(
     state: GameState, results: list[PhaseDispatchResult], rng: random.Random
 ) -> None:
@@ -18175,6 +18306,38 @@ def record_uncontested_conquest_world_events(state: GameState, results: list[Pha
         prefix = _season_phrase_for_phase_label(entry.phase_label)
         line = render_uncontested_conquest(attacker_name, province_name, rng, is_sea=is_sea)
         state.record_world_event(new_location, [prefix + line], phase=entry.phase_label)
+
+
+def record_diplomacy_world_events(state: GameState, rng: random.Random) -> None:
+    """The Treats and Diplomatic Furors of this turn, as news for the GENERAL INTELLIGENCE REPORT of every King who
+    has met the Kingdom concerned: "In early winter, Mugai (#3) treated with his ally Bradipo I (#2)." (real SE3
+    reports, the end-of-turn phase), "Mugai (#3) urged Giovanna (#7) to improve relations with his Kingdom ...", "a
+    diplomatic furor erupted between the Realms of Mugai (#3) (whose alliances are too incompatible) and Hokuto
+    (#4), degrading their diplomatic relations 1 level(s)!". Once per turn, after ``run_turn()``."""
+
+    prefix = "In early winter, "
+    for issuer, target, outcome in state.diplomacy_order_notes:
+        if issuer not in state.kingdoms or target not in state.kingdoms or outcome not in ("accepted", "already_allied"):
+            continue
+        me = _kingdom_display_name(state, issuer)
+        other = _kingdom_display_name(state, target)
+        pronoun = _possessive_for(state, _king_leader_id(state, issuer))
+        if outcome == "accepted":
+            line = _tidy_sentences(render_ally_proposed(me, other, rng, pronoun))
+        else:
+            line = _tidy_sentences(render_already_allied(me, other, rng, pronoun))
+        state.record_world_event(state.kingdoms[issuer].home_province, [prefix + line], kind="diplomacy", actor_kingdom_id=issuer)
+    for kingdom_a, kingdom_b, levels in state.diplomacy_fury_notices:
+        first, second = sorted((kingdom_a, kingdom_b), key=lambda k: (-_ally_count(state, k), k))
+        line = render_diplomatic_furor(
+            f"{_kingdom_display_name(state, first)} (whose alliances are too incompatible)",
+            _kingdom_display_name(state, second),
+            levels,
+            rng,
+        )
+        state.record_world_event(
+            state.kingdoms[first].home_province, [prefix + line[:1].lower() + line[1:]], kind="diplomacy", actor_kingdom_id=first
+        )
 
 
 def record_wandering_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
@@ -18423,6 +18586,17 @@ def describe_general_intelligence_report(
     conquest()` renders the exact same outer-sentence shape as `render_
     battle_winner()`, just for the no-battle case.
 
+    **2026-11-26 audit against the real SE3 corpus** (70 reports): the real GIRs also carry, besides what is listed
+    above, (a) the Treats, new alliances and Diplomatic Furors of the Kings the reader has met
+    (``record_diplomacy_world_events()``, filed under the Kingdom that made them, whatever province), (b) the
+    ordinary Moves of foreign leaders inside the reader's borders ("Samantha travelled to Ngara.",
+    ``record_ordinary_move_world_events()`` -- the earlier "the ordinary march stays private" reading did not hold
+    against the real reports), (c) explorations and the Special Places they turn up
+    (``record_exploration_world_events()``) and (d) recruitments (``record_recruit_world_events()``). The Kingdoms
+    are listed by number, a blank line between them, and a character is named with his "(#id)" the first time in
+    the turn only. Still not told: the random-encounter paragraphs ("During his travels, a Renegade Necromancer
+    ...") and the full per-column battle narratives some real GIRs show.
+
     Always returns at least the header + "None at present" fallback
     (the same convention `describe_diplomacy_report()`/`describe_
     imperial_office_report()` already use), never a bare empty list --
@@ -18433,6 +18607,16 @@ def describe_general_intelligence_report(
     groups: dict[int, list[str]] = {}
     order: list[int] = []
     for event in state.world_events:
+        actor = getattr(event, "actor_kingdom_id", None)
+        if actor is not None:
+            # Diplomatic news (a Treat, a Furor) is filed under the Kingdom that made it and is read by every
+            # King who has met it, wherever it happened (the real GIRs show other Kings' Treats freely).
+            if actor != kingdom_id and state.has_met(kingdom_id, actor):
+                if actor not in groups:
+                    groups[actor] = []
+                    order.append(actor)
+                groups[actor].extend(event.lines)
+            continue
         if not is_visible_to(state, kingdom_id, event.coord, bounds) and not state.spy_watched(
             kingdom_id, event.coord, getattr(event, "phase", "")
         ):
@@ -18450,7 +18634,10 @@ def describe_general_intelligence_report(
     if not groups:
         lines.append(_GENERAL_INTELLIGENCE_REPORT_NONE)
         return lines
-    for owner in order:
+    # The real reports list the Kingdoms by number, a blank line between one Kingdom's news and the next.
+    for position, owner in enumerate(sorted(groups)):
+        if position:
+            lines.append("")
         lines.append(f"Kingdom of {_kingdom_display_name(state, owner, king_cache=king_cache)}:")
         lines.extend(groups[owner])
     return lines

@@ -165,6 +165,7 @@ from ak_engine.report.turn_report import (
     record_blackmail_narratives,
     record_illusory_fog_foreign_entry_world_events,
     record_move_world_events,
+    record_ordinary_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
     record_sunk_cargo_world_events,
@@ -17594,6 +17595,43 @@ def test_record_move_world_events_records_a_fly_event_for_an_all_overflight_army
     assert event.lines == ["In late summer, Tlazolteotl flew into Border Fort."]
 
 
+def test_ordinary_moves_are_news_too_the_first_with_the_id_and_the_next_without():
+    # SE3 reports: "Samantha (#95) rode into Tabora." ... "Samantha travelled to Ngara."
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Samantha", battle_coord))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label=label, action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord), error=None,
+        )
+        for label in ("P1", "P3")
+    ]
+
+    for entry in results:
+        entry.result.moved_without_armies = True  # a leader travelling alone: "travelled to Border Fort"
+
+    record_ordinary_move_world_events(state, results, ScriptedRandom([0.1] * 20, choice_indices=[0] * 20))
+
+    assert len(state.world_events) == 2
+    first, second = (event.lines[0] for event in state.world_events)
+    assert "Samantha (#1)" in first and "Samantha (#1)" not in second and "Samantha" in second
+
+
+def test_the_kingdoms_of_the_gir_are_listed_by_number_with_a_blank_line_between():
+    state = GameState()
+    for kid, x in ((1, 0), (2, 5), (3, 10), (4, 15)):
+        state.add_kingdom(KingdomState(kid, f"K{kid}", Race.HUMAN, Alignment.GOOD, HexCoord(x, 0)))
+        state.add_province(ProvinceState(HexCoord(x, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=kid))
+    state.record_world_event(HexCoord(15, 0), ["In spring, a thing happened."], actor_kingdom_id=4)
+    state.record_world_event(HexCoord(5, 0), ["In spring, another thing happened."], actor_kingdom_id=2)
+    state.kingdoms_met = {frozenset({1, 2}), frozenset({1, 4})}
+
+    lines = describe_general_intelligence_report(state, 1)
+
+    assert [line for line in lines if line.startswith("Kingdom of")] == ["Kingdom of K2 (#2):", "Kingdom of K4 (#4):"]
+    assert "" in lines
+
+
 def test_record_move_world_events_skips_a_mixed_overflight_and_ground_army():
     state, battle_coord, _watcher_coord = _gir_state()
     state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
@@ -18498,3 +18536,78 @@ def test_the_fine_or_infamous_reputation_template_resolves_to_one_word():
     assert with_clause  # the optional clause does come up
     assert all("infamous?terrible" not in t for t in texts)
     assert all("(or infamous?)" in t or "(or terrible?)" in t for t in with_clause)
+
+
+# -- GIR: diplomatic news -----------------------------------------------------------
+
+
+def _diplomacy_gir_state() -> GameState:
+    state = _two_kings_state()
+    state.add_kingdom(KingdomState(3, "Cedria", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5)))
+    state.add_leader(LeaderState(30, 3, "Cedric", HexCoord(5, 5), is_king=True))
+    state.kingdoms_met = {frozenset({1, 2}), frozenset({1, 3}), frozenset({2, 3})}
+    return state
+
+
+def test_a_treat_is_news_for_every_king_who_has_met_the_issuer():
+    from ak_engine.report.turn_report import describe_general_intelligence_report, record_diplomacy_world_events
+
+    state = _diplomacy_gir_state()
+    state.diplomacy_order_notes = [(2, 3, "already_allied"), (2, 3, "refused")]
+
+    record_diplomacy_world_events(state, random.Random(0))
+
+    as_aldric = describe_general_intelligence_report(state, 1)
+    assert as_aldric[1] == "Kingdom of Borin (#2):"
+    assert as_aldric[2] == "In early winter, Borin (#2) treated with his ally Cedric (#3)."
+    assert describe_general_intelligence_report(state, 2) == ["GENERAL INTELLIGENCE REPORT", "None at present"]
+
+
+def test_a_king_who_has_not_met_the_issuer_reads_nothing():
+    from ak_engine.report.turn_report import describe_general_intelligence_report, record_diplomacy_world_events
+
+    state = _diplomacy_gir_state()
+    state.kingdoms_met = {frozenset({2, 3})}
+    state.diplomacy_order_notes = [(2, 3, "already_allied")]
+
+    record_diplomacy_world_events(state, random.Random(0))
+
+    assert describe_general_intelligence_report(state, 1)[1] == "None at present"
+
+
+def test_a_new_alliance_and_a_furor_are_news_too():
+    from ak_engine.report.turn_report import describe_general_intelligence_report, record_diplomacy_world_events
+
+    state = _diplomacy_gir_state()
+    state.diplomacy_order_notes = [(3, 2, "accepted")]
+    state.diplomacy_fury_notices = [(2, 3, 1)]
+
+    record_diplomacy_world_events(state, random.Random(0))
+
+    text = " ".join(describe_general_intelligence_report(state, 1))
+    assert "Cedric (#3) urged Borin (#2) to improve" in text or "Cedric (#3) formally proposed" in text or "Cedric (#3) proposed" in text
+    assert "a diplomatic furor erupted between the Realms of" in text and "(whose alliances are too incompatible)" in text
+
+
+def test_exploration_and_discoveries_are_news_for_the_gir():
+    # SE3__T9.K1: "Saladin explored Mare Tarkium carefully, leaving no stone unturned." / "Saladin located a
+    # previously unknown Catacombs in Mare Tarkium, inhabited by the Black Dragon."
+    from ak_engine.models.feature import Feature, FeatureType
+    from ak_engine.report.turn_report import record_exploration_world_events
+    from ak_engine.turn.exploration import ExploreResult
+
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Saladin", battle_coord))
+    feature = Feature(75, battle_coord, FeatureType.CRYPT, guardian_monster=Monster.SWORDSMAN)
+    result = ExploreResult(new_percent=40, delta_applied=10, fully_explored=False, discovered_features=[feature])
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P4", action=ActionCode.EXPLORE, result=result, error=None
+        )
+    ]
+
+    record_exploration_world_events(state, results, ScriptedRandom([0.1] * 30, choice_indices=[0] * 30))
+
+    text = " ".join(line for event in state.world_events for line in event.lines)
+    assert "Saladin (#1)" in text and "(#75)" not in text  # named with his id once; the feature without its number
+    assert "Renegade Swordsman" in text or "Swordsman" in text

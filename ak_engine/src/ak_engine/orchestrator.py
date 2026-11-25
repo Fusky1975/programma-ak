@@ -57,9 +57,13 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     record_battle_narratives,
     record_battle_world_events,
+    record_diplomacy_world_events,
     record_blackmail_narratives,
     record_illusory_fog_foreign_entry_world_events,
     record_move_world_events,
+    record_exploration_world_events,
+    record_ordinary_move_world_events,
+    record_recruit_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
     record_sunk_cargo_world_events,
@@ -331,12 +335,18 @@ def process_turn(
     record_spell_world_events(state, results, rng, board_width=board_width)
     record_plague_spread_world_events(state, results, rng)
     record_move_world_events(state, results, rng)
+    gir_announced: set[int] = set()  # who the GIR has already named with his "(#id)" this turn
+    record_ordinary_move_world_events(state, results, rng, gir_announced)
+    record_exploration_world_events(state, results, rng, gir_announced)
+    record_recruit_world_events(state, results, rng, gir_announced)
     record_illusory_fog_foreign_entry_world_events(state, results, rng)
     record_uncontested_conquest_world_events(state, results, rng)
     # Phase 781 -- same once-per-turn requirement as its siblings above;
     # populates state.world_events from the wandering relocations `turn/
     # turn_processor.py run_turn()`'s own end-of-turn tail appended.
     record_wandering_world_events(state, results, rng)
+    # The Treats and Diplomatic Furors of the turn: news for every King who has met the Kingdom concerned.
+    record_diplomacy_world_events(state, rng)
     # 2026-11-24 -- same once-per-turn requirement; populates the owning Kingdom's own ACTION REPORT
     # (state.mercenary_quality_notices_by_kingdom) with each free mercenary band's quality change.
     record_mercenary_quality_narratives(state, results, rng)
