@@ -222,6 +222,7 @@ from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
     archery_free_attack_bonus,
+    loot_defeated_leader,
     bow_of_elven_kings_archery_damage_bonus,
     bow_of_elven_kings_archery_hit_multiplier,
     weapon_defensive_hit_multiplier,
@@ -1668,6 +1669,9 @@ class _DuelOutcome:
     # BattleReport.duel_loser_fled's own docstring for how this picks
     # between _ADishK/_ADishF's two narrations.
     loser_fled: bool = False
+    # [5.10]: "Altrimenti il duello finisce con la morte di uno dei due comandanti" -- True when the
+    # loser was slain (not when he fled). ``fight_battle()`` then removes him and hands his armies on.
+    loser_died: bool = False
 
 
 def _commander_combatant(
@@ -1821,42 +1825,48 @@ def _side_special_encounter_plan(state: GameState, commander: Commander) -> list
     return list(leader.special_encounter_plan)
 
 
-def _commander_challenges(
-    state: GameState,
-    challenger: Commander,
-    challenger_sep: list[SearchTactic],
-    target: Commander,
-    target_sep: list[SearchTactic],
-) -> bool:
-    """One direction of rulebook [5.10]'s own bidirectional Duel trigger
-    (Phase 669): "Se uno dei due ha un Piano Speciale d'Incontro che
-    contiene un'azione aggressiva e nessun ordine Fuggire, allora quel
-    comandante sfiderà l'altro a duello... il vostro leader accetterà
-    sempre un'eventuale sfida prima di darsi alla fuga." ``_maybe_
-    fight_duel()`` calls this once per direction and ORs the results,
-    since either side's own aggression can trigger a challenge that the
-    other side must then accept.
+def _commander_challenges(state: GameState, commander: Commander, sep: list[SearchTactic]) -> bool:
+    """Whether this commander volunteers a duel ([5.10]): "Se uno dei due ha un Piano Speciale
+    d'Incontro che contiene un'azione aggressiva e nessun ordine Fuggire, allora quel comandante
+    sfiderà l'altro a duello." The anonymous garrison commander never challenges (user ruling
+    2026-11-25: he accepts a challenge but never issues one), and neither does a Hero governing a
+    neutral province ("non sfidano mai a duello")."""
 
-    Folds in the neutral-province Hero exception from the same rule
-    text: as `challenger`, such a Hero never challenges (forced
-    ``False``, unconditional -- "non sfidano mai"); as the responding
-    `target`, forces acceptance ``True`` unless ``Temper.COWARDLY``, in
-    which case the exception simply doesn't apply here and the ordinary
-    ``sep_accepts_challenge()`` result governs instead (the rule gives
-    no separate formula for a Cowardly neutral-province Hero).
+    if commander.leader_id is None:
+        return False
+    if _commander_governs_neutral_province(state, commander) is not None:
+        return False
+    return sep_is_aggressive(sep, state)
+
+
+def _challenged_commander_flees(
+    state: GameState, commander: Commander, sep: list[SearchTactic], rng: random.Random
+) -> tuple[bool, bool]:
+    """How a challenged commander answers. Returns ``(flees, may_bluff)``:
+
+    * the garrison commander always accepts, and so does a Hero governing a neutral province unless
+      he is Cowardly ([5.10]);
+    * a Flee as the FIRST tactic of the plan refuses the challenge ("per evitare di essere sfidati a
+      duello ... mettere la tattica Fuggire al primo posto"); Flee anywhere later means he fights
+      it out first;
+    * otherwise a non-King Cautious/Cowardly temper may refuse ([2.4] Temper Table, "Refusal"); a
+      refusing Coward can then "bluff" and keep his troops' strength ([4.2] "I Codardi possono
+      evitare la penalità del 25% quando si rifiuta il duello", 2/3 of the time).
     """
 
-    if _commander_governs_neutral_province(state, challenger) is not None:
-        is_aggressive = False
-    else:
-        is_aggressive = sep_is_aggressive(challenger_sep, state)
-    if not is_aggressive:
-        return False
-
-    target_neutral_leader = _commander_governs_neutral_province(state, target)
-    if target_neutral_leader is not None and target_neutral_leader.temper is not Temper.COWARDLY:
-        return True
-    return sep_accepts_challenge(target_sep, state)
+    if commander.leader_id is None:
+        return False, False
+    leader = state.leaders.get(commander.leader_id)
+    if leader is None:
+        return False, False
+    governs_neutral_province = _commander_governs_neutral_province(state, commander) is not None
+    if governs_neutral_province and leader.temper is not Temper.COWARDLY:
+        return False, False
+    if not sep_accepts_challenge(sep, state):
+        return True, False
+    if resolve_refusal_to_meet(leader.temper, is_king=leader.is_king, opponent_leads_army=True, rng=rng):
+        return True, leader.temper is Temper.COWARDLY
+    return False, False
 
 
 # `coward_bluff` (Phase 389's own AKGEN paraphrase, closed Phase 898):
@@ -2100,65 +2110,57 @@ def _maybe_fight_duel(
 
     attacker_sep: list[SearchTactic] = []
     defender_sep: list[SearchTactic] = []
-    if state is not None:
-        attacker_sep = _side_special_encounter_plan(state, attacker_commander)
-        defender_sep = _side_special_encounter_plan(state, defender_commander)
-        attacker_challenges = _commander_challenges(state, attacker_commander, attacker_sep, defender_commander, defender_sep)
-        defender_challenges = _commander_challenges(state, defender_commander, defender_sep, attacker_commander, attacker_sep)
-        if not (attacker_challenges or defender_challenges):
-            # Phase 1043 bug fix -- both commanders are real here (the
-            # `is None` early return above already excluded an unled
-            # side), so discarding their own leader_ids along with
-            # `loser_side` wrongly erased a real fact ("this battle had
-            # a real commander on each side") just because no *personal
-            # duel* was triggered this phase. `_record_battle_merit()`
-            # (Phase 254, called with these same ids further down) reads
-            # them independently of whether a duel happened, to credit/
-            # debit each side's own commander for the battle's overall
-            # outcome -- so every led battle where neither SEP is
-            # aggressive enough to trigger a challenge was silently
-            # skipping Marshal/Admiral merit crediting entirely,
-            # reopening the exact gap Phase 254 closed. `loser_side=None`
-            # already has the identical "a real commander exists but no
-            # decisive duel loser" shape a few lines below (the
-            # inconclusive-combat_result.winner branch) -- this mirrors
-            # it instead of inventing a new convention.
-            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, None)
-
     attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
     defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)
 
-    # Phase 675: the attacker's own real Special Encounter Plan is now
-    # the default `duel_maneuvers` whenever the caller doesn't supply
-    # one explicitly -- see this function's own Phase 675 addendum.
-    if duel_maneuvers is None and state is not None:
-        duel_maneuvers = attacker_sep
+    def _flee_demoralization(side: str) -> _DuelOutcome:
+        units_led, units = (
+            (attacker_commander_units, attacker_units) if side == "attacker" else (defender_commander_units, defender_units)
+        )
+        demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(units_led)}
+        for index, unit in enumerate(units):
+            if unit.source_id in demoralized_by_id:
+                units[index] = demoralized_by_id[unit.source_id]
+        return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, side, loser_fled=True)
 
-    if duel_maneuvers:
+    if state is not None:
+        attacker_sep = _side_special_encounter_plan(state, attacker_commander)
+        defender_sep = _side_special_encounter_plan(state, defender_commander)
+        # Phase 675: the attacker's own real Special Encounter Plan is the default `duel_maneuvers`
+        # whenever the caller doesn't supply one explicitly (a caller-supplied plan overrides it here too).
+        if duel_maneuvers is None:
+            duel_maneuvers = attacker_sep
+        attacker_plan = [t if isinstance(t, SearchTactic) else SearchTactic(t) for t in duel_maneuvers]
+        attacker_challenges = _commander_challenges(state, attacker_commander, attacker_plan)
+        defender_challenges = _commander_challenges(state, defender_commander, defender_sep)
+        if not (attacker_challenges or defender_challenges):
+            # Phase 1043: both commanders are real, so keep their ids (Marshal/Admiral merit reads them)
+            # even though no *personal duel* was triggered.
+            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, None)
+        # Each side that is being challenged answers: accept, refuse with a first-tactic Flee, or refuse
+        # because of its temper. A commander who explicitly wrote an aggressive plan of his own (and so
+        # challenges himself) simply fights. Flee "always works" in a battle, but the troops are disgusted
+        # by their commander's cowardice and lose 25% ([5.10]).
+        for responder_side in ("defender", "attacker"):
+            challenged = attacker_challenges if responder_side == "defender" else defender_challenges
+            responder, responder_plan = (
+                (defender_commander, defender_sep) if responder_side == "defender" else (attacker_commander, attacker_plan)
+            )
+            responder_challenges = defender_challenges if responder_side == "defender" else attacker_challenges
+            if not challenged or (responder_challenges and responder_plan):
+                continue
+            flees, may_bluff = _challenged_commander_flees(state, responder, responder_plan, rng)
+            if flees:
+                if may_bluff and rng.random() < COWARD_BLUFF_AVOID_DEMORALIZATION_CHANCE:
+                    return _DuelOutcome(
+                        attacker_commander.leader_id, defender_commander.leader_id, responder_side, loser_fled=True
+                    )
+                return _flee_demoralization(responder_side)
+    elif duel_maneuvers:
         first_tactic = duel_maneuvers[0]
         first_maneuver = first_tactic if isinstance(first_tactic, Maneuver) else first_tactic.maneuver
         if first_maneuver is Maneuver.FLEE:
-            demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(attacker_commander_units)}
-            for index, unit in enumerate(attacker_units):
-                if unit.source_id in demoralized_by_id:
-                    attacker_units[index] = demoralized_by_id[unit.source_id]
-            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "attacker", loser_fled=True)
-
-    # Phase 1043 bug fix -- the symmetric defender-side check this
-    # function's own Phase 675 docstring addendum never had: reads
-    # `defender_sep` directly rather than `duel_maneuvers` (which only
-    # ever defaults to the attacker's own plan). See this function's
-    # own Phase 1043 docstring addendum above for why this is reachable
-    # (the neutral-province forced-acceptance carve-out) and real.
-    if defender_sep:
-        first_tactic = defender_sep[0]
-        first_maneuver = first_tactic if isinstance(first_tactic, Maneuver) else first_tactic.maneuver
-        if first_maneuver is Maneuver.FLEE:
-            demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(defender_commander_units)}
-            for index, unit in enumerate(defender_units):
-                if unit.source_id in demoralized_by_id:
-                    defender_units[index] = demoralized_by_id[unit.source_id]
-            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "defender", loser_fled=True)
+            return _flee_demoralization("attacker")
 
     if use_real_duel_combat and state is not None:
         # Efficiency (Phase 1193): one shared office-holder cache for
@@ -2221,29 +2223,57 @@ def _maybe_fight_duel(
         loser_side = "attacker"
         loser_units, target_list, loser_commander = attacker_commander_units, attacker_units, attacker_commander
 
-    # Phase 898: `coward_bluff` -- see this function's own Phase 898
-    # addendum above for the full derivation. Needs a real `LeaderState`
-    # to read the loser's own recorded Temper from, so the garrison-
-    # commander fallback (`leader_id is None`) and a `state=None` caller
-    # both fall through to the unconditional demoralization this project
-    # has always applied.
-    apply_demoralization = True
-    if state is not None and loser_commander.leader_id is not None:
-        loser_leader = state.leaders.get(loser_commander.leader_id)
-        if loser_leader is not None:
-            temper_refuses_combat = resolve_refusal_to_meet(
-                loser_leader.temper, is_king=loser_leader.is_king, opponent_leads_army=True, rng=rng
-            )
-            if temper_refuses_combat and rng.random() < COWARD_BLUFF_AVOID_DEMORALIZATION_CHANCE:
-                apply_demoralization = False
+    # The duel ends with the death of the loser ([5.10]) and his troops, demoralized, lose 25%.
+    demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(loser_units)}
+    for index, unit in enumerate(target_list):
+        if unit.source_id in demoralized_by_id:
+            target_list[index] = demoralized_by_id[unit.source_id]
 
-    if apply_demoralization:
-        demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(loser_units)}
-        for index, unit in enumerate(target_list):
-            if unit.source_id in demoralized_by_id:
-                target_list[index] = demoralized_by_id[unit.source_id]
+    return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, loser_side, loser_died=True)
 
-    return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, loser_side)
+
+def _resolve_duel_death(
+    state: GameState,
+    duel: _DuelOutcome,
+    attacker_armies: list[ArmyState],
+    defender_armies: list[ArmyState],
+    attacker_present_leader_ids: list[int],
+    defender_present_leader_ids: list[int],
+) -> None:
+    """[5.10]: "il duello finisce con la morte di uno dei due comandanti" -- removes the slain
+    commander (a King leaves his Heir), gives his magic items to the winner and hands his armies on:
+    "a un altro Eroe (se presente) o a un comandante anonimo e privo di Talenti che rientrerà
+    nell'ombra appena terminata la battaglia" -- i.e. to the best Tactician among the leaders of his
+    side who stand in the province without commanding anything, else they stay unled for the rest of
+    the battle. The garrison commander (no ``LeaderState``) has nobody to remove."""
+
+    if not duel.loser_died or duel.loser_side is None:
+        return
+    attacker_lost = duel.loser_side == "attacker"
+    loser_id = duel.attacker_commander_leader_id if attacker_lost else duel.defender_commander_leader_id
+    winner_id = duel.defender_commander_leader_id if attacker_lost else duel.attacker_commander_leader_id
+    if loser_id is None or loser_id not in state.leaders:
+        return
+    losing_armies = attacker_armies if attacker_lost else defender_armies
+    present_ids = attacker_present_leader_ids if attacker_lost else defender_present_leader_ids
+    led_army_ids = [army.army_id for army in losing_armies if army.commanded_by == loser_id]
+
+    state.remove_leader(loser_id)
+    if winner_id is not None and winner_id in state.leaders:
+        loot_defeated_leader(state, winner_id=winner_id, loser_id=loser_id)
+
+    replacements = [
+        state.leaders[leader_id]
+        for leader_id in present_ids
+        if leader_id in state.leaders and not state.armies_commanded_by(leader_id)
+    ]
+    if replacements:
+        successor = max(
+            replacements, key=lambda leader: (effective_skill_level(state, leader, Ability.TACTICAL), -leader.leader_id)
+        )
+        for army_id in led_army_ids:
+            if army_id in state.armies:
+                state.armies[army_id].commanded_by = successor.leader_id
 
 
 def _apply_pursuit(
@@ -3296,6 +3326,9 @@ def fight_battle(
     duel = _maybe_fight_duel(
         attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
         state=state, use_real_duel_combat=use_real_duel_combat, duel_maneuvers=duel_maneuvers,
+    )
+    _resolve_duel_death(
+        state, duel, attacker_armies, defender_armies, attacker_present_leader_ids, defender_present_leader_ids
     )
 
     # Phase 296: rulebook [1.6]'s own Terrain Table line-length shortening

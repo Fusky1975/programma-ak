@@ -499,6 +499,7 @@ def _run_united_invasion(state: GameState):
         )
 
 
+@patch("ak_engine.turn.battle_orchestrator._resolve_duel_death", new=lambda *args, **kwargs: None)  # incidental duel: keep the commander alive
 def test_run_turn_united_invasion_grants_the_march_table_movement_bonus():
     # Level 2 owes a Speed 1-2 army one extra move; the lone-invader path always granted it, the united
     # path never did.
@@ -614,6 +615,7 @@ def test_run_turn_multi_attacker_lmove_reports_transport_illegal_move():
     assert all(r.error.reason == "insufficient_water_transport" for r in results)
 
 
+@patch("ak_engine.turn.battle_orchestrator._resolve_duel_death", new=lambda *args, **kwargs: None)  # incidental duel: keep the commander alive
 def test_run_turn_multi_attacker_lmove_records_each_movers_own_kingdom_exploration():
     # Phase 69: two *different* (allied) kingdoms uniting into one Multiple
     # Contingents battle each still get their own independent
@@ -1265,6 +1267,7 @@ def test_collect_phase_entries_mutual_give_cycle_does_not_crash():
     assert {tl.leader.leader_id for tl, _segment_index, _phase in entries} == {60, 61}
 
 
+@patch("ak_engine.turn.battle_orchestrator._resolve_duel_death", new=lambda *args, **kwargs: None)  # incidental duel: keep the commander alive
 def test_run_turn_leave_target_waits_for_the_leave_despite_higher_initiative():
     # End-to-end through a real run_turn() call, not just the ordering
     # helper directly: Hero #14's own P2 Move must not dispatch before
@@ -1806,6 +1809,7 @@ def _attacker(leader_id: int, army_id: int, origin: HexCoord, target: HexCoord, 
     return _leader_with_phase(leader_id, "Attacker", label, _lmove_phase(label, target))
 
 
+@patch("ak_engine.turn.battle_orchestrator._resolve_duel_death", new=lambda *args, **kwargs: None)  # incidental duel: keep the commander alive
 def test_run_turn_defend_reinforces_an_invaded_covered_province_next_phase():
     state = _defend_state()
     state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
@@ -3021,6 +3025,7 @@ def test_run_turn_defend_battle_loss_blocks_a_later_redeclaration():
     assert state.leaders[100].location == DL_FIRST_COVERED
 
 
+@patch("ak_engine.turn.battle_orchestrator._resolve_duel_death", new=lambda *args, **kwargs: None)  # incidental duel: keep the commander alive
 def test_run_turn_defend_battle_win_registers_a_pursuit_of_the_defeated_attacker_instead_of_redeclaring():
     # seed 1: the defender wins this exact matchup -- verified
     # deterministic for this fixture. (Phase 370: the shared
@@ -3093,6 +3098,7 @@ def test_run_turn_defend_battle_win_registers_a_pursuit_of_the_defeated_attacker
 DL_ILLEGAL_ORIGIN = HexCoord(4, 3)  # adjacent to DL_FIRST_COVERED, distinct from the other DL_* origins
 
 
+@patch("ak_engine.turn.battle_orchestrator._resolve_duel_death", new=lambda *args, **kwargs: None)  # incidental duel: keep the commander alive
 def test_run_turn_defend_battle_loss_blocks_a_later_redeclaration_with_a_leading_group_error():
     # Phase 299 regression: _dispatch_multi_attacker_lmove() appends a
     # validation-error entry for an illegal mover BEFORE the real

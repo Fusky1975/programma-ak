@@ -563,6 +563,7 @@ def test_execute_pursue_mutual_king_encounter_can_result_in_combat():
 # -- army-vs-army pursuit: caught up but not fought here -------------------
 
 
+@patch("ak_engine.turn.battle_orchestrator._resolve_duel_death", new=lambda *args, **kwargs: None)  # incidental duel: keep the commander alive
 def test_execute_pursue_army_vs_army_catch_up_fights_a_real_battle():
     state = _base_state()
     state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
