@@ -19,8 +19,11 @@ from ak_engine.turn.random_encounter_execution import (
     RandomEncounterResult,
     dispatch_random_encounter_after_phase,
     monster_combatant,
+    WANDERING_MAGIC_PLAN_CHANCE,
+    _without_magic_most_of_the_time,
     resolve_random_encounter,
     wandering_monster_leader,
+    wandering_monster_treasure,
 )
 from ak_engine.turn.search_decode import SearchTactic
 
@@ -246,9 +249,10 @@ def test_resolve_random_encounter_monster_wins_removes_leader():
 # -- the wandering monster's own plan --
 
 
-def _run_with_stubbed_combat(monster, outcome, *, rng=None):
-    state = _base_state()
-    state.add_leader(_hero())
+def _run_with_stubbed_combat(monster, outcome, *, rng=None, state=None):
+    if state is None:
+        state = _base_state()
+        state.add_leader(_hero())
     plan = _plan(PlanPhase("P0", ActionCode.LMOVE, 0))
     with patch("ak_engine.turn.random_encounter_execution.terrain_roll", return_value=True), patch(
         "ak_engine.turn.random_encounter_execution.select_random_monster", return_value=monster
@@ -304,6 +308,84 @@ def test_the_wandering_monster_plan_never_draws_from_the_encounter_dice():
         _run_with_stubbed_combat(Monster.WHITE_MAGE, ChallengeCombatOutcome(winner=None), rng=encounter_rng)
 
     assert seen and seen[0][0] is not encounter_rng and seen[0][1] is not encounter_rng
+
+
+def test_a_wandering_monsters_spells_are_mostly_left_out_of_its_plan():
+    plan = (SearchTactic(Maneuver.CAST, 1), SearchTactic(Maneuver.CAST, 2), SearchTactic(Maneuver.MELEE))
+    kept = sum(_without_magic_most_of_the_time(plan, random.Random(seed)) == plan for seed in range(1000))
+    assert abs(kept / 1000 - WANDERING_MAGIC_PLAN_CHANCE) < 0.05
+    stripped = _without_magic_most_of_the_time(plan, ScriptedRandom([0.99]))
+    assert stripped == (SearchTactic(Maneuver.MELEE),)
+
+
+def test_a_plan_without_spells_or_made_only_of_spells_degrades_gracefully():
+    melee_only = (SearchTactic(Maneuver.MELEE),)
+    assert _without_magic_most_of_the_time(melee_only, ScriptedRandom([])) == melee_only  # no roll consumed
+    assert _without_magic_most_of_the_time(None, ScriptedRandom([])) is None
+    only_spells = (SearchTactic(Maneuver.CAST, 1),)
+    assert _without_magic_most_of_the_time(only_spells, ScriptedRandom([0.99])) is None  # plain fight
+
+
+def test_wandering_monster_treasure_is_two_to_ten_gold_with_ten_very_rare():
+    rolls = [wandering_monster_treasure(random.Random(seed)) for seed in range(5000)]
+    assert min(rolls) == 2 and max(rolls) == 10
+    assert 0 < rolls.count(10) < 5000 * 0.05
+    assert {2, 3, 4, 5, 6, 7, 8, 9} <= set(rolls)
+
+
+def test_a_defeated_wandering_monster_pays_its_purse_and_counts_for_the_lord_high_defender():
+    state = _base_state()
+    hero = _hero()
+    state.add_leader(hero)
+    treasury_before = state.kingdoms[1].treasury
+    with patch("ak_engine.turn.random_encounter_execution.monster_combatant") as mock_combatant:
+        mock_combatant.return_value = monster_combatant(Monster.TITAN, random.Random(1))
+        starting_hp = mock_combatant.return_value.hit_points
+        result, _mock = _run_with_stubbed_combat(Monster.TITAN, ChallengeCombatOutcome(winner="a"), state=state)
+
+    assert 2 <= result.gold_found <= 10
+    assert state.kingdoms[1].treasury == treasury_before + result.gold_found
+    assert hero.merit_tally.monster_hp_defeated == starting_hp
+
+
+def test_a_monster_that_ran_away_pays_its_purse_but_earns_no_defender_points():
+    state = _base_state()
+    hero = _hero()
+    state.add_leader(hero)
+    result, _mock = _run_with_stubbed_combat(
+        Monster.TROLL, ChallengeCombatOutcome(winner="a", target_fled=True), state=state
+    )
+    assert result.gold_found > 0
+    assert hero.merit_tally.monster_hp_defeated == 0
+
+
+def test_a_hero_who_loses_gets_no_purse():
+    state = _base_state()
+    state.add_leader(_hero())
+    lost, _mock = _run_with_stubbed_combat(Monster.TITAN, ChallengeCombatOutcome(winner="b"), state=state)
+    assert lost.gold_found == 0 and state.kingdoms[1].treasury == 0
+
+
+def test_a_patrol_is_not_a_monster_no_plan_no_purse_no_defender_points():
+    state = _base_state()
+    hero = _hero()
+    state.add_leader(hero)
+    plan = _plan(PlanPhase("P0", ActionCode.LMOVE, 0))
+    with patch("ak_engine.turn.random_encounter_execution.terrain_roll", return_value=True), patch(
+        "ak_engine.turn.random_encounter_execution.select_random_monster", return_value=Monster.NEC_MAGE
+    ), patch("ak_engine.turn.random_encounter_execution.is_patrol_framing", return_value=True), patch(
+        "ak_engine.turn.random_encounter_execution.patrol_evades_via_diplomacy", return_value=False
+    ), patch(
+        "ak_engine.turn.random_encounter_execution.resolve_challenge_combat",
+        return_value=ChallengeCombatOutcome(winner="a"),
+    ) as mock_combat:
+        result = resolve_random_encounter(state, 1, HOME, plan, check_escort=True, rng=ScriptedRandom([0.5] * 8))
+
+    assert mock_combat.call_args.args[3] is None
+    assert mock_combat.call_args.kwargs["target_tactics"] is None
+    assert mock_combat.call_args.kwargs["target_retreats_when_wounded"] is False
+    assert result.gold_found == 0
+    assert hero.merit_tally.monster_hp_defeated == 0
 
 
 def test_resolve_random_encounter_credits_melee_experience_on_a_landed_hit():

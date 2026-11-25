@@ -93,6 +93,7 @@ from ak_engine.models.monster import (
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.models.enums import Maneuver
+from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase
 from ak_engine.models.race import HUMANOID_RACES
@@ -168,6 +169,30 @@ def monster_combatant(monster: Monster, rng: random.Random) -> Combatant:
 
 # A negative id can never clash with a real leader.
 WANDERING_MONSTER_LEADER_ID = -1000
+
+# A monster met on the road is caught away from its lair and its preparations: only this share of the
+# plans that contain spells is played with its magic, the others are fought with the plan's melee,
+# missiles and retreat alone.
+WANDERING_MAGIC_PLAN_CHANCE = 0.3
+
+# The purse a defeated (or routed) wandering monster leaves behind: 2 to 10 gold, 10 very rare.
+WANDERING_TREASURE_RANGE = (2, 9)
+WANDERING_TREASURE_JACKPOT = 10
+WANDERING_TREASURE_JACKPOT_CHANCE = 0.02
+
+
+def wandering_monster_treasure(rng: random.Random) -> int:
+    if rng.random() < WANDERING_TREASURE_JACKPOT_CHANCE:
+        return WANDERING_TREASURE_JACKPOT
+    return rng.randint(*WANDERING_TREASURE_RANGE)
+
+
+def _without_magic_most_of_the_time(plan: tuple[SearchTactic, ...] | None, rng: random.Random) -> tuple[SearchTactic, ...] | None:
+    if plan is None or not any(t.maneuver is Maneuver.CAST for t in plan):
+        return plan
+    if rng.random() < WANDERING_MAGIC_PLAN_CHANCE:
+        return plan
+    return tuple(t for t in plan if t.maneuver is not Maneuver.CAST) or None
 
 
 def wandering_monster_leader(monster: Monster, coord: HexCoord) -> LeaderState:
@@ -279,6 +304,7 @@ class RandomEncounterResult:
     winner: str | None = None  # "a" = leader, "b" = monster, None = inconclusive
     leader_died: bool = False
     monster_fled: bool = False  # the wandering monster ran away wounded (its plan's FLEE)
+    gold_found: int = 0  # the monster's purse, paid into the hero's Kingdom treasury
     melee_swings: tuple[MeleeSwing, ...] = ()
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
 
@@ -345,19 +371,26 @@ def resolve_random_encounter(
         f"wandering-plan:{state.game_number}:{state.turn_number}:{leader_id}:{coord.x},{coord.y}:"
         f"{leader.experience_credit}:{monster.name}"
     )
-    monster_plan = roll_monster_encounter_plan(
-        monster, variety_rng, attacker_is_undead=leader.alignment is Alignment.UNDEAD, variety_rng=variety_rng
-    )
+    # A patrol is the King's own men, not a monster: no talents, no plan, no purse, no Defender points.
+    monster_plan = None
+    if not is_patrol:
+        monster_plan = _without_magic_most_of_the_time(
+            roll_monster_encounter_plan(
+                monster, variety_rng, attacker_is_undead=leader.alignment is Alignment.UNDEAD, variety_rng=variety_rng
+            ),
+            variety_rng,
+        )
+    monster_starting_hit_points = opponent.hit_points
     outcome = resolve_challenge_combat(
         decoded_sep,
         leader,
         leader_combatant,
-        wandering_monster_leader(monster, coord),
+        None if is_patrol else wandering_monster_leader(monster, coord),
         opponent,
         state,
         rng,
         target_tactics=list(monster_plan) if monster_plan else None,
-        target_retreats_when_wounded=True,
+        target_retreats_when_wounded=not is_patrol,
         target_opens_with_missiles=monster_plan is not None and any(t.maneuver is Maneuver.SHOOT for t in monster_plan),
     )
 
@@ -367,9 +400,18 @@ def resolve_random_encounter(
         add_experience(leader, Ability.ARCHERY, 10, rng)
 
     leader_died = False
+    gold_found = 0
     if outcome.winner == "b":
         state.remove_leader(leader_id)
         leader_died = True
+    elif outcome.winner == "a" and not is_patrol:
+        if not outcome.target_fled:
+            # The Lord High Defender's merit: the monster's own starting hit points (see
+            # `turn/merit_points.py defender_merit_points()`); a monster that merely ran away was not defeated.
+            leader.merit_tally.monster_hp_defeated += monster_starting_hit_points
+        if leader.kingdom_id is not None:
+            gold_found = wandering_monster_treasure(variety_rng)
+            state.kingdoms[leader.kingdom_id].treasury += gold_found
 
     return RandomEncounterResult(
         leader_id,
@@ -381,6 +423,7 @@ def resolve_random_encounter(
         winner=outcome.winner,
         leader_died=leader_died,
         monster_fled=outcome.target_fled,
+        gold_found=gold_found,
         melee_swings=outcome.melee_swings,
         fire_arrow_shots=outcome.fire_arrow_shots,
     )
