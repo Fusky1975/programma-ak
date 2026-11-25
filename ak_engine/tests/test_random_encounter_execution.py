@@ -295,6 +295,37 @@ def test_a_wandering_monster_fights_with_its_own_plan_and_retreats_when_wounded(
     assert mock_combat.call_args.args[3].leader_id < 0  # the monster's stand-in leader
 
 
+def test_a_frightened_wandering_monster_runs_by_itself_and_the_hero_keeps_the_field():
+    result, _mock = _run_with_stubbed_combat(Monster.BIGFOOT, ChallengeCombatOutcome(winner="a", target_fled=True))
+    assert result.monster_fled is True and result.leader_died is False
+
+
+def test_only_a_wild_monster_with_a_running_temper_gets_the_flag():
+    from ak_engine.turn.challenge_execution import resolve_challenge_combat as real_challenge
+
+    def flagged(monster, *, patrol=False):
+        state = _base_state()
+        state.add_leader(_hero())
+        plan = _plan(PlanPhase("P0", ActionCode.LMOVE, 0))
+        seen = []
+
+        def _spy(tactics, caster_leader, caster, target_leader, target, *a, **kw):
+            seen.append(target.flees_by_temper)
+            return ChallengeCombatOutcome(winner=None)
+
+        with patch("ak_engine.turn.random_encounter_execution.terrain_roll", return_value=True), patch(
+            "ak_engine.turn.random_encounter_execution.select_random_monster", return_value=monster
+        ), patch("ak_engine.turn.random_encounter_execution.is_patrol_framing", return_value=patrol), patch(
+            "ak_engine.turn.random_encounter_execution.patrol_evades_via_diplomacy", return_value=False
+        ), patch("ak_engine.turn.random_encounter_execution.resolve_challenge_combat", side_effect=_spy):
+            resolve_random_encounter(state, 1, HOME, plan, check_escort=True, rng=ScriptedRandom([0.5] * 8))
+        return seen[0]
+
+    assert flagged(Monster.BIGFOOT) is True  # Cautious
+    assert flagged(Monster.GRYPHON) is False  # Berserk never runs
+    assert flagged(Monster.BIGFOOT, patrol=True) is False  # a patrol is the King's own men
+
+
 def test_a_wandering_monster_with_a_missile_plan_opens_with_missiles():
     _result, mock_combat = _run_with_stubbed_combat(Monster.ARCHER, ChallengeCombatOutcome(winner=None))
     assert mock_combat.call_args.kwargs["target_opens_with_missiles"] is True

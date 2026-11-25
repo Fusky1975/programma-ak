@@ -617,6 +617,74 @@ def test_resolve_fire_arrow_duel_two_blocked_archers_fire_nothing():
     assert result.winner is None and result.shots == ()
 
 
+# -- a monster runs by itself when its Temper says so (user ruling 2026-11-26) --
+
+
+def _flight_pair(temper, own_hp, opp_hp=20, opp_damage=(1, 6)):
+    own = Combatant("Monster", hit_points=own_hp, melee_skill=1, temper=temper, flees_by_temper=True)
+    opp = Combatant("Hero", hit_points=opp_hp, melee_skill=1, melee_damage_range=opp_damage)
+    return own, opp
+
+
+def test_monster_wants_to_flee_by_temper_follows_the_temper_table():
+    from ak_engine.models.temper import Temper
+    from ak_engine.turn.encounter import monster_wants_to_flee_by_temper
+
+    # Hero blow 1-6: average 3.5, maximum 6.
+    assert monster_wants_to_flee_by_temper(*_flight_pair(Temper.COWARDLY, 6)) is True  # a blow could kill it
+    assert monster_wants_to_flee_by_temper(*_flight_pair(Temper.COWARDLY, 7)) is False
+    assert monster_wants_to_flee_by_temper(*_flight_pair(Temper.CAUTIOUS, 7)) is True  # two average blows could
+    assert monster_wants_to_flee_by_temper(*_flight_pair(Temper.CAUTIOUS, 8)) is False
+    # Brave: the same danger, but only when it is also behind in hit points.
+    assert monster_wants_to_flee_by_temper(*_flight_pair(Temper.BRAVE, 7, opp_hp=20)) is True
+    assert monster_wants_to_flee_by_temper(*_flight_pair(Temper.BRAVE, 7, opp_hp=5)) is False
+    assert monster_wants_to_flee_by_temper(*_flight_pair(Temper.BERSERK, 1)) is False  # never
+
+
+def test_a_blow_is_estimated_with_the_skill_difference_and_the_flat_adjustments():
+    from ak_engine.turn.encounter import melee_blow_damage_bounds
+
+    own = Combatant("Monster", hit_points=10, melee_skill=0, damage_reduction=1)
+    opp = Combatant("Hero", hit_points=10, melee_skill=3, melee_damage_range=(1, 6), melee_damage_dealt_bonus=2)
+    average, maximum = melee_blow_damage_bounds(opp, own)
+    assert maximum == 6 + 3 + 2 - 1 and average == 3.5 + 3 + 2 - 1
+
+
+def test_monster_flight_chance_is_fifty_percent_plus_thirty_for_the_cautious_and_cowardly():
+    from ak_engine.models.temper import Temper
+    from ak_engine.turn.encounter import monster_flight_succeeds
+
+    for temper, chance in ((Temper.BRAVE, 0.50), (Temper.CAUTIOUS, 0.80), (Temper.COWARDLY, 0.80)):
+        monster = Combatant("M", hit_points=5, temper=temper)
+        assert monster_flight_succeeds(monster, ScriptedRandom([chance - 0.01])) is True
+        assert monster_flight_succeeds(monster, ScriptedRandom([chance])) is False
+
+
+def test_a_melee_round_lets_a_frightened_monster_run_before_anyone_swings():
+    from ak_engine.models.temper import Temper
+
+    own, opp = _flight_pair(Temper.COWARDLY, 5)
+    outcome = resolve_one_melee_round(own, opp, ScriptedRandom([0.1]))  # the flight roll succeeds
+    assert outcome.result is not None and outcome.result.fled_side == "a" and outcome.result.winner is None
+    assert outcome.swings == () and own.hit_points == 5 and opp.hit_points == 20
+
+    own, opp = _flight_pair(Temper.COWARDLY, 5)
+    outcome = resolve_one_melee_round(own, opp, ScriptedRandom([0.99] * 10))  # the attempt fails: the fight goes on
+    assert outcome.swings and (outcome.result is None or outcome.result.fled_side is None)
+
+
+def test_a_monster_without_the_flag_or_not_in_danger_never_rolls_to_run():
+    from ak_engine.models.temper import Temper
+
+    own, opp = _flight_pair(Temper.COWARDLY, 5)
+    own.flees_by_temper = False
+    outcome = resolve_one_melee_round(own, opp, ScriptedRandom([0.99] * 10))
+    assert outcome.swings
+    healthy, opp = _flight_pair(Temper.COWARDLY, 30)
+    resolve_one_melee_round(healthy, opp, ScriptedRandom([0.99] * 10))  # no flight roll was spent: 30 hp is safe
+    assert healthy.hit_points <= 30
+
+
 # -- Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY --
 
 
