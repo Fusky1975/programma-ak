@@ -529,3 +529,15 @@ def test_resolve_wandering_skips_a_band_disbanded_this_turn():
     resolve_wandering(state, {}, ScriptedRandom([0.9]), events)
 
     assert events == [] and 1 in state.armies
+
+def test_army_eligible_for_wander_never_when_it_has_a_commander():
+    # "Le unita' militari non possono muovere senza personaggi": an independent Hero's own army (kingdom_id
+    # None too) must not wander off and leave him behind.
+    state = GameState()
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    free = ArmyState(1, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 1))
+    led = ArmyState(2, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 1), commanded_by=77)
+    state.add_army(free)
+    state.add_army(led)
+    assert army_eligible_for_wander(state, free, {}) is True
+    assert army_eligible_for_wander(state, led, {}) is False
