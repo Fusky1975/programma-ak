@@ -7,7 +7,13 @@ import random
 import pytest
 
 from ak_engine.models.enums import Ability, Maneuver, Spell
-from ak_engine.models.monster import MONSTER_MAGIC_ABILITIES, MONSTER_RUNTIME_PROFILE, Monster, MonsterIntelligence
+from ak_engine.models.monster import (
+    MONSTER_MAGIC_ABILITIES,
+    MONSTER_RUNTIME_PROFILE,
+    SPIRITWRACK_UNDEAD_MONSTERS,
+    Monster,
+    MonsterIntelligence,
+)
 from ak_engine.models.monster_encounter_plan import (
     GENERATED_PLAN_CHANCE,
     MONSTER_ENCOUNTER_PLANS,
@@ -46,7 +52,8 @@ def test_every_generated_plan_uses_only_what_the_monster_can_really_do(attacker_
             per_school: dict[Ability, int] = {}
             for spell in casts:
                 if spell is Spell.CHARM:
-                    school = Ability.PSYCHIC
+                    # an Undead caster charms with Necromancy, not Psychic
+                    school = Ability.NECROMANCY if monster in SPIRITWRACK_UNDEAD_MONSTERS else Ability.PSYCHIC
                 else:
                     school = _SPELL_SCHOOL[spell]
                 per_school[school] = per_school.get(school, 0) + 1
@@ -114,3 +121,23 @@ def test_the_variety_stream_leaves_the_encounters_own_dice_untouched():
 
 def test_the_generated_chance_is_the_documented_one():
     assert GENERATED_PLAN_CHANCE == 0.6
+
+
+def test_an_undead_monster_without_necromancy_never_lures_with_a_charm():
+    # A Vampire has Psychic 3 but no Necromancy: its Charm (cast with Necromancy) would be a dead action.
+    assert MONSTER_MAGIC_ABILITIES[Monster.VAMPIRE] == {Ability.PSYCHIC: 3}
+    for seed in range(400):
+        assert Spell.CHARM not in _casts(generate_monster_encounter_plan(Monster.VAMPIRE, random.Random(seed)))
+
+
+def test_an_undead_necromancer_can_lure_with_a_necromantic_charm():
+    # A Lich has Necromancy 4: the lure is allowed, and its slot comes out of the Necromancy ones.
+    lured = [
+        plan
+        for plan in (generate_monster_encounter_plan(Monster.LICH, random.Random(seed)) for seed in range(400))
+        if Spell.CHARM in _casts(plan)
+    ]
+    assert lured
+    for plan in lured:
+        necro_casts = [s for s in _casts(plan) if s is Spell.CHARM or _SPELL_SCHOOL[s] is Ability.NECROMANCY]
+        assert len(necro_casts) <= 2

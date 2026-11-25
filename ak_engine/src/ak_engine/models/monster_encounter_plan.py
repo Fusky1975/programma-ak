@@ -80,6 +80,7 @@ from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.monster import (
     MONSTER_MAGIC_ABILITIES,
     MONSTER_RUNTIME_PROFILE,
+    SPIRITWRACK_UNDEAD_MONSTERS,
     Monster,
     MonsterIntelligence,
 )
@@ -460,10 +461,13 @@ def generate_monster_encounter_plan(
     ]
     rng.shuffle(candidates)
     slots_left = {school: _combat_cast_slots(level) for school, level in abilities.items()}
-    # A late Charm is a Psychic cast too: reserve one of the Psychic slots for it.
-    lure_with_charm = abilities.get(Ability.PSYCHIC, 0) >= 3 and rng.random() < GENERATED_PLAN_LURE_CHARM_CHANCE
+    # A late Charm is a cast of its own school: Psychic, but an Undead caster draws on Necromancy instead
+    # (`turn/encounter.py`, Charm's Phase 183 addendum) -- reserve one slot of that school for it, and only
+    # lure with a Charm the monster has the talent for (a Vampire has Psychic 3 but no Necromancy at all).
+    charm_school = Ability.NECROMANCY if monster in SPIRITWRACK_UNDEAD_MONSTERS else Ability.PSYCHIC
+    lure_with_charm = abilities.get(charm_school, 0) >= 3 and rng.random() < GENERATED_PLAN_LURE_CHARM_CHANCE
     if lure_with_charm:
-        slots_left[Ability.PSYCHIC] -= 1
+        slots_left[charm_school] -= 1
     max_casts = min(GENERATED_PLAN_MAX_CASTS, sum(min(slots_left.get(s, 0), sum(1 for c in candidates if _SPELL_SCHOOL[c] is s)) for s in set(_SPELL_SCHOOL.values())))
     chosen: list[Spell] = []
     if max_casts > 0:
