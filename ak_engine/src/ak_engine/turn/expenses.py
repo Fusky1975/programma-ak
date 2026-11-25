@@ -131,8 +131,10 @@ describes armies deserting for unpaid ``ACost``.
 from __future__ import annotations
 
 import random
+from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ARMY_TABLE
-from ak_engine.models.game_state import GameState, LeaderState, MaintenanceResult
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, MaintenanceResult
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hire_pay import hero_liking, required_pay
@@ -208,16 +210,21 @@ def compute_expected_expenses(state: GameState, kingdom_id: int) -> int:
     return compute_army_maintenance(state, kingdom_id) + compute_leader_maintenance(state, kingdom_id)
 
 
-def promote_recruits_and_depleted_armies(state: GameState, kingdom_id: int) -> list[int]:
+def promote_recruits_and_depleted_armies(
+    state: GameState, kingdom_id: int, paid_army_ids: set[int] | None = None
+) -> list[int]:
     """[6.1]: "Le unità militari Reclute o Demoralizzate passano sempre al livello successivo alla
     fine del turno (solo se pagate regolarmente però)" -- Depleted becomes Green and Green becomes
     Average, automatically, for every army of a kingdom whose army upkeep the treasury covered. A
     freshly levied Green unit is therefore Average again by the next turn. Returns the promoted
-    army ids. (Audit of 2026-11-24: this rule had no turn-boundary hook anywhere.)"""
+    army ids. (Audit of 2026-11-24: this rule had no turn-boundary hook anywhere.) ``paid_army_ids``: only
+    those armies, the ones whose own upkeep was actually paid (None: all of them)."""
 
     promoted: list[int] = []
     for army in state.armies.values():
         if army.kingdom_id != kingdom_id or army.is_mercenary:
+            continue
+        if paid_army_ids is not None and army.army_id not in paid_army_ids:
             continue
         if army.quality is Quality.DEPLETED:
             army.quality = Quality.GREEN
@@ -227,6 +234,77 @@ def promote_recruits_and_depleted_armies(state: GameState, kingdom_id: int) -> l
             continue
         promoted.append(army.army_id)
     return promoted
+
+
+# [9.2] "Un'unita' non pagata puo' venire declassata e c'e' la possibilita' che diserti" -- no numbers in the
+# rulebook; the user's own (2026-11-26): ``(desertion, demotion)`` chance for each unpaid army. The desertion
+# is rolled first, the demotion only if the army stays. By the army's own kind and its King's Alignment:
+UNPAID_ARMY_CHANCES_DEFAULT = (0.15, 0.35)
+UNPAID_ARMY_CHANCES_SKELETAL = (0.0, 0.60)  # the dead never walk out: they only fall apart
+UNPAID_ARMY_CHANCES_GOOD = (0.10, 0.40)  # a Good or Divine King's units
+UNPAID_ARMY_CHANCES_EVIL = (0.25, 0.25)  # an Evil or Undead King's (not skeletal) units
+_GOOD_ALIGNMENTS = frozenset({Alignment.GOOD, Alignment.DIVINE})
+_EVIL_ALIGNMENTS = frozenset({Alignment.EVIL, Alignment.UNDEAD})
+
+
+def unpaid_army_chances(army: ArmyState, kingdom_alignment: Alignment | None) -> tuple[float, float]:
+    """``(desertion, demotion)`` chances of an army whose upkeep went unpaid."""
+
+    if army.is_skeletal:
+        return UNPAID_ARMY_CHANCES_SKELETAL
+    if kingdom_alignment in _GOOD_ALIGNMENTS:
+        return UNPAID_ARMY_CHANCES_GOOD
+    if kingdom_alignment in _EVIL_ALIGNMENTS:
+        return UNPAID_ARMY_CHANCES_EVIL
+    return UNPAID_ARMY_CHANCES_DEFAULT
+
+
+def _desert_army(state: GameState, army: ArmyState, result: MaintenanceResult) -> None:
+    """An unpaid army that walks out ([7.4]'s own fate of an army that cannot retreat): Green and Depleted
+    ones dissolve into the population, the others become a mercenary band that cannot be hired this turn."""
+
+    if army.quality in (Quality.GREEN, Quality.DEPLETED):
+        result.disbanded_army_ids.append(army.army_id)
+        state.remove_army(army.army_id)
+        return
+    army.kingdom_id = None
+    army.commanded_by = None
+    army.is_mercenary = True
+    army.unhireable_this_turn = True
+    result.deserted_army_ids.append(army.army_id)
+
+
+def _pay_armies(state: GameState, kingdom_id: int, rng: random.Random, result: MaintenanceResult) -> None:
+    """Pays the Kingdom's armies one by one, best rank first (id ascending among equals), for as long as the
+    treasury (which never goes below zero) can cover each one; every army left unpaid rolls for desertion and
+    otherwise for losing a rank, and a Green or Depleted one among the paid is promoted as usual."""
+
+    kingdom = state.kingdoms[kingdom_id]
+    armies = sorted(
+        (a for a in state.armies.values() if a.kingdom_id == kingdom_id and a.army_type in ARMY_TABLE),
+        key=lambda a: (-int(a.quality), a.army_id),
+    )
+    paid: set[int] = set()
+    unpaid: list[ArmyState] = []
+    for army in armies:
+        pay = ARMY_TABLE[army.army_type].pay
+        if kingdom.treasury >= pay:
+            kingdom.treasury -= pay
+            result.army_debited += pay
+            result.debited += pay
+            paid.add(army.army_id)
+        else:
+            unpaid.append(army)
+    promote_recruits_and_depleted_armies(state, kingdom_id, paid)
+    for army in unpaid:
+        result.unpaid_army_ids.append(army.army_id)
+        result.army_names[army.army_id] = make_army_name(army.army_id, army.army_type, kingdom.race)
+        desertion, demotion = unpaid_army_chances(army, kingdom.alignment)
+        if rng.random() < desertion:
+            _desert_army(state, army, result)
+        elif rng.random() < demotion and army.quality > Quality.DEPLETED:
+            army.quality = Quality(int(army.quality) - 1)
+            result.demoted_army_ids.append(army.army_id)
 
 
 def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -> dict[int, MaintenanceResult]:
@@ -239,9 +317,10 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
     individually, in ascending ``leader_id`` order, against the treasury
     ([9.2]: "Si pagano prima gli Eroi, quindi le unita' militari" -- the
     Heroes come first, user audit 2026-11-26), then army maintenance
-    (``ACost``) is paid as one unconditional lump sum, unclamped; a leader whose own pay the treasury
-    can no longer cover rolls for desertion/standby (``hero_liking()``
-    plus a fresh ``(IRand and 3) - 2`` roll) instead of being paid.
+    (``ACost``) is paid army by army, best rank first, for as long as the treasury lasts: it never goes
+    below zero, and an army left unpaid may desert or lose a rank (``_pay_armies()``, user ruling
+    2026-11-26). A leader whose own pay the treasury can no longer cover rolls for desertion/standby
+    (``hero_liking()`` plus a fresh ``(IRand and 3) - 2`` roll) instead of being paid.
 
     Returns one ``MaintenanceResult`` per kingdom, keyed by ``kingdom_id``
     -- and (Phase 771, mirroring ``turn/tax_base.py apply_turn_revenue()``'s
@@ -292,16 +371,11 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
             else:
                 standby.append(hero.leader_id)
 
-        # [9.2] "Si pagano prima gli Eroi, quindi le unita' militari": the armies' upkeep comes out of what the
-        # Heroes left (still one unconditional lump sum, unclamped).
-        army_upkeep = compute_army_maintenance(state, kingdom_id)
-        kingdom.treasury -= army_upkeep
-        debited += army_upkeep
-        if kingdom.treasury >= 0:
-            promote_recruits_and_depleted_armies(state, kingdom_id)
-
+        # [9.2] "Si pagano prima gli Eroi, quindi le unita' militari": the armies are paid from what the Heroes
+        # left, one by one -- the treasury never goes below zero.
         results[kingdom_id] = MaintenanceResult(
             debited=debited, deserted_leader_ids=deserted, standby_leader_ids=standby
         )
+        _pay_armies(state, kingdom_id, rng, results[kingdom_id])
     state.turn_maintenance_by_kingdom = results
     return results

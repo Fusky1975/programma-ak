@@ -1449,7 +1449,6 @@ from ak_engine.turn.discovery_effects import (
 )
 from ak_engine.turn.expenses import (
     MaintenanceResult,
-    compute_army_maintenance,
     compute_expected_expenses,
     leader_pay,
 )
@@ -11311,6 +11310,24 @@ def describe_desertions(result: MaintenanceResult, state: GameState, *, king_nam
     return lines
 
 
+def describe_unpaid_armies(result: MaintenanceResult) -> list[str]:
+    """One project-original line per army whose upkeep the treasury could not cover ([9.2], user ruling
+    2026-11-26): what became of it (desertion, dissolution, a lost rank, or nothing)."""
+
+    lines: list[str] = []
+    for army_id in result.unpaid_army_ids:
+        name = result.army_names.get(army_id, f"Army {army_id}")
+        if army_id in result.disbanded_army_ids:
+            lines.append(f"The {name}, left unpaid, dissolved and went back to the farms.")
+        elif army_id in result.deserted_army_ids:
+            lines.append(f"The {name}, left unpaid, deserted and now sells its sword to the highest bidder.")
+        elif army_id in result.demoted_army_ids:
+            lines.append(f"The {name} went unpaid and lost a rank.")
+        else:
+            lines.append(f"The {name} went unpaid, and grumbled.")
+    return lines
+
+
 # HostAK/TP/SAY.PAS _LACosts -- a single, real, hardcoded template (no
 # file). See module docstring's Phase 124 addendum.
 FINANCE_ARMY_COSTS_TEMPLATE = "# gold was expended to maintain our armies."
@@ -13743,9 +13760,10 @@ def describe_finances_report(
         story_sink.append(render_finance_revenue(state.turn_revenue_credited[kingdom_id], rng))
     maintenance = state.turn_maintenance_by_kingdom.get(kingdom_id)
     if maintenance is not None:
-        army_cost = compute_army_maintenance(state, kingdom_id)
+        army_cost = maintenance.army_debited
         story_sink.append(render_finance_leader_costs(maintenance.debited - army_cost, rng))
         story_sink.append(render_finance_army_costs(army_cost, rng))
+        story_sink.extend(describe_unpaid_armies(maintenance))
         story_sink.extend(describe_desertions(maintenance, state, king_name=king_name, rng=rng))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
     lines.append("")

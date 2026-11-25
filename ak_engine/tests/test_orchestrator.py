@@ -194,6 +194,7 @@ def test_process_turn_commits_army_office_holders_for_the_next_turns_tie_break()
     # mechanic this test isn't exercising (the same pitfall Phase 633/641
     # already documented and hit).
     state = _base_state()
+    state.kingdoms[1].treasury = 100  # an unpaid army may desert ([9.2]); not what this test is about
     state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(0, 0)))
     kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
 

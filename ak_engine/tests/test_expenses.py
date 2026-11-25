@@ -262,17 +262,18 @@ def test_apply_turn_maintenance_is_a_noop_with_nothing_to_pay():
     assert state.kingdoms[1].treasury == 5
 
 
-def test_apply_turn_maintenance_unclamped_allows_negative_treasury():
-    # Army maintenance alone (no Heroes) stays unclamped -- Phase 527's own
-    # per-Hero desertion mechanic never applies to ACost.
+def test_the_treasury_never_goes_below_zero():
+    # User ruling 2026-11-26: "Il tesoro non può andare negativo. Il minimo è zero": an army the gold cannot
+    # cover is simply left unpaid.
     state = make_state()
     state.kingdoms[1].treasury = 1
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, HOME))
 
-    result = apply_turn_maintenance(state)
+    result = apply_turn_maintenance(state, ScriptedRandom([0.99, 0.99]))
 
-    assert result[1].debited == 2
-    assert state.kingdoms[1].treasury == -1
+    assert result[1].debited == 0 and result[1].army_debited == 0
+    assert result[1].unpaid_army_ids == [1]
+    assert state.kingdoms[1].treasury == 1
 
 
 # -- apply_turn_maintenance: Hero desertion/standby (Phase 527) -----------
@@ -312,7 +313,7 @@ def test_apply_turn_maintenance_unpaid_hero_deserts_when_the_roll_beats_liking()
 
     # _DESERTION_ROLL_VALUES = (-2, -1, 0, 1) -- index 3 rolls the maximum,
     # +1, which is >= like (1) for this specific pair.
-    result = apply_turn_maintenance(state, ScriptedRandom([], choice_indices=[3]))
+    result = apply_turn_maintenance(state, ScriptedRandom([0.99, 0.99], choice_indices=[3]))
 
     assert result[1].deserted_leader_ids == [3]
     assert result[1].standby_leader_ids == []
@@ -407,9 +408,9 @@ def test_unpaid_armies_do_not_improve():
     state.kingdoms[1].treasury = 0
     state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.GREEN, HOME))
 
-    apply_turn_maintenance(state, ScriptedRandom([0.0] * 5))
+    result = apply_turn_maintenance(state, ScriptedRandom([0.99, 0.99]))
 
-    assert state.armies[1].quality is Quality.GREEN
+    assert state.armies[1].quality is Quality.GREEN and result[1].unpaid_army_ids == [1]
 
 
 def test_mercenary_bands_and_other_kingdoms_armies_are_not_promoted_by_a_kingdom():
@@ -419,7 +420,7 @@ def test_mercenary_bands_and_other_kingdoms_armies_are_not_promoted_by_a_kingdom
     state.add_army(ArmyState(1, None, ArmyType.BOWMEN, Quality.GREEN, HOME, is_mercenary=True))
     state.add_army(ArmyState(2, 2, ArmyType.BOWMEN, Quality.GREEN, HOME))
 
-    apply_turn_maintenance(state, ScriptedRandom([0.0] * 5))
+    apply_turn_maintenance(state, ScriptedRandom([0.99, 0.99]))
 
     assert _qualities(state) == {1: Quality.GREEN, 2: Quality.GREEN}
 
@@ -434,7 +435,7 @@ def test_a_deserting_hero_leaves_his_armies_to_the_kingdom_s_garrison_command():
     state.add_army(ArmyState(7, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=3))
     state.kingdoms[1].treasury = 0  # nothing to pay the hero with (the Heroes are paid first, [9.2])
 
-    result = apply_turn_maintenance(state, ScriptedRandom([], choice_indices=[3]))
+    result = apply_turn_maintenance(state, ScriptedRandom([0.99, 0.99], choice_indices=[3]))
 
     assert result[1].deserted_leader_ids == [3] and hero.kingdom_id is None
     assert state.armies[7].kingdom_id == 1 and state.armies[7].commanded_by is None
@@ -442,7 +443,7 @@ def test_a_deserting_hero_leaves_his_armies_to_the_kingdom_s_garrison_command():
 
 def test_the_heroes_are_paid_before_the_armies():
     # [9.2] "Si pagano prima gli Eroi, quindi le unita' militari": with just enough gold for the Hero, he is
-    # paid and it is the armies' upkeep that runs the treasury negative -- not the other way round.
+    # paid and it is the armies' upkeep that goes unpaid -- not the other way round.
     state = make_state()
     king = LeaderState(1, 1, "Bradipo I", HOME, is_king=True, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
     hero = LeaderState(3, 1, "Indra", HOME, alignment=Alignment.GOOD, temper=Temper.CAUTIOUS)
@@ -452,7 +453,90 @@ def test_the_heroes_are_paid_before_the_armies():
     hero_pay = required_pay(state, hero, king)
     state.kingdoms[1].treasury = hero_pay
 
-    result = apply_turn_maintenance(state, ScriptedRandom([], choice_indices=[]))
+    result = apply_turn_maintenance(state, ScriptedRandom([0.99, 0.99], choice_indices=[]))
 
     assert result[1].deserted_leader_ids == [] and result[1].standby_leader_ids == [] and hero.kingdom_id == 1
-    assert state.kingdoms[1].treasury == -ARMY_TABLE[ArmyType.BOWMEN].pay
+    assert state.kingdoms[1].treasury == 0 and result[1].unpaid_army_ids == [7]
+
+
+# -- [9.2] unpaid armies (user ruling 2026-11-26) ---------------------------
+
+
+def _unpaid_state(alignment: Alignment, quality: Quality = Quality.AVERAGE, **army_kwargs) -> GameState:
+    state = make_state()
+    state.kingdoms[1].alignment = alignment
+    state.kingdoms[1].treasury = 0
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, quality, HOME, **army_kwargs))
+    return state
+
+
+def test_the_best_armies_are_paid_first_and_the_rest_go_unpaid():
+    state = make_state()
+    pay = ARMY_TABLE[ArmyType.BOWMEN].pay
+    state.kingdoms[1].treasury = 2 * pay + 1
+    for army_id, quality in ((1, Quality.AVERAGE), (2, Quality.ELITE), (3, Quality.GREEN), (4, Quality.ELITE)):
+        state.add_army(ArmyState(army_id, 1, ArmyType.BOWMEN, quality, HOME))
+
+    result = apply_turn_maintenance(state, ScriptedRandom([0.99] * 4))
+
+    assert result[1].unpaid_army_ids == [1, 3]  # the two Elite are paid, then the gold is short
+    assert result[1].army_debited == 2 * pay and state.kingdoms[1].treasury == 1
+
+
+def test_an_unpaid_army_may_desert_and_becomes_a_mercenary_band():
+    state = _unpaid_state(Alignment.NEUTRAL)
+
+    result = apply_turn_maintenance(state, ScriptedRandom([0.14]))  # < 15%
+
+    army = state.armies[1]
+    assert result[1].deserted_army_ids == [1]
+    assert army.kingdom_id is None and army.is_mercenary and army.unhireable_this_turn
+
+
+def test_an_unpaid_green_army_that_deserts_dissolves():
+    state = _unpaid_state(Alignment.NEUTRAL, Quality.GREEN)
+
+    result = apply_turn_maintenance(state, ScriptedRandom([0.0]))
+
+    assert result[1].disbanded_army_ids == [1] and 1 not in state.armies
+
+
+def test_an_unpaid_army_that_stays_may_lose_a_rank():
+    state = _unpaid_state(Alignment.NEUTRAL, Quality.ELITE)
+
+    result = apply_turn_maintenance(state, ScriptedRandom([0.15, 0.34]))  # stays (>= 15%), demoted (< 35%)
+
+    assert state.armies[1].quality is Quality.CRACK and state.armies[1].kingdom_id == 1
+    assert result[1].demoted_army_ids == [1]
+
+
+def test_an_unpaid_army_can_get_away_with_it():
+    state = _unpaid_state(Alignment.NEUTRAL, Quality.ELITE)
+
+    result = apply_turn_maintenance(state, ScriptedRandom([0.5, 0.5]))
+
+    assert state.armies[1].quality is Quality.ELITE and result[1].unpaid_army_ids == [1]
+    assert not (result[1].demoted_army_ids or result[1].deserted_army_ids or result[1].disbanded_army_ids)
+
+
+def test_unpaid_chances_follow_the_kings_alignment_and_the_armys_nature():
+    from ak_engine.turn.expenses import unpaid_army_chances
+
+    plain = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME)
+    skeletal = ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, is_skeletal=True)
+    assert unpaid_army_chances(plain, Alignment.NEUTRAL) == (0.15, 0.35)
+    assert unpaid_army_chances(plain, Alignment.GOOD) == (0.10, 0.40)
+    assert unpaid_army_chances(plain, Alignment.DIVINE) == (0.10, 0.40)
+    assert unpaid_army_chances(plain, Alignment.EVIL) == (0.25, 0.25)
+    assert unpaid_army_chances(plain, Alignment.UNDEAD) == (0.25, 0.25)
+    for alignment in Alignment:  # the dead never walk out: they only fall apart
+        assert unpaid_army_chances(skeletal, alignment) == (0.0, 0.60)
+
+
+def test_a_skeletal_army_never_deserts_but_falls_apart_more_often():
+    state = _unpaid_state(Alignment.UNDEAD, Quality.ELITE, is_skeletal=True)
+
+    result = apply_turn_maintenance(state, ScriptedRandom([0.0, 0.59]))  # a 0% desertion roll never succeeds; the 60% demotion does
+
+    assert result[1].deserted_army_ids == [] and state.armies[1].kingdom_id == 1
+    assert state.armies[1].quality is Quality.CRACK

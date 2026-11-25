@@ -393,6 +393,14 @@ class MaintenanceResult:
     debited: int
     deserted_leader_ids: list[int] = field(default_factory=list)
     standby_leader_ids: list[int] = field(default_factory=list)
+    # Army upkeep actually paid (a part of ``debited``): the treasury never goes below zero, so the armies are
+    # paid one by one while there is gold (best first) and the rest go unpaid ([9.2], user ruling 2026-11-26).
+    army_debited: int = 0
+    unpaid_army_ids: list[int] = field(default_factory=list)
+    demoted_army_ids: list[int] = field(default_factory=list)  # an unpaid army that lost a rank
+    deserted_army_ids: list[int] = field(default_factory=list)  # ... that walked out and became a mercenary band
+    disbanded_army_ids: list[int] = field(default_factory=list)  # ... Green/Depleted: dissolved into the population
+    army_names: dict[int, str] = field(default_factory=dict)  # the unpaid armies' names (some leave the state)
 
 
 @dataclass(slots=True)
