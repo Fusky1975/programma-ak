@@ -53,6 +53,13 @@ candidates, most others have 5 or 6 -- meaning a character will never
 gain every possible Advanced Ability in a category whose pool exceeds
 5.
 
+**2026-11-26 -- occurrences are counted.** Several templates hold the same ability in more than one slot
+(Tactical/Naval Mastery 15% x3, Melee Mastery x3, Archery Free Attack, Super Sage), and the original engine's
+``SA_Num`` counts them all, summing the effect per occurrence. ``AdvancedAbilities`` (below) is the set a leader
+holds, remembering the slot each came from so ``advanced_ability_count()`` can answer that; the effects that
+depend on it (Tactical/Naval Mastery, Melee Mastery, Archery Free Attack, Super Sage) add up per slot. The
+"only one per category" sentence in older notes predates this.
+
 **Phase 131 correction -- the selection is deterministic, not
 random.** This module originally said the exact selection mechanic was
 unsourced ("uniform random over the remaining pool? weighted?").
@@ -1522,3 +1529,44 @@ DISCOVERY_ADVANCED_ABILITY_CHECKS: dict[Discovery, Ability] = {
     Discovery.HIEROGLYPHIC_TRANSLATION: Ability.SAGE,
     Discovery.SCIENTIFIC_METHOD: Ability.SAGE,
 }
+
+
+class AdvancedAbilities(set):
+    """A leader's Advanced Abilities: a plain ``set`` for membership, plus the slot each one came from.
+
+    The original engine's ``SA_Num`` counts every ``spabord`` slot (one per skill level from 5 up) that holds a
+    given ability, and the effects add up per occurrence: a template with Tactical Mastery 15% in three slots gives
+    +15% for each one reached, not +15% once. A set alone loses that; ``slots`` remembers which slot of which Talent
+    granted what (a slot is granted once, however many times its level is reached), and ``count()`` answers
+    ``SA_Num``. A member with no recorded slot (set by hand, e.g. from the GM editor) counts once."""
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+        self.slots: dict[tuple[Ability, int], AdvancedAbility] = {}
+
+    def grant(self, ability: AdvancedAbility, talent: Ability | None = None, level: int | None = None) -> None:
+        self.add(ability)
+        if talent is not None and level is not None:
+            self.slots[(talent, level)] = ability
+
+    def count(self, ability: AdvancedAbility) -> int:  # type: ignore[override]
+        if ability not in self:
+            return 0
+        return max(1, sum(1 for granted in self.slots.values() if granted is ability))
+
+
+def grant_advanced_ability(leader, ability: AdvancedAbility, talent: Ability | None = None, level: int | None = None) -> None:
+    """Records ``ability`` on ``leader`` from slot ``level`` of ``talent`` (a state saved before slots were tracked,
+    holding a plain ``set``, is upgraded in place)."""
+
+    if not isinstance(leader.advanced_abilities, AdvancedAbilities):
+        leader.advanced_abilities = AdvancedAbilities(leader.advanced_abilities)
+    leader.advanced_abilities.grant(ability, talent, level)
+
+
+def advanced_ability_count(abilities: "set[AdvancedAbility]", ability: AdvancedAbility) -> int:
+    """``SA_Num`` for any set of Advanced Abilities, plain ``set`` included (counts once if present)."""
+
+    if isinstance(abilities, AdvancedAbilities):
+        return abilities.count(ability)
+    return 1 if ability in abilities else 0

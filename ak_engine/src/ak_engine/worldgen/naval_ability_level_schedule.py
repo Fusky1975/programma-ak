@@ -47,7 +47,8 @@ spabord slots up to the leader's own current skill level hold a matching
 id, and ``SA_Mod`` sums ``15 * count`` for Naval Mastery -- so a leader
 who unlocks all 3 of the template's own ``NAVAL_MASTERY_GREAT_15`` slots
 (as both GW3 and GW900 do) gets a real **+45%** strength bonus, not
-+15%. This directly contradicts ``turn/battle_orchestrator.py
++15% (**2026-11-26: now modeled** -- ``AdvancedAbilities`` counts the slots and ``_mastery_bonus_for()`` sums them;
+the paragraph below is the older, superseded scoping). This directly contradicts ``turn/battle_orchestrator.py
 _mastery_bonus_for()``'s own already-shipped assumption ("the three tiers
 of one category never stack") and its use of ``max()`` over held tiers.
 

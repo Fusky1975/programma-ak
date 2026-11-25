@@ -188,7 +188,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
-from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.advanced_ability import AdvancedAbility, advanced_ability_count
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, MONSTROUS_ARMY_RACE, OVERFLIGHT_AIR, ArmyType, is_overflight_unit
 from ak_engine.models.discovery import Discovery
@@ -1324,8 +1324,11 @@ def _mastery_bonus_for(leader: LeaderState | None, ability: Ability) -> float:
     tiers = _MASTERY_BONUS_BY_ABILITY.get(ability)
     if tiers is None:
         return 0.0
-    held = [bonus for grant, bonus in tiers.items() if grant in leader.advanced_abilities]
-    return max(held, default=0.0)
+    # SA_Num/SA_Mod: every slot holding the Mastery adds its percentage (the 15% one three times over is +45%); a
+    # higher tier "cancels" the lower ones ("This bonus cancels Tactical Mastery: 10%"), so only the best tier
+    # held counts, once for each slot that holds it.
+    held = [(bonus, advanced_ability_count(leader.advanced_abilities, grant)) for grant, bonus in tiers.items()]
+    return max((bonus * count for bonus, count in held if count > 0 and bonus == max(b for b, c in held if c > 0)), default=0.0)
 
 
 # Phase 514: Naval Combined Arms is the exact sea-terrain twin of Phase
