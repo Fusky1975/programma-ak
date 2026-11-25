@@ -4838,6 +4838,16 @@ def test_describe_random_encounter_combat_narrates_the_characters_own_death():
     ]
 
 
+def test_describe_random_encounter_combat_narrates_a_wandering_monster_running_away():
+    result = RandomEncounterResult(1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=True, combat_occurred=True, monster_fled=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0] * 6)
+
+    lines = describe_random_encounter_combat(result, character_name="Arthur", opponent_name="Grendel", rng=rng)
+
+    assert len(lines) == 1
+    assert "Grendel" in lines[0] and "Arthur" in lines[0]
+
+
 def test_describe_random_encounter_failed_terrain_roll():
     state = _random_encounter_state()
     result = RandomEncounterResult(1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=False)

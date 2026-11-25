@@ -79,14 +79,20 @@ from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.monster import (
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
     HUMANOID_MONSTERS,
+    MONSTER_ALIGNMENT_DISTRIBUTION,
     MONSTER_COMBAT_STATS,
+    MONSTER_MAGIC_ABILITIES,
     MONSTER_NAMES,
+    MONSTER_RUNTIME_PROFILE,
     SPIRITWRACK_UNDEAD_MONSTERS,
     Monster,
 )
+from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
+from ak_engine.models.enums import Maneuver
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase
 from ak_engine.models.race import HUMANOID_RACES
@@ -157,6 +163,34 @@ def monster_combatant(monster: Monster, rng: random.Random) -> Combatant:
         regenerates_hp=_TROLL_REGENERATION_PER_COMBAT_ROUND if monster is Monster.TROLL else 0,
         is_undead_or_anti_holy=monster in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
         is_humanoid=monster in HUMANOID_MONSTERS,
+    )
+
+
+# A negative id can never clash with a real leader.
+WANDERING_MONSTER_LEADER_ID = -1000
+
+
+def wandering_monster_leader(monster: Monster, coord: HexCoord) -> LeaderState:
+    """A stand-in "character" for a wandering monster -- never registered in ``GameState`` -- carrying the
+    monster's own magic talents, temper and alignment, so that it can cast the spells of its plan and so
+    that the spells the hero casts at it see what it is (undead, anti-holy...)."""
+
+    raw_values = [0] * 31
+    for ability, level in MONSTER_MAGIC_ABILITIES.get(monster, {}).items():
+        raw_values[ability.value * 2] = level
+    options = MONSTER_ALIGNMENT_DISTRIBUTION.get(monster)
+    alignment = options[0].alignment if options else None
+    if monster in SPIRITWRACK_UNDEAD_MONSTERS:
+        alignment = Alignment.UNDEAD
+    profile = MONSTER_RUNTIME_PROFILE.get(monster)
+    return LeaderState(
+        WANDERING_MONSTER_LEADER_ID,
+        None,
+        MONSTER_NAMES.get(monster, "wandering monster"),
+        coord,
+        skills=SkillTable(raw_values=raw_values),
+        temper=profile.temper if profile is not None else None,
+        alignment=alignment,
     )
 
 
@@ -244,6 +278,7 @@ class RandomEncounterResult:
     combat_occurred: bool = False
     winner: str | None = None  # "a" = leader, "b" = monster, None = inconclusive
     leader_died: bool = False
+    monster_fled: bool = False  # the wandering monster ran away wounded (its plan's FLEE)
     melee_swings: tuple[MeleeSwing, ...] = ()
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
 
@@ -304,7 +339,27 @@ def resolve_random_encounter(
     opponent = monster_combatant(monster, rng)
     # [5.0]: the Order of Duelists' +1 only counts "negli scontri con Eroi o mostri umanoidi".
     leader_combatant.neutral_duelist_bonus = leader_combatant.neutral_duelist_bonus and opponent.is_humanoid
-    outcome = resolve_challenge_combat(decoded_sep, leader, leader_combatant, None, opponent, state, rng)
+    # The monster's own plan (the tables, or a varied plan for an intelligent one -- see models/monster_
+    # encounter_plan.py) comes from its own stream, so the encounter's dice keep their sequence.
+    variety_rng = random.Random(
+        f"wandering-plan:{state.game_number}:{state.turn_number}:{leader_id}:{coord.x},{coord.y}:"
+        f"{leader.experience_credit}:{monster.name}"
+    )
+    monster_plan = roll_monster_encounter_plan(
+        monster, variety_rng, attacker_is_undead=leader.alignment is Alignment.UNDEAD, variety_rng=variety_rng
+    )
+    outcome = resolve_challenge_combat(
+        decoded_sep,
+        leader,
+        leader_combatant,
+        wandering_monster_leader(monster, coord),
+        opponent,
+        state,
+        rng,
+        target_tactics=list(monster_plan) if monster_plan else None,
+        target_retreats_when_wounded=True,
+        target_opens_with_missiles=monster_plan is not None and any(t.maneuver is Maneuver.SHOOT for t in monster_plan),
+    )
 
     if any(swing.hit for swing in outcome.melee_swings if swing.attacker == "a"):
         add_experience(leader, Ability.MELEE, 10, rng)
@@ -325,6 +380,7 @@ def resolve_random_encounter(
         combat_occurred=True,
         winner=outcome.winner,
         leader_died=leader_died,
+        monster_fled=outcome.target_fled,
         melee_swings=outcome.melee_swings,
         fire_arrow_shots=outcome.fire_arrow_shots,
     )
