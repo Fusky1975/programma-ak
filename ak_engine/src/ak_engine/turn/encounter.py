@@ -2431,11 +2431,13 @@ def ice_suspension_slowed_bonus_rounds(victim_hit_points: int, skill_level: int)
     arithmetically inconsistent taken at face value. Only meaningful
     when ``ice_suspension_is_frozen()`` is False for the same inputs --
     that precondition (``victim_hit_points > threshold``) is what keeps
-    the result naturally within [0, 3].
+    the result at most 3; it is never below 1.
     """
 
     threshold = ice_suspension_freeze_threshold(skill_level)
-    return (ICE_SUSPENSION_FREEZE_POINTS_PER_LEVEL * threshold) // victim_hit_points
+    # [4.2.4] "da 1 a 3 round supplementari": a slowed victim always gives at least one round,
+    # however many hit points it has left (user ruling 2026-11-25).
+    return max(1, (ICE_SUSPENSION_FREEZE_POINTS_PER_LEVEL * threshold) // victim_hit_points)
 
 
 def roll_ice_suspension_flying_crash_damage(rng: random.Random) -> int:
