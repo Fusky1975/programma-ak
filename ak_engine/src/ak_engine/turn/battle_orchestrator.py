@@ -193,7 +193,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, MONSTROUS_ARMY_RACE, OVERFLIGHT_AIR, ArmyType, is_overflight_unit
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver
-from ak_engine.models.game_state import ArmyState, GameState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, RaceTitleTally
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
@@ -2382,6 +2382,33 @@ def _apply_pursuit(
     return destroyed_ids
 
 
+def _record_race_title_merit(
+    state: GameState, commander_leader_id: int | None, armies: list[ArmyState], *, won: bool
+) -> None:
+    """The 11 race titles' own ``Tit_Pts`` (``turn/race_titles.py``): for every army of a titled race on a side,
+    its supreme commander gets +1 if the side won, and 2 points to subtract if it lost (the score is ``won - 2 *
+    lost``, doubled for a commander of that same race). The commander of the side takes them all (user ruling
+    2026-11-26); an unled side credits nobody. A unit's race is the one it fights as."""
+
+    if commander_leader_id is None:
+        return
+    commander = state.leaders.get(commander_leader_id)
+    if commander is None:
+        return
+    for army in armies:
+        kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+        race = army.race if army.race is not None else MONSTROUS_ARMY_RACE.get(
+            army.army_type, kingdom.race if kingdom is not None else None
+        )
+        if race not in RACE_TITLE_OFFICE:
+            continue
+        tally = commander.race_title_tally.setdefault(race, RaceTitleTally())
+        if won:
+            tally.front_line_battles_won_points += 1
+        else:
+            tally.front_line_battles_lost_points += 1
+
+
 def _record_battle_merit(
     state: GameState,
     terrain: Terrain,
@@ -2451,6 +2478,10 @@ def _record_battle_merit(
         battle_quality_points(army.army_type, army.quality, is_attacker=losing_side_is_attacker)
         for army in losing_armies
     )
+
+    winning_armies = attacker_armies if battle_result.winner == "attacker" else defender_armies
+    _record_race_title_merit(state, winner_leader_id, winning_armies, won=True)
+    _record_race_title_merit(state, loser_leader_id, losing_armies, won=False)
 
     if winner_leader_id is not None:
         winner_leader = state.leaders.get(winner_leader_id)

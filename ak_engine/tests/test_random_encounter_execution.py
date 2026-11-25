@@ -403,6 +403,38 @@ def test_a_monster_that_ran_away_pays_its_purse_but_earns_no_defender_points():
     assert hero.merit_tally.monster_hp_defeated == 0
 
 
+def test_beating_a_humanlike_wandering_monster_moves_the_duel_titles():
+    # Giant..Witch (Renegade Archer, Swordsman, the mages...): the personal combat counts for Duellist / King of
+    # Cowards / Bravest of the Brave, as against a Search guardian.
+    state = _base_state()
+    hero = _hero()
+    state.add_leader(hero)
+    _run_with_stubbed_combat(Monster.SWORDSMAN, ChallengeCombatOutcome(winner="a"), state=state)
+
+    assert hero.merit_tally.duel_merit_net == 2
+    assert hero.merit_tally.courage_encounter_merit == 0
+
+
+def test_losing_to_a_humanlike_wandering_monster_costs_duel_and_courage_merit():
+    state = _base_state()
+    hero = _hero()
+    state.add_leader(hero)
+    _run_with_stubbed_combat(Monster.ARCHER, ChallengeCombatOutcome(winner="b"), state=state)
+
+    tally = state.dead_leaders[hero.leader_id].merit_tally
+    assert tally.duel_merit_net == -2 and tally.courage_encounter_merit == -1
+
+
+def test_a_beast_or_a_fleeing_humanlike_monster_moves_no_duel_title():
+    state = _base_state()
+    hero = _hero()
+    state.add_leader(hero)
+    _run_with_stubbed_combat(Monster.TROLL, ChallengeCombatOutcome(winner="a"), state=state)  # not in Giant..Witch
+    _run_with_stubbed_combat(Monster.WITCH, ChallengeCombatOutcome(winner="a", target_fled=True), state=state)
+
+    assert hero.merit_tally.duel_merit_net == 0
+
+
 def test_a_hero_who_loses_gets_no_purse():
     state = _base_state()
     state.add_leader(_hero())
