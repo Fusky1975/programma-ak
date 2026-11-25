@@ -76,8 +76,14 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from ak_engine.models.enums import Maneuver, Spell
-from ak_engine.models.monster import Monster
+from ak_engine.models.enums import Ability, Maneuver, Spell
+from ak_engine.models.monster import (
+    MONSTER_MAGIC_ABILITIES,
+    MONSTER_RUNTIME_PROFILE,
+    Monster,
+    MonsterIntelligence,
+)
+from ak_engine.models.temper import Temper
 from ak_engine.turn.search_decode import SearchTactic
 
 
@@ -356,8 +362,150 @@ MONSTER_ENCOUNTER_PLANS: dict[Monster, MonsterEncounterPlan] = {
 }
 
 
-def roll_monster_encounter_plan(
+# --- Generated, varied plans for the intelligent monsters (2026-11-25, user request) -----------------
+#
+# "Creiamo dei piani d'incontro per loro i più intelligenti e variabili possibile." User choices: only
+# more random variants (the plan does not look at the opponent), only the intelligent monsters
+# (Medium intelligence or better; Animal and Mechanical ones keep fighting in Melee), and an
+# intelligent monster may flee when it is losing but never talks.
+#
+# An eligible monster gets, in ``GENERATED_PLAN_CHANCE`` of its encounters, a plan built at random
+# from what it can really do: only spells of the schools it has a talent in, no more distinct
+# spells per school than its level allows (1 at level 1, 2 from level 2), each spell at most once;
+# a missile attack only if its own table plan has one; and the order follows the tactical sense of
+# each spell (deny magic first, buff, damage, stun/squeeze last before the fight) with some noise.
+# Cautious and Cowardly ones sometimes end the plan with a wounded retreat, a hit-and-run
+# ("MELEE, MELEE, FLEE": flee only once at half hit points or less, otherwise keep fighting).
+
+GENERATED_PLAN_CHANCE = 0.6
+INTELLIGENT_MONSTERS_MIN_INTELLIGENCE = (MonsterIntelligence.MEDIUM, MonsterIntelligence.HIGH, MonsterIntelligence.GODLIKE)
+GENERATED_PLAN_MAX_CASTS = 4
+GENERATED_PLAN_CAST_COUNT_WEIGHTS = (3, 5, 3, 1)  # for 1, 2, 3, 4 spells
+GENERATED_PLAN_SHOOT_CHANCE = 0.85
+GENERATED_PLAN_RETREAT_CHANCE = 0.35
+GENERATED_PLAN_LURE_CHARM_CHANCE = 0.25  # Psychic 3+: a few rounds of Melee, then Charm (Dryad/Mermaid style)
+
+# Lower = earlier. Deny magic (Spiritwrack), freeze, summon, buff, then damage, then the stun and the squeeze.
+_SPELL_ORDER_PRIORITY: dict[Spell, int] = {
+    Spell.CONTROL_UNDEAD: 0,
+    Spell.SPIRITWRACK: 0,
+    Spell.ICE_SUSPEND: 1,
+    Spell.MIRROR_IMAGE: 1,
+    Spell.HOLY_SYMBOL: 2,
+    Spell.INVISIBILITY: 2,
+    Spell.FIREBALL: 3,
+    Spell.TELEK_STORM: 3,
+    Spell.PSYCHIC_BLAST: 4,
+    Spell.HAND_OF_DEATH: 5,
+}
+_SPELL_SCHOOL: dict[Spell, Ability] = {
+    Spell.HOLY_SYMBOL: Ability.WHITE,
+    Spell.SPIRITWRACK: Ability.WHITE,
+    Spell.PSYCHIC_BLAST: Ability.PSYCHIC,
+    Spell.TELEK_STORM: Ability.PSYCHIC,
+    Spell.INVISIBILITY: Ability.ILLUSION,
+    Spell.MIRROR_IMAGE: Ability.ILLUSION,
+    Spell.FIREBALL: Ability.ELEMENTAL,
+    Spell.ICE_SUSPEND: Ability.ELEMENTAL,
+    Spell.HAND_OF_DEATH: Ability.NECROMANCY,
+    Spell.CONTROL_UNDEAD: Ability.NECROMANCY,
+}
+
+
+def _flee() -> SearchTactic:
+    return SearchTactic(maneuver=Maneuver.FLEE)
+
+
+def _combat_cast_slots(level: int) -> int:
+    return 1 if level <= 1 else 2  # turn/encounter.py combat_cast_slots()
+
+
+def _table_plans_use_missile(monster: Monster) -> bool:
+    plan = MONSTER_ENCOUNTER_PLANS.get(monster)
+    return plan is not None and any(t.maneuver is Maneuver.SHOOT for v in plan.variants for t in v.tactics)
+
+
+def _table_plans_always_shoot(monster: Monster) -> bool:
+    plan = MONSTER_ENCOUNTER_PLANS.get(monster)
+    return plan is not None and all(any(t.maneuver is Maneuver.SHOOT for t in v.tactics) for v in plan.variants)
+
+
+def monster_gets_generated_plans(monster: Monster) -> bool:
+    """Intelligent (Medium or better) monsters that have something to vary: a spell talent, a missile
+    attack, or a Cautious/Cowardly temper (a wounded retreat)."""
+
+    profile = MONSTER_RUNTIME_PROFILE.get(monster)
+    if profile is None or profile.intelligence not in INTELLIGENT_MONSTERS_MIN_INTELLIGENCE:
+        return False
+    return bool(MONSTER_MAGIC_ABILITIES.get(monster)) or _table_plans_use_missile(monster) or profile.temper in (
+        Temper.CAUTIOUS,
+        Temper.COWARDLY,
+    )
+
+
+def generate_monster_encounter_plan(
     monster: Monster, rng: random.Random, *, attacker_is_undead: bool = False
+) -> tuple[SearchTactic, ...]:
+    """One randomly built plan for an intelligent monster -- see the block comment above."""
+
+    abilities = MONSTER_MAGIC_ABILITIES.get(monster, {})
+    profile = MONSTER_RUNTIME_PROFILE[monster]
+
+    candidates = [
+        spell
+        for spell, school in _SPELL_SCHOOL.items()
+        if abilities.get(school, 0) >= 1
+        and (spell is not Spell.CONTROL_UNDEAD or attacker_is_undead)
+        and not (spell is Spell.HAND_OF_DEATH and attacker_is_undead)  # undead are immune
+    ]
+    rng.shuffle(candidates)
+    slots_left = {school: _combat_cast_slots(level) for school, level in abilities.items()}
+    # A late Charm is a Psychic cast too: reserve one of the Psychic slots for it.
+    lure_with_charm = abilities.get(Ability.PSYCHIC, 0) >= 3 and rng.random() < GENERATED_PLAN_LURE_CHARM_CHANCE
+    if lure_with_charm:
+        slots_left[Ability.PSYCHIC] -= 1
+    max_casts = min(GENERATED_PLAN_MAX_CASTS, sum(min(slots_left.get(s, 0), sum(1 for c in candidates if _SPELL_SCHOOL[c] is s)) for s in set(_SPELL_SCHOOL.values())))
+    chosen: list[Spell] = []
+    if max_casts > 0:
+        weights = GENERATED_PLAN_CAST_COUNT_WEIGHTS[:max_casts]
+        wanted = rng.choices(range(1, max_casts + 1), weights=weights)[0]
+        if attacker_is_undead and Spell.CONTROL_UNDEAD in candidates:
+            chosen.append(Spell.CONTROL_UNDEAD)
+            slots_left[Ability.NECROMANCY] -= 1
+        for spell in candidates:
+            if len(chosen) >= wanted:
+                break
+            if spell in chosen:
+                continue
+            school = _SPELL_SCHOOL[spell]
+            if slots_left.get(school, 0) <= 0:
+                continue
+            slots_left[school] -= 1
+            chosen.append(spell)
+    chosen.sort(key=lambda spell: _SPELL_ORDER_PRIORITY[spell] + rng.uniform(0.0, 2.0))
+
+    tactics: list[SearchTactic] = [_cast(spell) for spell in chosen]
+    if _table_plans_always_shoot(monster) or (_table_plans_use_missile(monster) and rng.random() < GENERATED_PLAN_SHOOT_CHANCE):
+        tactics.insert(rng.randint(0, len(tactics)), _shoot())
+
+    if lure_with_charm:
+        tactics.extend(_melee() for _ in range(rng.randint(3, 5)))
+        tactics.append(_cast(Spell.CHARM))
+        tactics.append(_melee())
+        return tuple(tactics)
+
+    tactics.append(_melee())
+    if profile.temper in (Temper.CAUTIOUS, Temper.COWARDLY) and rng.random() < GENERATED_PLAN_RETREAT_CHANCE:
+        tactics.extend([_melee(), _flee()])
+    return tuple(tactics)
+
+
+def roll_monster_encounter_plan(
+    monster: Monster,
+    rng: random.Random,
+    *,
+    attacker_is_undead: bool = False,
+    variety_rng: random.Random | None = None,
 ) -> tuple[SearchTactic, ...] | None:
     """Rolls a guardian monster's own Special Encounter Plan.
 
@@ -380,6 +528,14 @@ def roll_monster_encounter_plan(
         return None
     if attacker_is_undead and plan.undead_variant is not None:
         return plan.undead_variant.tactics
+    # The varied plans of the intelligent monsters draw from their own stream (``variety_rng``), never from
+    # ``rng``: the dice of the encounter itself keep the sequence they have always had.
+    if (
+        variety_rng is not None
+        and monster_gets_generated_plans(monster)
+        and variety_rng.random() < GENERATED_PLAN_CHANCE
+    ):
+        return generate_monster_encounter_plan(monster, variety_rng, attacker_is_undead=attacker_is_undead)
     if len(plan.variants) == 1:
         return plan.variants[0].tactics
 

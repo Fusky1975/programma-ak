@@ -7243,3 +7243,48 @@ def test_execute_search_cast_ice_suspend_on_a_flying_monster_crashes_it_even_whe
 
     assert crash.called
     assert result.ice_suspend_immobilized is False
+
+
+# -- intelligent guardian: wounded retreat (plan tactic FLEE) --
+
+
+def _fleeing_guardian_search(hurt_by_round: bool):
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE, treasure=None))
+    plan = (
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.FLEE),
+    )
+    calls = {"n": 0}
+
+    def fake_round(leader_combatant, monster_combatant, rng):
+        calls["n"] += 1
+        if hurt_by_round and calls["n"] == 2:
+            monster_combatant.hit_points = 1  # badly wounded after the second round
+        if calls["n"] >= 8:  # safety net: a decisive end if the guardian never runs
+            return MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=1))
+        return MeleeRoundOutcome(result=None)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=plan), patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round", side_effect=fake_round
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel:
+        result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5]))
+    return result, calls, mock_duel
+
+
+def test_a_wounded_intelligent_guardian_runs_away_and_leaves_the_field_to_the_hero():
+    result, calls, mock_duel = _fleeing_guardian_search(hurt_by_round=True)
+
+    assert not mock_duel.called  # the plan has a pending retreat: no atomic fight to the death
+    assert result.monster_fled is True
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+    assert calls["n"] == 2  # two rounds, then the wounded guardian's FLEE comes up
+
+
+def test_an_unhurt_guardian_keeps_fighting_instead_of_fleeing():
+    result, calls, _mock_duel = _fleeing_guardian_search(hurt_by_round=False)
+
+    assert result.monster_fled is False
+    assert calls["n"] == 8  # fought on until the safety net ended it
