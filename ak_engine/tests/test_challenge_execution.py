@@ -3199,6 +3199,114 @@ def test_resolve_challenge_combat_target_tactics_with_no_cast_at_all_behaves_lik
     assert outcome.winner == "a"
 
 
+def _wounding_round(target):
+    """A stand-in for ``resolve_one_melee_round`` that costs ``target`` half its hit points each call."""
+
+    def _round(*_args, **_kwargs):
+        target.hit_points = max(1, target.hit_points // 2)
+        return MeleeRoundOutcome(result=None)
+
+    return _round
+
+
+def test_resolve_challenge_combat_wounded_target_retreats_when_its_plan_says_flee():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    target.hit_points = 20
+    target_tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.FLEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round", side_effect=_wounding_round(target)), patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        outcome = resolve_challenge_combat(
+            [SearchTactic(Maneuver.MELEE)],
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+            target_retreats_when_wounded=True,
+        )
+
+    assert outcome.target_fled is True
+    assert outcome.winner == "a"
+    assert outcome.fled is False
+
+
+def test_resolve_challenge_combat_target_flee_is_ignored_without_the_retreat_flag():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    target.hit_points = 20
+    target_tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.FLEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round", side_effect=_wounding_round(target)), patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            [SearchTactic(Maneuver.MELEE)],
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert outcome.target_fled is False
+
+
+def test_resolve_challenge_combat_target_with_missiles_opens_with_a_volley_the_caster_never_ordered():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    shot = FireArrowShot(shooter="b", hit=True, damage=3)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_volley, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_volley.return_value = EncounterCombatResult(winner=None, rounds=1, shots=(shot,))
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            [SearchTactic(Maneuver.MELEE)],
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=[SearchTactic(Maneuver.SHOOT), SearchTactic(Maneuver.MELEE)],
+            target_opens_with_missiles=True,
+        )
+
+    assert mock_volley.call_count == 1
+    assert shot in outcome.fire_arrow_shots
+    assert outcome.winner == "a"
+
+
+def test_resolve_challenge_combat_no_opening_volley_unless_the_target_plan_has_missiles():
+    state, caster_leader, caster, target_leader, target = _combatants()
+
+    with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_volley, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        resolve_challenge_combat(
+            [SearchTactic(Maneuver.MELEE)],
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=[SearchTactic(Maneuver.MELEE)],
+        )
+
+    assert not mock_volley.called
+
+
 # -- Phase 305: character-vs-character Steal [ST], rulebook [5.5] ------
 
 

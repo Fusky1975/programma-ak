@@ -9,7 +9,8 @@ from ak_engine.models.enums import ActionCode, Ability, Maneuver
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster
+from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_MAGIC_ABILITIES, Monster
+from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
@@ -19,6 +20,7 @@ from ak_engine.turn.random_encounter_execution import (
     dispatch_random_encounter_after_phase,
     monster_combatant,
     resolve_random_encounter,
+    wandering_monster_leader,
 )
 from ak_engine.turn.search_decode import SearchTactic
 
@@ -239,6 +241,69 @@ def test_resolve_random_encounter_monster_wins_removes_leader():
     assert result.leader_died is True
     assert 1 not in state.leaders
     assert 1 in state.dead_leaders
+
+
+# -- the wandering monster's own plan --
+
+
+def _run_with_stubbed_combat(monster, outcome, *, rng=None):
+    state = _base_state()
+    state.add_leader(_hero())
+    plan = _plan(PlanPhase("P0", ActionCode.LMOVE, 0))
+    with patch("ak_engine.turn.random_encounter_execution.terrain_roll", return_value=True), patch(
+        "ak_engine.turn.random_encounter_execution.select_random_monster", return_value=monster
+    ), patch("ak_engine.turn.random_encounter_execution.is_patrol_framing", return_value=False), patch(
+        "ak_engine.turn.random_encounter_execution.resolve_challenge_combat", return_value=outcome
+    ) as mock_combat:
+        result = resolve_random_encounter(
+            state, 1, HOME, plan, check_escort=True, rng=rng or ScriptedRandom([0.5] * 8)
+        )
+    return result, mock_combat
+
+
+def test_wandering_monster_leader_carries_the_species_talents_temper_and_alignment():
+    nec_mage = wandering_monster_leader(Monster.NEC_MAGE, HOME)
+    assert nec_mage.leader_id < 0 and nec_mage.kingdom_id is None
+    for ability, level in MONSTER_MAGIC_ABILITIES[Monster.NEC_MAGE].items():
+        assert nec_mage.skills.pair_for_ability(ability)[0] == level
+    assert nec_mage.temper is not None
+    assert wandering_monster_leader(Monster.LICH, HOME).alignment is Alignment.UNDEAD
+
+
+def test_a_wandering_monster_fights_with_its_own_plan_and_retreats_when_wounded():
+    _result, mock_combat = _run_with_stubbed_combat(Monster.NEC_MAGE, ChallengeCombatOutcome(winner=None))
+    kwargs = mock_combat.call_args.kwargs
+    assert kwargs["target_retreats_when_wounded"] is True
+    assert kwargs["target_tactics"]
+    assert mock_combat.call_args.args[3].leader_id < 0  # the monster's stand-in leader
+
+
+def test_a_wandering_monster_with_a_missile_plan_opens_with_missiles():
+    _result, mock_combat = _run_with_stubbed_combat(Monster.ARCHER, ChallengeCombatOutcome(winner=None))
+    assert mock_combat.call_args.kwargs["target_opens_with_missiles"] is True
+    _result, mock_combat = _run_with_stubbed_combat(Monster.SWORDSMAN, ChallengeCombatOutcome(winner=None))
+    assert mock_combat.call_args.kwargs["target_opens_with_missiles"] is False
+
+
+def test_a_fleeing_wandering_monster_is_reported_and_the_hero_lives():
+    result, _mock = _run_with_stubbed_combat(Monster.TROLL, ChallengeCombatOutcome(winner="a", target_fled=True))
+    assert result.monster_fled is True
+    assert result.leader_died is False
+
+
+def test_the_wandering_monster_plan_never_draws_from_the_encounter_dice():
+    seen = []
+    real = roll_monster_encounter_plan
+
+    def _spy(monster, rng, **kwargs):
+        seen.append((rng, kwargs.get("variety_rng")))
+        return real(monster, rng, **kwargs)
+
+    encounter_rng = ScriptedRandom([0.5] * 8)
+    with patch("ak_engine.turn.random_encounter_execution.roll_monster_encounter_plan", side_effect=_spy):
+        _run_with_stubbed_combat(Monster.WHITE_MAGE, ChallengeCombatOutcome(winner=None), rng=encounter_rng)
+
+    assert seen and seen[0][0] is not encounter_rng and seen[0][1] is not encounter_rng
 
 
 def test_resolve_random_encounter_credits_melee_experience_on_a_landed_hit():

@@ -1702,6 +1702,9 @@ def _resolve_steal_tactic(
 class ChallengeCombatOutcome:
     winner: str | None  # "a" (challenger/pursuer) / "b" (target) / None (inconclusive)
     fled: bool = False
+    # The target (a wandering monster, with a plan of its own) ran away wounded: its plan's FLEE came up
+    # once it was down to half its hit points or less. ``winner`` is "a" then.
+    target_fled: bool = False
     # Phase 306: whichever Steal outcome `_resolve_steal_tactic()` returned
     # ("success"/"evaded"/"executed"/"ransom"/"combat"/"unresolved"), if the
     # plan contained a STEAL tactic at all -- carried through to whatever
@@ -1790,6 +1793,8 @@ def resolve_challenge_combat(
     rng: random.Random,
     *,
     target_tactics: list[SearchTactic] | None = None,
+    target_retreats_when_wounded: bool = False,
+    target_opens_with_missiles: bool = False,
 ) -> ChallengeCombatOutcome:
     """Walks an Encounter Plan's full ``SearchTactic`` list (not just each
     entry's own ``.maneuver``, unlike ``turn/encounter.py resolve_
@@ -2100,6 +2105,7 @@ def resolve_challenge_combat(
     current_range = CombatRange.SPELL_RANGE
     melee_setup_done = False
     target_tactic_index = 0
+    target_starting_hit_points = target.hit_points
     # Summons that dissolved each other (turn/encounter.py SUMMON_SPELLS): the caster's
     # tactics already used up as the answer to the target's own summon, and where the
     # caster stands in his own plan (what he would do next).
@@ -2140,11 +2146,12 @@ def resolve_challenge_combat(
     hand_of_death_channels: list[tuple[str, str, tuple[int, ...], int | None, str]] = []
 
     def _outcome(
-        *, winner: str | None = None, fled: bool = False
+        *, winner: str | None = None, fled: bool = False, target_fled: bool = False
     ) -> ChallengeCombatOutcome:
         return ChallengeCombatOutcome(
             winner=winner,
             fled=fled,
+            target_fled=target_fled,
             steal_outcome=steal_outcome,
             steal_capture_range=steal_capture_range,
             gold_raided=gold_raided,
@@ -2154,6 +2161,13 @@ def resolve_challenge_combat(
             fizzled_spells=tuple(fizzled_spells),
             hand_of_death_channels=tuple(hand_of_death_channels),
         )
+
+    def _round_outcome(round_result: str | None) -> ChallengeCombatOutcome:
+        if round_result == "fled":
+            return _outcome(fled=True)
+        if round_result == "target_fled":
+            return _outcome(winner="a", target_fled=True)
+        return _outcome(winner=round_result)
 
     def _peek_target_cast() -> SearchTactic | None:
         """Phase 674 -- mirrors `turn/search_execution.py _peek_monster_
@@ -2177,16 +2191,26 @@ def resolve_challenge_combat(
                 return None
             if current.maneuver is Maneuver.CAST:
                 return current
+            if current.maneuver is Maneuver.FLEE and target_retreats_when_wounded:
+                # A wounded retreat (a wandering monster's own plan; a character target's Flee stays
+                # unwired, see above): only once the target is down to half its starting hit points or
+                # less; until then it keeps fighting.
+                if target.hit_points * 2 <= target_starting_hit_points:
+                    return current
+                return None
             target_tactic_index += 1  # unwired for the target's own side too -- skip defensively
         return None
 
     def _advance_target_tactic() -> None:
         nonlocal target_tactic_index
         if target_tactics is not None and target_tactic_index < len(target_tactics):
+            if target_retreats_when_wounded and target_tactics[target_tactic_index].maneuver is Maneuver.FLEE:
+                return  # a pending wounded retreat stays pending
             target_tactic_index += 1
 
     def _target_has_more_casts_pending() -> bool:
-        return any(t.maneuver is Maneuver.CAST for t in (target_tactics or ())[target_tactic_index:])
+        pending = (Maneuver.CAST, Maneuver.FLEE) if target_retreats_when_wounded else (Maneuver.CAST,)
+        return any(t.maneuver in pending for t in (target_tactics or ())[target_tactic_index:])
 
     def _is_summon_cast(tactic: SearchTactic) -> bool:
         if tactic.maneuver is not Maneuver.CAST or tactic.sub_object is None:
@@ -2309,6 +2333,8 @@ def resolve_challenge_combat(
 
         nonlocal melee_setup_done
         target_cast = _peek_target_cast()
+        if target_cast is not None and target_cast.maneuver is Maneuver.FLEE:
+            return True, "target_fled"
         if target_cast is None:
             if is_last_tactic and not _target_has_more_casts_pending():
                 result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
@@ -2405,6 +2431,21 @@ def resolve_challenge_combat(
         return _outcome(fled=True)
     if target_cast_outcome in ("a", "b"):
         return _outcome(winner=target_cast_outcome)
+
+    if (
+        target_opens_with_missiles
+        and not target.blocked_from_archery
+        and not any(t.maneuver is Maneuver.SHOOT for t in tactics)
+    ):
+        # A wandering monster whose own plan has a missile attack (an archer, a dragon) fires as the
+        # character closes in, even though the character's own plan never orders a shot -- the same "each
+        # side follows its own plan" reading `turn/search_execution.py` uses for a guardian's `FI`.
+        needs_closing = current_range is not CombatRange.BOW_RANGE
+        current_range = _close_to(CombatRange.BOW_RANGE, current_range)
+        opening_volley = resolve_fire_arrow_duel(caster, target, rng, closing_side="a" if needs_closing else None)
+        fire_arrow_shots.extend(opening_volley.shots)
+        if opening_volley.winner is not None:
+            return _outcome(winner=opening_volley.winner)
 
     for index, tactic in enumerate(tactics):
         if index in consumed_caster_tactics:
@@ -2537,10 +2578,12 @@ def resolve_challenge_combat(
                 current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
             encounter_over, round_result = _resolve_melee_round(is_last_tactic=(index == len(tactics) - 1))
             if encounter_over:
-                return _outcome(fled=True) if round_result == "fled" else _outcome(winner=round_result)
+                return _round_outcome(round_result)
             continue
         if tactic.maneuver is Maneuver.CAST:
             target_cast_at_melee = _peek_target_cast() if current_range is CombatRange.MELEE_RANGE else None
+            if target_cast_at_melee is not None and target_cast_at_melee.maneuver is Maneuver.FLEE:
+                return _outcome(winner="a", target_fled=True)
             # Phase 1042 bug fix -- mirrors the SHOOT-at-Melee-Range
             # branch's own explicit `not caster.blocked_from_archery`
             # guard just above: a caster already blocked_from_cast is
@@ -2725,7 +2768,7 @@ def resolve_challenge_combat(
     while True:
         encounter_over, round_result = _resolve_melee_round(is_last_tactic=True)
         if encounter_over:
-            return _outcome(fled=True) if round_result == "fled" else _outcome(winner=round_result)
+            return _round_outcome(round_result)
 
 
 @dataclass(slots=True)

@@ -8638,6 +8638,8 @@ def describe_random_encounter_combat(
     if result.leader_died:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
         lines.append(render_character_death(character_name, rng))
+    elif result.monster_fled:
+        lines.append(render_monster_fled(opponent_name, character_name, rng))
 
     return lines
 
