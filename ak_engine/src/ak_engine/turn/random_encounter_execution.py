@@ -133,6 +133,7 @@ from ak_engine.turn.random_encounter import (
     select_random_monster,
     terrain_roll,
 )
+from ak_engine.turn.search_execution import _apply_monster_duel_merit
 from ak_engine.turn.sep_decode import sep_accepts_challenge
 
 # Phase 685 (search_execution.py)'s own sourced value, cited directly
@@ -410,6 +411,14 @@ def resolve_random_encounter(
         add_experience(leader, Ability.MELEE, 10, rng)
     if any(shot.shooter == "a" for shot in outcome.fire_arrow_shots):
         add_experience(leader, Ability.ARCHERY, 10, rng)
+
+    # Duellist / King of Cowards / Bravest of the Brave: the personal combat against one of the humanlike monsters
+    # (Giant..Witch, the same group a Search guardian fight uses) moves these titles' merit, one-sided, exactly as
+    # in `turn/search_execution.py _apply_monster_duel_merit()`; a monster that merely ran away is no decisive win.
+    if not is_patrol and (outcome.winner == "b" or (outcome.winner == "a" and not outcome.target_fled)):
+        _apply_monster_duel_merit(
+            state, leader, monster, leader_won=outcome.winner == "a", leader_combatant=leader_combatant
+        )
 
     leader_died = False
     gold_found = 0

@@ -4942,6 +4942,49 @@ def test_record_battle_merit_credits_winning_naval_commander():
     assert state.leaders[2].merit_tally.land_battles_won_points == 0
 
 
+def test_record_battle_merit_feeds_the_race_titles_of_the_winning_and_losing_commanders():
+    # The 11 race titles' Tit_Pts (turn/race_titles.py): per unit of a titled race, +1 to the commander of the side
+    # that won, and 1 loss point (worth -2 in the score) to the commander of the side that lost.
+    state = _merit_state()
+    winners = [
+        ArmyState(10, 1, ArmyType.LEGION, Quality.AVERAGE, FIELD, race=Race.HUMAN),
+        ArmyState(11, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, race=Race.ELVEN),
+        ArmyState(12, 1, ArmyType.GARRISON, Quality.AVERAGE, FIELD, race=Race.NO_RACE),  # no title for this one
+    ]
+    losers = [ArmyState(20, 2, ArmyType.AXEMEN, Quality.AVERAGE, FIELD, race=Race.DWARVEN)]
+
+    _record_battle_merit(state, Terrain.PLAINS, BattleResult(winner="attacker"), 1, 2, winners, losers)
+
+    won = state.leaders[1].race_title_tally
+    assert won[Race.HUMAN].front_line_battles_won_points == 1 and won[Race.ELVEN].front_line_battles_won_points == 1
+    assert Race.NO_RACE not in won
+    lost = state.leaders[2].race_title_tally
+    assert lost[Race.DWARVEN].front_line_battles_lost_points == 1
+    assert lost[Race.DWARVEN].front_line_battles_won_points == 0
+
+
+def test_a_tie_or_an_unled_side_credits_no_race_title():
+    state = _merit_state()
+    armies = [ArmyState(10, 1, ArmyType.LEGION, Quality.AVERAGE, FIELD, race=Race.HUMAN)]
+
+    _record_battle_merit(state, Terrain.PLAINS, BattleResult(winner="tie"), 1, 2, armies, armies)
+    _record_battle_merit(state, Terrain.PLAINS, BattleResult(winner="attacker"), None, 2, armies, armies)
+
+    assert state.leaders[1].race_title_tally == {} and state.leaders[2].race_title_tally[Race.HUMAN].front_line_battles_lost_points == 1
+
+
+def test_a_won_battle_makes_an_elven_commander_a_candidate_for_the_elven_title():
+    from ak_engine.turn.race_titles import race_title_merit_points
+
+    state = _merit_state()
+    state.leaders[1].race = Race.ELVEN
+    elves = [ArmyState(i, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, race=Race.ELVEN) for i in range(3)]
+
+    _record_battle_merit(state, Terrain.PLAINS, BattleResult(winner="attacker"), 1, 2, elves, [])
+
+    assert race_title_merit_points(state, state.leaders[1], Race.ELVEN) == 6  # 3 won, doubled for an Elven commander
+
+
 def test_record_battle_merit_applies_the_attacking_garrison_modifier():
     # NUOVE REGOLE's own worked example: a Crack Garrison that attacks
     # and is destroyed gives only 2 points (3 - 1), not 3.
