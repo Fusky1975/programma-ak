@@ -292,9 +292,16 @@ from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.monster import (
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
+    HAND_OF_DEATH_IMMUNE_MONSTERS,
+    ICE_SUSPENSION_FLYING_MONSTERS,
+    ICE_SUSPENSION_IMMUNE_MONSTERS,
     MONSTER_COMBAT_STATS,
     MONSTER_NAMES,
+    SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS,
+    SPIRITWRACK_MECHANICAL_MONSTERS,
     SPIRITWRACK_UNDEAD_MONSTERS,
+    SUBMARINE_MONSTERS,
+    Monster,
     MonsterSpeed,
     roll_gate_demon_type,
 )
@@ -317,12 +324,14 @@ from ak_engine.turn.encounter import (
     INFRARED_GOGGLES_HIT_CHANCE_MULTIPLIER,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
+    MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
     STEAL_THIEF_MASTERY_ABILITIES,
     PERSONAL_COMBAT_SPELL_ABILITY,
     PERSONAL_COMBAT_SPELL_SELF_ONLY,
     Combatant,
     CombatRange,
     EncounterCombatResult,
+    MirrorImageIntelligenceTier,
     FireArrowShot,
     MeleeSwing,
     apply_temper_melee_setup,
@@ -343,6 +352,8 @@ from ak_engine.turn.encounter import (
     weapon_defensive_hit_multiplier,
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
+    roll_ice_suspension_flying_bonus_rounds,
+    roll_ice_suspension_flying_crash_damage,
     ice_suspension_slowed_bonus_rounds,
     illusory_hero_alignments_are_implacably_hostile,
     loot_defeated_leader,
@@ -811,6 +822,22 @@ def _leader_combatant(
     )
 
 
+def _mirror_image_opponent(
+    state: GameState, target_leader: LeaderState | None, target_monster: Monster | None
+) -> tuple[MirrorImageIntelligenceTier, float]:
+    """Who has to believe in the illusion, and how hard it is to fool them: a monster by its species'
+    intelligence tier (no bonus -- "monster opponents don't get this bonus"), a King or Hero as a Medium
+    Human with +2%/Sage level and +1%/Illusion level of **their own** (the opponent's, not the caster's)."""
+
+    if target_monster is not None:
+        return MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER[target_monster], 0.0
+    if target_leader is None:
+        return MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT, 0.0
+    sage_level = effective_skill_level(state, target_leader, Ability.SAGE)
+    illusion_level = effective_skill_level(state, target_leader, Ability.ILLUSION)
+    return MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT, mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
+
+
 def _resolve_personal_combat_cast(
     caster: Combatant,
     caster_leader: LeaderState | None,
@@ -831,8 +858,15 @@ def _resolve_personal_combat_cast(
     summon_probe: bool = False,
     opponent_summon_counter: "Callable[[], Spell | None] | None" = None,
     combat_range: CombatRange = CombatRange.SPELL_RANGE,
+    target_monster: Monster | None = None,
 ) -> str | None:
-    """Leader-vs-leader Personal-Combat spell dispatch -- see module
+    """``target_monster``: the species of the wandering monster ``target`` stands for (its stand-in leader
+    carries the alignment and talents, but the species decides what the spells of the *character* do to
+    it -- the same rules ``turn/search_execution.py`` applies to a guardian: submarine monsters shrug off
+    Telekinetic Storm and Fireball, mechanical and Undead ones Spiritwrack, animals take half of it, flying
+    ones crash under Ice Suspension, and a monster's intelligence decides who believes in a Mirror Image).
+
+    Leader-vs-leader Personal-Combat spell dispatch -- see module
     docstring's own Phase 290 addendum for how this was re-derived
     branch-for-branch from ``turn/search_execution.py
     _resolve_cast_tactic()``'s own leader-target branches. Returns
@@ -1192,9 +1226,14 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.SPIRITWRACK:
-        target_is_immune = target_leader is not None and target_leader.alignment is Alignment.UNDEAD
+        if target_monster is not None:
+            target_is_immune = target_monster in (SPIRITWRACK_UNDEAD_MONSTERS | SPIRITWRACK_MECHANICAL_MONSTERS)
+            target_is_animal = target_monster in SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
+        else:
+            target_is_immune = target_leader is not None and target_leader.alignment is Alignment.UNDEAD
+            target_is_animal = False
         target.melee_damage_dealt_reduction += spiritwrack_melee_damage_reduction(
-            level, rng, target_is_immune=target_is_immune, target_is_animal_intelligence=False
+            level, rng, target_is_immune=target_is_immune, target_is_animal_intelligence=target_is_animal
         )
         target.blocked_from_cast = target.blocked_from_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
         return None
@@ -1216,8 +1255,9 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.TELEK_STORM:
-        target.hit_points -= roll_telekinetic_storm_victim_damage(rng, target_is_immune=False)
-        caster.hit_points -= roll_telekinetic_storm_caster_damage(combat_range, rng, target_is_immune=False)
+        telek_immune = target_monster in SUBMARINE_MONSTERS
+        target.hit_points -= roll_telekinetic_storm_victim_damage(rng, target_is_immune=telek_immune)
+        caster.hit_points -= roll_telekinetic_storm_caster_damage(combat_range, rng, target_is_immune=telek_immune)
         # Phase 1042 -- reviewed and confirmed intentional (user-decided):
         # on a genuine double-KO (both target and caster drop to <= 0 HP
         # from this same cast), the target's own death is checked first
@@ -1270,14 +1310,29 @@ def _resolve_personal_combat_cast(
         # by 67% for a target whose own Kingdom holds it.
         target_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader is not None else None
         target_has_asbestos_clothing = target_kingdom is not None and Discovery.ASBESTOS_CLOTHING in target_kingdom.discoveries
+        # [4.2.4] "Fireball can be cast against underwater monsters" only with ENHANCED_COMBAT_EL_SPELLS.
+        fireball_immune = target_monster in SUBMARINE_MONSTERS and (
+            AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS not in caster_leader.advanced_abilities
+        )
         target.hit_points -= roll_fireball_damage(
-            level, rng, target_is_immune=False, target_has_asbestos_clothing=target_has_asbestos_clothing
+            level, rng, target_is_immune=fireball_immune, target_has_asbestos_clothing=target_has_asbestos_clothing
         )
         if target.hit_points <= 0:
             return "a"
         return None
 
     if spell is Spell.ICE_SUSPEND:
+        if target_monster is not None:
+            ice_immune = target_monster in ICE_SUSPENSION_IMMUNE_MONSTERS and (
+                AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS not in caster_leader.advanced_abilities
+            )
+            if ice_immune:
+                return None
+            if target_monster in ICE_SUSPENSION_FLYING_MONSTERS:
+                # Flying monsters are never frozen or slowed ([4.2.4]): they crash, whatever their hit points.
+                target.hit_points -= roll_ice_suspension_flying_crash_damage(rng)
+                caster.bonus_unanswered_attacks += roll_ice_suspension_flying_bonus_rounds(rng)
+                return "a" if target.hit_points <= 0 else None
         if ice_suspension_is_frozen(target.hit_points, level):
             return "a"
         caster.bonus_unanswered_attacks += ice_suspension_slowed_bonus_rounds(target.hit_points, level)
@@ -1291,6 +1346,8 @@ def _resolve_personal_combat_cast(
         # False is the whole widening here.
         if AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS in caster_leader.advanced_abilities:
             target_is_immune = False
+        elif target_monster is not None:
+            target_is_immune = target_monster in HAND_OF_DEATH_IMMUNE_MONSTERS  # also the mechanical ones
         else:
             target_is_immune = target_leader is not None and target_leader.alignment in (
                 Alignment.UNDEAD,
@@ -1351,10 +1408,7 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.MIRROR_IMAGE:
-        opponent_tier = MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT
-        sage_level = effective_skill_level(state, caster_leader, Ability.SAGE)
-        illusion_level = effective_skill_level(state, caster_leader, Ability.ILLUSION)
-        opponent_disbelief_bonus = mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
+        opponent_tier, opponent_disbelief_bonus = _mirror_image_opponent(state, target_leader, target_monster)
         # Phase 494: same wiring as turn/search_execution.py's own Mirror-
         # Image branch -- see that call site's comment. Here both sides
         # can be a real leader (or None for a Duel-side garrison
@@ -1383,10 +1437,7 @@ def _resolve_personal_combat_cast(
         if hero is None:
             return None
         hero_combatant = _leader_combatant(hero, state)
-        opponent_tier = MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT
-        sage_level = effective_skill_level(state, caster_leader, Ability.SAGE)
-        illusion_level = effective_skill_level(state, caster_leader, Ability.ILLUSION)
-        opponent_disbelief_bonus = mirror_image_leader_disbelief_bonus(sage_level, illusion_level)
+        opponent_tier, opponent_disbelief_bonus = _mirror_image_opponent(state, target_leader, target_monster)
         turns_on_master = (
             hero.alignment is not None
             and caster_leader.alignment is not None
@@ -1795,6 +1846,7 @@ def resolve_challenge_combat(
     target_tactics: list[SearchTactic] | None = None,
     target_retreats_when_wounded: bool = False,
     target_opens_with_missiles: bool = False,
+    target_monster: Monster | None = None,
 ) -> ChallengeCombatOutcome:
     """Walks an Encounter Plan's full ``SearchTactic`` list (not just each
     entry's own ``.maneuver``, unlike ``turn/encounter.py resolve_
@@ -2267,6 +2319,7 @@ def resolve_challenge_combat(
             cast_spells_attempted=caster_cast_spells_attempted,
             fizzled_spells=fizzled_spells,
             summon_probe=True,
+            target_monster=target_monster,
         )
         return Spell(tactics[cursor].sub_object) if probe == SUMMON_READY else None
 
@@ -2640,6 +2693,7 @@ def resolve_challenge_combat(
                 melee_swings=melee_swings,
                 opponent_summon_counter=_target_counters_summon,
                 combat_range=current_range,
+                target_monster=target_monster,
             )
             # Phase 1042 bug fix -- see _resolve_personal_combat_cast()'s
             # own Phase 1042 docstring addendum and _resolve_target_cast()'s

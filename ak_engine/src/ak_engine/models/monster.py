@@ -1103,6 +1103,7 @@ def roll_gate_demon_type(rng: random.Random) -> Monster:
 # addendum for the WH/NE/EL/PS/IL abbreviation mapping and why only 29
 # of the 60 species appear here (the other 31 genuinely have none).
 MONSTER_MAGIC_ABILITIES: dict[Monster, dict[Ability, int]] = {
+    Monster.GIANT: {Ability.ILLUSION: 2},  # Mostri.md (user, 2026-11-26)
     Monster.SPECTRE: {Ability.NECROMANCY: 1},
     Monster.COUATL: {Ability.PSYCHIC: 3},
     Monster.SPHINX: {Ability.NECROMANCY: 2},
@@ -1114,7 +1115,7 @@ MONSTER_MAGIC_ABILITIES: dict[Monster, dict[Ability, int]] = {
     Monster.SWORDSMAN: {Ability.ILLUSION: 1},
     Monster.WHITE_MAGE: {Ability.WHITE: 3, Ability.NECROMANCY: 2, Ability.ILLUSION: 2},
     Monster.NEC_MAGE: {Ability.NECROMANCY: 3},
-    Monster.ELE_MAGE: {Ability.ELEMENTAL: 3},
+    Monster.ELE_MAGE: {Ability.ELEMENTAL: 3, Ability.ILLUSION: 1},  # Mostri.md (user, 2026-11-26)
     Monster.PSY_MAGE: {Ability.PSYCHIC: 3, Ability.WHITE: 2, Ability.ILLUSION: 2},
     Monster.ILL_MAGE: {Ability.ILLUSION: 3, Ability.PSYCHIC: 2},
     Monster.WITCH: {Ability.NECROMANCY: 3, Ability.PSYCHIC: 2},

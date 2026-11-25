@@ -90,6 +90,7 @@ from ak_engine.models.monster import (
     MONSTER_RUNTIME_PROFILE,
     SPIRITWRACK_UNDEAD_MONSTERS,
     Monster,
+    roll_monster_alignment,
 )
 from ak_engine.models.monster_encounter_plan import roll_monster_encounter_plan
 from ak_engine.models.enums import Maneuver
@@ -196,16 +197,20 @@ def _without_magic_most_of_the_time(plan: tuple[SearchTactic, ...] | None, rng: 
     return tuple(t for t in plan if t.maneuver is not Maneuver.CAST) or None
 
 
-def wandering_monster_leader(monster: Monster, coord: HexCoord) -> LeaderState:
+def wandering_monster_leader(monster: Monster, coord: HexCoord, alignment_rng: random.Random | None = None) -> LeaderState:
     """A stand-in "character" for a wandering monster -- never registered in ``GameState`` -- carrying the
     monster's own magic talents, temper and alignment, so that it can cast the spells of its plan and so
-    that the spells the hero casts at it see what it is (undead, anti-holy...)."""
+    that the spells the hero casts at it see what it is (undead, anti-holy...). A species with several
+    alignments ("Neutral 50% / Pagan 50%") gets one rolled from ``alignment_rng`` (the first one without)."""
 
     raw_values = [0] * 31
     for ability, level in MONSTER_MAGIC_ABILITIES.get(monster, {}).items():
         raw_values[ability.value * 2] = level
     options = MONSTER_ALIGNMENT_DISTRIBUTION.get(monster)
-    alignment = options[0].alignment if options else None
+    if alignment_rng is not None:
+        alignment = roll_monster_alignment(monster, alignment_rng)
+    else:
+        alignment = options[0].alignment if options else None
     if monster in SPIRITWRACK_UNDEAD_MONSTERS:
         alignment = Alignment.UNDEAD
     profile = MONSTER_RUNTIME_PROFILE.get(monster)
@@ -387,13 +392,14 @@ def resolve_random_encounter(
         decoded_sep,
         leader,
         leader_combatant,
-        None if is_patrol else wandering_monster_leader(monster, coord),
+        None if is_patrol else wandering_monster_leader(monster, coord, variety_rng),
         opponent,
         state,
         rng,
         target_tactics=list(monster_plan) if monster_plan else None,
         target_retreats_when_wounded=not is_patrol,
         target_opens_with_missiles=monster_plan is not None and any(t.maneuver is Maneuver.SHOOT for t in monster_plan),
+        target_monster=None if is_patrol else monster,
     )
 
     if any(swing.hit for swing in outcome.melee_swings if swing.attacker == "a"):

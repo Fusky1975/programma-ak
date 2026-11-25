@@ -272,12 +272,16 @@ def test_wandering_monster_leader_carries_the_species_talents_temper_and_alignme
         assert nec_mage.skills.pair_for_ability(ability)[0] == level
     assert nec_mage.temper is not None
     assert wandering_monster_leader(Monster.LICH, HOME).alignment is Alignment.UNDEAD
+    # a species with several alignments gets one rolled from the stream it is given
+    giant_alignments = {wandering_monster_leader(Monster.GIANT, HOME, random.Random(seed)).alignment for seed in range(40)}
+    assert giant_alignments == {Alignment.NEUTRAL, Alignment.PAGAN}
 
 
 def test_a_wandering_monster_fights_with_its_own_plan_and_retreats_when_wounded():
     _result, mock_combat = _run_with_stubbed_combat(Monster.NEC_MAGE, ChallengeCombatOutcome(winner=None))
     kwargs = mock_combat.call_args.kwargs
     assert kwargs["target_retreats_when_wounded"] is True
+    assert kwargs["target_monster"] is Monster.NEC_MAGE  # the hero's spells follow the species rules
     assert kwargs["target_tactics"]
     assert mock_combat.call_args.args[3].leader_id < 0  # the monster's stand-in leader
 
@@ -384,6 +388,7 @@ def test_a_patrol_is_not_a_monster_no_plan_no_purse_no_defender_points():
     assert mock_combat.call_args.args[3] is None
     assert mock_combat.call_args.kwargs["target_tactics"] is None
     assert mock_combat.call_args.kwargs["target_retreats_when_wounded"] is False
+    assert mock_combat.call_args.kwargs["target_monster"] is None
     assert result.gold_found == 0
     assert hero.merit_tally.monster_hp_defeated == 0
 
