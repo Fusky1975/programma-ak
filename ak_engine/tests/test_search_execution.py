@@ -652,6 +652,21 @@ def test_execute_search_leader_wins_without_treasure_grants_nothing():
     assert state.items == {}
 
 
+def test_execute_search_hero_killed_by_the_guardian_keeps_his_legendary_item_in_the_game():
+    state = _state_with_leader()
+    state.add_leader(LeaderState(77, 1, "Friend", LOCATION))
+    excalibur = state.add_item(Treasure.LEADERSHIP_HUMAN, LEADER_ID)
+    minor = state.add_item(Treasure.ABILITY_MARCH, LEADER_ID)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.TROLL))
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5] + [0.1, 0.9, 0.9] * 30))
+
+    assert result.leader_killed is True
+    assert [r.taken_by_leader_id for r in result.rescued_items] == [77]
+    assert state.items[excalibur.item_id].owner_leader_id == 77
+    assert state.items[minor.item_id].owner_leader_id == LEADER_ID  # a minor item may be lost with him
+
+
 def test_execute_search_leader_loses_is_removed_from_state():
     # A leaderless-skill searcher (melee_skill=0) faces a Troll
     # (melee_skill=1): the Troll always acts first and always hits;

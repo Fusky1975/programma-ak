@@ -267,6 +267,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, GARRISON_DEFENSE_STRENGTH, ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
+from ak_engine.turn.legendary_item_rescue import deliver_squire_items
 from ak_engine.turn.combat import Quality
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
@@ -1064,6 +1065,7 @@ def run_turn(
     # GameState.remove_leader() itself. See that method's own docstring
     # for the full reasoning.
     state.install_pending_royal_heirs()
+    deliver_squire_items(state)  # the Heir is in place: a dead King's squire reaches him
     state.turn_number += 1
 
     return results
