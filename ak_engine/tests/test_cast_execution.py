@@ -4378,20 +4378,18 @@ def test_a_resurrected_undead_character_of_a_divine_resurrector_becomes_good():
 
 
 # ---------------------------------------------------------------------------
-# Elemental Magic audit: Tornado and Earthquake need an enemy province ([4.2.4])
+# Tornado and Earthquake may target any province (user ruling 2026-11-25)
 # ---------------------------------------------------------------------------
 
 
-def _province_owned_by(owner: int | None) -> GameState:
+@pytest.mark.parametrize("spell", [Spell.TORNADO, Spell.EARTHQUAKE])
+@pytest.mark.parametrize("owner", [1, 2, None])
+def test_tornado_and_earthquake_work_on_any_province_own_enemy_or_independent(spell: Spell, owner: int | None):
+    # Not only enemy provinces: an ally's province used against you, a deterrent, or an
+    # independent province to be conquered more easily.
     state = build_state()
     state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=owner))
     state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
-    return state
-
-
-@pytest.mark.parametrize("spell", [Spell.TORNADO, Spell.EARTHQUAKE])
-def test_tornado_and_earthquake_work_on_an_enemy_province(spell: Spell):
-    state = _province_owned_by(2)
 
     result = execute_cast(
         state, 1, CASTER_ID, CastRequest(spell=spell, target=_target(LOCATION)), rng=ScriptedRandom([0.01, 0.5, 0.5, 0.5])
@@ -4400,28 +4398,15 @@ def test_tornado_and_earthquake_work_on_an_enemy_province(spell: Spell):
     assert result.applied is True
 
 
-@pytest.mark.parametrize("spell", [Spell.TORNADO, Spell.EARTHQUAKE])
-@pytest.mark.parametrize("owner", [1, None])
-def test_tornado_and_earthquake_refuse_an_own_or_unowned_province(spell: Spell, owner: int | None):
-    state = _province_owned_by(owner)
+def test_tornado_and_earthquake_work_on_an_allied_province():
+    for spell in (Spell.TORNADO, Spell.EARTHQUAKE):
+        state = build_state()
+        state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+        state.allied_kingdoms.add(frozenset({1, 2}))
+        state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
 
-    result = execute_cast(
-        state, 1, CASTER_ID, CastRequest(spell=spell, target=_target(LOCATION)), rng=ScriptedRandom([0.01, 0.5, 0.5])
-    )
+        result = execute_cast(
+            state, 1, CASTER_ID, CastRequest(spell=spell, target=_target(LOCATION)), rng=ScriptedRandom([0.01, 0.5, 0.5, 0.5])
+        )
 
-    assert result.applied is False
-    assert result.reason == "target province is not an enemy province"
-    assert state.provinces[LOCATION].tax_modifier_percent == 0
-
-
-@pytest.mark.parametrize("spell", [Spell.TORNADO, Spell.EARTHQUAKE])
-def test_tornado_and_earthquake_refuse_an_allied_province(spell: Spell):
-    state = _province_owned_by(2)
-    state.allied_kingdoms.add(frozenset({1, 2}))
-
-    result = execute_cast(
-        state, 1, CASTER_ID, CastRequest(spell=spell, target=_target(LOCATION)), rng=ScriptedRandom([0.01, 0.5, 0.5])
-    )
-
-    assert result.applied is False
-    assert result.reason == "target province is not an enemy province"
+        assert result.applied is True
