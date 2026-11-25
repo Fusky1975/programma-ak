@@ -2101,6 +2101,21 @@ def test_illus_armies_can_target_the_caster_himself():
     assert state.leaders[CASTER_ID].phantasmal_armies_level == 2
 
 
+def test_illus_armies_repeated_casts_are_not_cumulative_and_the_strongest_level_stands():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_leader(LeaderState(79, 1, "Weaker Illusionist", LOCATION, skills=_skills_with(Ability.ILLUSION, 1)))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 3)
+    request = CastRequest(spell=Spell.ILLUS_ARMIES, target=78)
+
+    execute_cast(state, 1, CASTER_ID, request, rng=ScriptedRandom([0.01, 0.5, 0.5]))
+    execute_cast(state, 1, CASTER_ID, request, rng=ScriptedRandom([0.01, 0.5, 0.5]))
+    assert state.leaders[78].phantasmal_armies_level == 3  # not 6
+
+    execute_cast(state, 1, 79, request, rng=ScriptedRandom([0.01, 0.5, 0.5]))
+    assert state.leaders[78].phantasmal_armies_level == 3  # a weaker caster does not undo it
+
+
 # ---------------------------------------------------------------------------
 # Oratory (Phase 59) -- Regolamento AK.txt [4.22.2]
 # ---------------------------------------------------------------------------
