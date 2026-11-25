@@ -204,7 +204,7 @@ import random
 from dataclasses import dataclass
 
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
+from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment, kingdom_alignment_distance
 from ak_engine.models.discovery import Discovery, sorted_kingdom_discoveries
 from ak_engine.models.game_state import GameState
 from ak_engine.turn.movement import MapBounds, is_adjacent
@@ -298,10 +298,15 @@ def alignment_check_success_chance(kingdom_a_alignment: Alignment, kingdom_b_ali
     "stessa classe senza penalità, altrimenti probabilità ridotta di 40
     punti percentuali per ogni passo di distanza" -- same alignment class,
     no penalty (1.0); otherwise ``1 - ALIGNMENT_PENALTY_PER_STEP`` per
-    step of ``ALIGNMENT_ORDINAL`` distance, floored at 0.0 (never negative).
+    step of distance, floored at 0.0 (never negative). 2026-11-26 (user ruling): steps are counted on the
+    rulebook's order of Kingdom alignments (``KINGDOM_ALIGNMENT_SCALE``, the same scale as the Diplomatic Furor;
+    Anti-Holy is a monster trait, not an alignment), not on the disassembly's ordinals, which put a
+    "Hellish" step between Evil and Undead. An alignment off that scale falls back to the ordinals.
     """
 
-    distance = abs(ALIGNMENT_ORDINAL[kingdom_a_alignment] - ALIGNMENT_ORDINAL[kingdom_b_alignment])
+    distance = kingdom_alignment_distance(kingdom_a_alignment, kingdom_b_alignment)
+    if distance is None:
+        distance = abs(ALIGNMENT_ORDINAL[kingdom_a_alignment] - ALIGNMENT_ORDINAL[kingdom_b_alignment])
     return max(0.0, 1.0 - ALIGNMENT_PENALTY_PER_STEP * distance)
 
 
