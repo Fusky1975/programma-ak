@@ -11,17 +11,30 @@ rem ======================================================================
 
 set "REPO_URL=https://github.com/Fusky1975/programma-ak.git"
 set "DEST=%USERPROFILE%\Documents\programma-ak"
-set "VENV=%DEST%\.venv"
-set "MARK=%VENV%\ak_installed_commit.txt"
 set "PORT=5055"
 set "HERE=%~dp0"
+
+rem Modalita' "portatile": se accanto a questo file c'e' la cartella ak_engine
+rem (zip di playtest) il programma si usa da li' e non serve ne' Git ne' GitHub.
+set "PORTABLE="
+if exist "%HERE%ak_engine\pyproject.toml" (
+    set "PORTABLE=1"
+    set "DEST=%HERE:~0,-1%"
+)
+if defined PORTABLE (
+    set "VENV=%USERPROFILE%\ak_games\.venv"
+) else (
+    set "VENV=%DEST%\.venv"
+)
+set "MARK=%VENV%\ak_installed_commit.txt"
 
 echo ============================================
 echo   Adventurer-Kings - GM Interface Launcher
 echo ============================================
 echo.
 
-rem --- Git ---------------------------------------------------------------
+rem --- Git (non serve in modalita' portatile) ---------------------------
+if defined PORTABLE goto :SkipGit
 where git >nul 2>nul
 if errorlevel 1 (
     echo Git non trovato. Provo a installarlo con winget...
@@ -39,6 +52,7 @@ if errorlevel 1 (
     )
     echo Git installato correttamente.
 )
+:SkipGit
 
 rem --- Python 3.11 o piu' recente ----------------------------------------
 call :FindPython
@@ -63,6 +77,7 @@ echo Python trovato: %PY%
 echo.
 
 rem --- Scarica o aggiorna il progetto ------------------------------------
+if defined PORTABLE goto :SkipFetch
 if exist "%DEST%\.git" (
     if exist "%HERE%BLOCCA_AGGIORNAMENTI.txt" (
         echo Aggiornamenti bloccati ^(BLOCCA_AGGIORNAMENTI.txt^): uso la copia presente.
@@ -103,11 +118,20 @@ if exist "%DEST%\.git" (
     )
 )
 
+:SkipFetch
+
 set "HEAD="
-for /f %%H in ('git -C "%DEST%" rev-parse HEAD 2^>nul') do set "HEAD=%%H"
 echo.
 echo Versione in uso:
-git -C "%DEST%" log -1 --format="  %%h  %%cd  %%s" --date=short
+if defined PORTABLE (
+    if exist "%DEST%\VERSION.txt" (
+        type "%DEST%\VERSION.txt"
+        set /p HEAD=<"%DEST%\VERSION.txt"
+    )
+) else (
+    for /f %%H in ('git -C "%DEST%" rev-parse HEAD 2^>nul') do set "HEAD=%%H"
+    git -C "%DEST%" log -1 --format="  %%h  %%cd  %%s" --date=short
+)
 echo.
 
 if not exist "%DEST%\launcher\run_server.py" (
@@ -137,7 +161,12 @@ if /i not "!INSTALLED!"=="!HEAD!" (
     echo Installo/aggiorno i componenti necessari ^(puo' richiedere qualche minuto
     echo la prima volta^)...
     "%VENV%\Scripts\python.exe" -m pip install --upgrade pip --quiet
-    "%VENV%\Scripts\python.exe" -m pip install -e "%DEST%\ak_engine[webapp]" --quiet
+    if defined PORTABLE (
+        rem Installazione normale, senza -e: cosi la cartella si puo spostare.
+        "%VENV%\Scripts\python.exe" -m pip install --upgrade --force-reinstall "%DEST%\ak_engine[webapp]" --quiet
+    ) else (
+        "%VENV%\Scripts\python.exe" -m pip install -e "%DEST%\ak_engine[webapp]" --quiet
+    )
     if errorlevel 1 (
         echo.
         echo ERRORE durante l'installazione dei componenti Python.
