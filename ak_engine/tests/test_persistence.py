@@ -59,3 +59,30 @@ def test_loaded_state_is_a_deep_copy_not_shared_with_the_original(tmp_path: Path
     loaded.leaders[1].name = "Someone Else"
 
     assert state.leaders[1].name == "Arthur"
+
+
+def test_a_game_saved_before_a_field_existed_loads_with_that_field_at_its_default(tmp_path):
+    # Dataclasses here use slots: a field added after a game was saved is *unset* on the loaded object, which would
+    # break a running game on the next update. Simulated by removing the fields of the objects before saving.
+    from ak_engine.models.feature import Feature, FeatureType
+    from ak_engine.models.map import HexCoord
+    from ak_engine.models.rumor import Rumor, RumorContent
+    from ak_engine.models.enums import ActionCode
+    from ak_engine.models.game_state import GameState
+
+    state = GameState()
+    feature = Feature(feature_id=1, coord=HexCoord(1, 1), kind=FeatureType.DUNGEON)
+    state.add_feature(feature)
+    rumor = Rumor(1, 1, 1, ActionCode.EXPLORE, RumorContent.ITEM, 1, True, HexCoord(1, 1))
+    state.add_rumor(rumor)
+    del feature.pending_deal_ready_turn
+    del rumor.phase_label
+    del state.emperor_best_hope_leader_id
+    path = tmp_path / "old.pkl"
+    save_game_state(state, path)
+
+    loaded = load_game_state(path)
+
+    assert loaded.features[1].pending_deal_ready_turn is None
+    assert loaded.rumors[1].phase_label is None
+    assert loaded.emperor_best_hope_leader_id is None

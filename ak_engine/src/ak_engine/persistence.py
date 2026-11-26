@@ -32,6 +32,7 @@ picking the option that needs zero new serialization code.
 
 from __future__ import annotations
 
+import dataclasses
 import pickle
 from pathlib import Path
 
@@ -51,4 +52,40 @@ def load_game_state(path: Path) -> GameState:
     this project's own tooling wrote.
     """
 
-    return pickle.loads(path.read_bytes())
+    state = pickle.loads(path.read_bytes())
+    _backfill_missing_fields(state)
+    return state
+
+
+def _backfill_missing_fields(root: object) -> None:
+    """Gives every dataclass in a loaded state the fields it did not have when it was saved.
+
+    A game saved by an earlier version of the program is a pickle of dataclasses with ``slots=True``: a field added
+    since is simply *unset* on the loaded object (reading it raises ``AttributeError``), so a game that was running
+    would stop working after an update. Every missing field takes its declared default; nothing present is touched."""
+
+    seen: set[int] = set()
+    stack: list[object] = [root]
+    while stack:
+        obj = stack.pop()
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            for field in dataclasses.fields(obj):
+                try:
+                    value = getattr(obj, field.name)
+                except AttributeError:
+                    if field.default is not dataclasses.MISSING:
+                        value = field.default
+                    elif field.default_factory is not dataclasses.MISSING:
+                        value = field.default_factory()
+                    else:
+                        continue
+                    object.__setattr__(obj, field.name, value)
+                stack.append(value)
+        elif isinstance(obj, dict):
+            stack.extend(obj.keys())
+            stack.extend(obj.values())
+        elif isinstance(obj, (list, tuple, set, frozenset)):
+            stack.extend(obj)

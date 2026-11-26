@@ -533,6 +533,7 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import (
+    MonsterEngagementState,
     DUEL_MERIT_MONSTERS,
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
     HAND_OF_DEATH_IMMUNE_MONSTERS,
@@ -969,6 +970,11 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
     )
 
 
+# Years the old monster of ``MonsterTalkReply.R_SLAVE`` says it has left ("I have, perhaps, 2 years left to live"): the
+# turn of Talk plus this is the "year of the death" in which the agreement can be fulfilled.
+SLAVE_DEAL_YEARS = 2
+
+
 @dataclass(slots=True)
 class SearchExecutionResult:
     accepted: bool
@@ -1156,6 +1162,11 @@ class SearchExecutionResult:
     # facts its offer text names (the feature's treasure and province), so
     # `report/turn_report.py describe_search()` can narrate the offer.
     guardian_talk_reply: MonsterTalkReply | None = None
+    # Fulfill of an agreement that ends with the monster handing over everything it owns and dying -- today only the
+    # old monster of ``MonsterTalkReply.R_SLAVE`` ("I leave to you all that I own"): which agreement, and the treasure
+    # that went to the hero, for the report (FULFILL.X2 then MACCEPT.X2).
+    quest_fulfilled: MonsterTalkReply | None = None
+    quest_treasure: Treasure | None = None
     guardian_talk_treasure: Treasure | None = None
     guardian_talk_coord: HexCoord | None = None
 
@@ -3817,6 +3828,12 @@ def _resolve_search_encounter_body(
         if outcome_category is TalkReplyOutcome.IGNORE:
             return None
         feature.pending_deal_leader_id = leader_id
+        # The old monster ("I have, perhaps, 2 years left to live") agrees to be fulfilled in the year of its death.
+        if reply is MonsterTalkReply.R_SLAVE:
+            if feature.pending_deal_ready_turn is None:
+                feature.pending_deal_ready_turn = state.turn_number + SLAVE_DEAL_YEARS
+        else:
+            feature.pending_deal_ready_turn = None
         # 2026-11-20 bug fix, user-confirmed via a deep audit:
         # Office.PSYCHIC_MAGE's own "senses whether the monster intends
         # to keep its end of the bargain" perk. Rolls the *same* real
@@ -3857,6 +3874,42 @@ def _resolve_search_encounter_body(
             guardian_talk_coord=feature.coord,
         )
 
+    def _resolve_slave_fulfill() -> SearchExecutionResult | None:
+        """Fulfill of the old monster's agreement (``MonsterTalkReply.R_SLAVE``: care for it for the rest of its life
+        and be written into its will). The Gods consider the request agreed to by the character who comes back "in one
+        phase of the year of the death" of the monster: that year the monster is honoring by definition (no roll) --
+        it falls ill, leaves the hero everything it owns and dies (``Feature.looted``: the guardian is gone and the
+        hero has the treasure). Before that year nothing happens and the deal stays; after it the agreement has
+        lapsed and the plan goes on with its next tactic."""
+
+        ready_turn = feature.pending_deal_ready_turn if feature.pending_deal_ready_turn is not None else state.turn_number
+        if state.turn_number < ready_turn:
+            return None  # the old monster is not at death's door yet: the deal stays
+        feature.pending_deal_leader_id = None
+        feature.pending_deal_ready_turn = None
+        feature.psychic_mage_sensed_fulfill_honor = None
+        if state.turn_number > ready_turn:
+            return None  # the year has gone by without the hero: the agreement lapsed
+        treasure = feature.treasure
+        # Rulebook, Carica di Difensore, nota 2: no points for fulfilling an agreement as such -- but a monster that
+        # stops its raids because of it earns half its Hit Points (the same rule as ``_resolve_fulfill()``'s own
+        # pacification). Here the old monster's death ends the raids of one that was raiding.
+        if feature.guardian_state is MonsterEngagementState.BOLD:
+            leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
+        feature.looted = True
+        if treasure is not None:
+            _grant_search_treasure(state, leader_id, treasure, rng, gold_log)
+        outcome = SearchExecutionResult(
+            accepted=True,
+            combat_resolved=False,
+            winner="leader",
+            feature_looted=True,
+            quest_fulfilled=MonsterTalkReply.R_SLAVE,
+            quest_treasure=treasure,
+        )
+        outcome.guardian_monster = feature.guardian_monster
+        return outcome
+
     def _resolve_fulfill() -> SearchExecutionResult | None:
         """Fulfill [FU], rulebook [5.7] -- Phase 258. Honors a deal a prior
         turn's Talk secured on this feature (``Feature.pending_deal_
@@ -3893,6 +3946,8 @@ def _resolve_search_encounter_body(
 
         if feature.pending_deal_leader_id != leader_id:
             return None
+        if feature.guardian_talk_reply_id == MonsterTalkReply.R_SLAVE.value:
+            return _resolve_slave_fulfill()
         feature.pending_deal_leader_id = None
         # 2026-11-20 bug fix: if Talk's own Psychic Mage sensing already
         # rolled this exact deal's real honor outcome (see Feature.
