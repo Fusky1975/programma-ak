@@ -23,7 +23,7 @@
       <tbody>
         {% for leader in leaders %}
           <tr>
-            <td>{{ leader.name }}{% if leader.is_king %} (King){% endif %}</td>
+            <td>{{ leader.name }} <span class="leader-number">(#{{ leader.leader_id }})</span>{% if leader.is_king %} (King){% endif %}</td>
             <td>{{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }}</td>
             <td>{{ leader.race|display_name }}</td>
             <td>{{ leader.alignment|display_name if leader.alignment else '--' }}</td>
