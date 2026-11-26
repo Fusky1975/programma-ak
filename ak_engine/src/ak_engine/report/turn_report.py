@@ -1314,6 +1314,9 @@ import itertools
 import random
 import re
 import textwrap
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Callable, NamedTuple, Sequence
 
 from ak_engine.models.enums import (
@@ -3072,6 +3075,32 @@ _QUALITY_CHANGES_HEADER = "The battle affected the quality of our forces:"
 _THIRST_TEMPLATE = "<'s men/Rsoldiers, ill-supplied/Rwith_no_camels in/Rfor the {tortuous }desert{ campaign}, suffered from thirst."
 _MAGIC_AID_TEMPLATE = "The army of < used magic to aid their cause."
 _PHANTASMAL_TEMPLATE = "Magical phantasmal armies/Snavies fought with > soldiers."
+# `NODRU.X` (`_BNoDru`, `FD('nodru',S_Batt,1000+Rint)`): an army led by a commander whose Druidic skill is short of the
+# Druid Table's level for its race ([4.32]). The six variants are picked by the size of that shortfall (the three last,
+# for the heaviest ones, are the same text): the real reports show the Dragons (needing level 4) in variants 1, 2 and
+# 3 -- the same race under a different commander skill -- and the Elves, Dwarves, Orcs, Trolls and Werefolk (one level
+# short at most) always in the first one.
+_NODRU_TEMPLATES = (
+    "the ^R led/Rcommanded by < were not_impressed_by/Rdisgusted_with > lack_of_leadership_ability/Rstrange_appearance.",
+    "< was_frustrated_by/Rcould_make_almost_no_use_of the ^R, who virtually_ignored/Rcould_not_comprehend > "
+    "commands/Rmilitary_strategy.",
+    "the ^R < commanded/Rled were rendered_worthless_by/Rineffective_because_of their intolerance_of/Rpoor_relations_with <2.",
+    "< soon_found/Rcould_see that the ^R would rather/Rsooner swallow/Rget_plastered_with spears/Rpoison than "
+    "follow/Robey a repulsive/Rdisgusting being/Rcreature like <2.",
+)
+
+
+def render_druidic_shortfall(
+    race: Race, shortfall: int, commander_name: str, possessive: str, rng: random.Random
+) -> str:
+    """NODRU.X: "The Elves commanded by Giovanna were not impressed by her lack of leadership ability." -- the variant is
+    the shortfall (1 .. 4; the 4th to 6th variants of the original are one text)."""
+
+    template = _NODRU_TEMPLATES[min(max(shortfall, 1), len(_NODRU_TEMPLATES)) - 1]
+    values = {"<": commander_name, "<2": commander_name, ">": possessive, "^R": RACE_PLURAL_NAME[race]}
+    return render(template, values, rng=rng)
+
+
 _SPITE_TEMPLATE = "in_spite_of/Reven_with ='s good luck/Rfortune, "
 _STILL_TEMPLATE = "Still/REven_so, "
 _PURSUIT_FAILED_TEMPLATE = " were beaten/Rdriven off by = after/Rin ^A tough/Rhard-fought rearguard action/Rbattle."
@@ -3584,7 +3613,7 @@ def describe_battle(
             army_name = names.get(units[0].source_id)
             if army_name is None:
                 continue
-            monster_name = MONSTER_NAMES[side_assistance[column_index].monster]
+            monster_name = f"the {MONSTER_NAMES[side_assistance[column_index].monster]}"
             pre_column.append(render_monster_reinforcement_arrives(monster_name, army_name, province_name, rng))
             pre_column.append(render_monster_reinforcement_helped(monster_name, army_name, rng))
 
@@ -3628,6 +3657,24 @@ def describe_battle(
             pre_column.append(
                 render(_PHANTASMAL_TEMPLATE, {">": _possessive_for(state, king_id)}, rng=rng, is_sea=is_sea)
             )
+
+    # `_BNoDru`: the armies of a race the commander's Druidic skill is too low to lead.
+    for side, _kingdom_id, _commander_id, _commanding in side_info:
+        told: set[int | None] = set()
+        for unit in side_units[side]:
+            if unit.druidic_shortfall <= 0 or unit.army_race is None or unit.commander_leader_id is None:
+                continue
+            if unit.source_id in told:
+                continue
+            told.add(unit.source_id)
+            commander_name = _leader_name(state, unit.commander_leader_id)
+            if commander_name is not None:
+                pre_column.append(
+                    render_druidic_shortfall(
+                        unit.army_race, unit.druidic_shortfall, commander_name,
+                        _possessive_for(state, unit.commander_leader_id), rng,
+                    )
+                )
 
     luck_leader_ids = (
         _battle_luck_leader_ids(state, battle_report, phase) if phase is not None else None
@@ -5539,6 +5586,29 @@ def describe_kill_enemy_berserk_retaliation(
     rng: random.Random,
     state: GameState | None = None,
     is_sea: bool = False,
+    caster_leader_id: int | None = None,
+) -> list[str]:
+    """The duel of ``_describe_kill_enemy_berserk_lines`` with each fighter's pronoun ("met his unseemly end")."""
+
+    table: dict[str, str] = {}
+    if state is not None:
+        if caster_leader_id is not None:
+            table[caster_name] = _possessive_for(state, caster_leader_id)
+        table[target_name] = _possessive_for(state, result.request.target) if isinstance(result.request.target, int) else "his"
+    with combat_pronouns(table):
+        return _describe_kill_enemy_berserk_lines(
+            result, caster_name=caster_name, target_name=target_name, rng=rng, state=state, is_sea=is_sea
+        )
+
+
+def _describe_kill_enemy_berserk_lines(
+    result: CastExecutionResult,
+    *,
+    caster_name: str,
+    target_name: str,
+    rng: random.Random,
+    state: GameState | None = None,
+    is_sea: bool = False,
 ) -> list[str]:
     """Assembles the Berserk-retaliation duel's own narration (Phase
     612) from an already-computed ``CastExecutionResult`` -- the
@@ -5600,7 +5670,7 @@ def describe_kill_enemy_berserk_retaliation(
         attack_line += (
             render_attack_hit(defender_name, swing.damage, rng)
             if swing.hit
-            else render_attack_missed(attacker_name, defender_name, "blade", rng)
+            else render_attack_missed(attacker_name, defender_name, "sword", rng)
         )
         swing_lines.append(attack_line)
         proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
@@ -5925,7 +5995,7 @@ def render_explore_continued(
         "<": character_name,
         "@": province_name,
         "#": str(new_percent),
-        ">": f"{character_name}'s",
+        ">": _own(character_name),
         "^B": "",
         "^E": "",
     }
@@ -5973,7 +6043,7 @@ def render_move_to_bow_range(character_name: str, rng: random.Random, *, is_sea:
     """
 
     variant = pick_variant(_GOBOW_TEMPLATES, rng)
-    values = {"<": character_name, ">": f"{character_name}'s"}
+    values = {"<": character_name, ">": _own(character_name)}
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
@@ -6021,7 +6091,7 @@ def render_fire_arrow_attack(character_name: str, opponent_name: str, rng: rando
     values = {
         "<": character_name,
         "[": opponent_name,
-        ">": f"{character_name}'s",
+        ">": _own(character_name),
         "$S": render(_WEAPON_HIT_PHRASES[_WEAPON_NAMES.index("Bow")], {}, rng=rng),  # whit[Bow]: "fired" / "shot"
         "^W": "arrow",
     }
@@ -6100,7 +6170,7 @@ def render_squeeze_attack(character_name: str, opponent_name: str, rng: random.R
     values = {
         "<": character_name,
         "[": opponent_name,
-        ">": f"{character_name}'s",
+        ">": _own(character_name),
     }
     return render(variant, values, rng=rng)
 
@@ -6139,7 +6209,7 @@ def render_attack_missed(
     values = {
         "[": defender_name,
         "[1": defender_name,
-        ">": f"{attacker_name}'s",
+        ">": _own(attacker_name),
         "^W": weapon,
     }
     return render(variant, values, rng=rng, is_sea=is_sea)
@@ -6267,7 +6337,7 @@ def render_character_death(character_name: str, rng: random.Random) -> str:
     """
 
     variant = pick_variant(_HORDEATH_TEMPLATES, rng)
-    values = {"<": character_name, ">": f"{character_name}'s"}
+    values = {"<": character_name, ">": _own(character_name)}
     return render(variant, values, rng=rng)
 
 
@@ -6315,7 +6385,7 @@ def render_melee_attack(
     values = {
         "<": character_name,
         "[": opponent_name,
-        ">": f"{character_name}'s",
+        ">": _own(character_name),
         "$S": attack_method,
     }
     return render(variant, values, rng=rng)
@@ -6349,7 +6419,7 @@ def render_cast_no_treasure(character_name: str, spell_name: str, rng: random.Ra
     """
 
     variant = pick_variant(_CCAST_TEMPLATES, rng)
-    values = {"<": character_name, ">": f"{character_name}'s", "~": spell_name}
+    values = {"<": character_name, ">": _own(character_name), "~": spell_name}
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
@@ -6408,7 +6478,7 @@ def render_shadow_sword_drain(wielder_name: str, opponent_name: str, new_hit_poi
     variant = pick_variant(_SHADTR_TEMPLATES, rng)
     values = {
         "<2": wielder_name,
-        ">": f"{wielder_name}'s",
+        ">": _own(wielder_name),
         "[": opponent_name,
         "]": f"{opponent_name}'s",
         "#": str(new_hit_points),
@@ -6471,7 +6541,7 @@ def render_stun_recovery(character_name: str, rng: random.Random) -> str:
     """
 
     variant = pick_variant(_RECSTUN_TEMPLATES, rng)
-    values = {"<": character_name, ">": f"{character_name}'s"}
+    values = {"<": character_name, ">": _own(character_name)}
     return render(variant, values, rng=rng)
 
 
@@ -7524,10 +7594,14 @@ _WEAPON_HIT_PHRASES = (
     "breathed/Rexhaled", "voiced/Rsounded", "oozed/Rgroped at", "snapped/Rlunged at", "thrust/Rflipped at",
     "swang/Rclubbed at", "glared/Rglowered", "swang at",
 )
+# `mtweap1` of CTME.PAS with two corrections taken from the real reports, which the table in the Pascal sources
+# contradicts: the Succubus fights with a sword ("The Succubus assailed Hokuto but her sword whiffed", "swang at" /
+# "thrust at" in 13 swings, "Hokuto evaded the sword") and the Rakshasha with a dagger ("thrust at" / "lunged at"),
+# where the table has Fangs for both.
 _MONSTER_MELEE_WEAPON = (
     "Talons", "Talons", "Fangs", "Talons", "Jaws", "Jaws", "Jaws", "Jaws", "Jaws", "Jaws",
     "Maw", "Sword", "Club", "Fists", "Sword", "Sword", "Staff", "Dagger", "Staff", "Dagger", "Staff", "Claws",
-    "Dagger", "Hooves", "Fists", "Fists", "Claws", "Jaws", "Dagger", "Claws", "Sword", "Fangs", "Fangs", "Claws",
+    "Dagger", "Hooves", "Fists", "Fists", "Claws", "Jaws", "Dagger", "Claws", "Sword", "Sword", "Dagger", "Claws",
     "Talons", "Claws", "Jaws", "ChimHeads", "Jaws", "Fangs", "Club", "Axe", "Fangs", "Limb", "EndoPod", "Mandible",
     "Stinger", "Stinger", "Fangs", "UTouch", "Fists", "Fists", "UTouch", "UTouch", "UTouch", "Tentacles", "Jaws",
     "Jaws", "Jaws", "Dagger",
@@ -9038,6 +9112,32 @@ def describe_encounter_combat(
     rng: random.Random,
     is_sea: bool = False,
     state: GameState | None = None,
+    b_leader_id: int | None = None,
+) -> list[str]:
+    """The duel narration of ``_describe_encounter_combat_lines`` with each fighter's own pronoun ("his sword",
+    "her aim"): ``b_leader_id`` is the opponent, read from the result when it names one."""
+
+    table: dict[str, str] = {}
+    if state is not None:
+        b_leader_id = b_leader_id if b_leader_id is not None else getattr(result, "target_leader_id", None)
+        table[a_name] = _possessive_for(state, a_leader_id)
+        if b_leader_id is not None:
+            table[b_name] = _possessive_for(state, b_leader_id)
+    with combat_pronouns(table):
+        return _describe_encounter_combat_lines(
+            result, a_leader_id=a_leader_id, a_name=a_name, b_name=b_name, rng=rng, is_sea=is_sea, state=state
+        )
+
+
+def _describe_encounter_combat_lines(
+    result: ChallengeExecutionResult | PursueExecutionResult | PatrolExecutionResult,
+    *,
+    a_leader_id: int,
+    a_name: str,
+    b_name: str,
+    rng: random.Random,
+    is_sea: bool = False,
+    state: GameState | None = None,
 ) -> list[str]:
     """Phase 417: the personal-combat narration Challenge's and Pursue's
     own armyless-duel case have had zero narration for since either was
@@ -9151,7 +9251,7 @@ def describe_encounter_combat(
         attack_line += (
             render_attack_hit(defender_name, swing.damage, rng)
             if swing.hit
-            else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
+            else render_attack_missed(attacker_name, defender_name, "sword", rng, is_sea=is_sea)
         )
         lines.append(attack_line)
         proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
@@ -9227,7 +9327,7 @@ def describe_random_encounter_combat(
         attack_line += (
             render_attack_hit(defender_name, swing.damage, rng)
             if swing.hit
-            else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
+            else render_attack_missed(attacker_name, defender_name, melee_weapon_noun(None if swing.attacker == "a" else result.monster), rng, is_sea=is_sea)
         )
         lines.append(attack_line)
         proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
@@ -9281,17 +9381,22 @@ def describe_random_encounter(
             return lines
         opponent_name = _RANDOM_ENCOUNTER_PATROL_OPPONENT_NAME
     else:
-        opponent_name = MONSTER_NAMES.get(result.monster, "a wandering monster") if result.monster is not None else "a wandering monster"
-        lines.append(intro + render_wandering_encounter(character_name, opponent_name, rng, is_sea=is_sea))
+        bare_name = MONSTER_NAMES.get(result.monster) if result.monster is not None else None
+        # RWENC.X meets a wandering monster as "a Renegade Illusionist" / "an Ice Devil", then it is "the" one.
+        opponent_name = f"the {bare_name}" if bare_name is not None else "the wandering monster"
+        lines.append(
+            intro + render_wandering_encounter(character_name, _indefinite(bare_name or "wandering monster"), rng, is_sea=is_sea)
+        )
 
     if result.evaded_via_sense_danger:
         return lines
 
-    lines.extend(
-        describe_random_encounter_combat(
-            result, character_name=character_name, opponent_name=opponent_name, rng=rng, is_sea=is_sea
+    with combat_pronouns(_combat_possessives(state, result.leader_id, character_name, result.monster, opponent_name, rng)):
+        lines.extend(
+            describe_random_encounter_combat(
+                result, character_name=character_name, opponent_name=opponent_name, rng=rng, is_sea=is_sea
+            )
         )
-    )
     if result.leader_died:
         lines.extend(describe_rescued_items(result.rescued_items, state, character_name, rng))
     return lines
@@ -9351,7 +9456,7 @@ def render_assassinate_encounter_note(challenger_name: str, target_name: str, rn
     comment above for the real trigger/ordering this mirrors.
     """
 
-    values = {"<": challenger_name, ">": f"{challenger_name}'s", "[": target_name}
+    values = {"<": challenger_name, ">": _own(challenger_name), "[": target_name}
     return render(_SANOTE_ASSASSINATE_TEMPLATE, values, rng=rng)
 
 
@@ -10399,7 +10504,8 @@ def describe_turn_results(
             is_sea = caster_province is not None and caster_province.effective_terrain() is Terrain.SEA
             lines.extend(
                 describe_kill_enemy_berserk_retaliation(
-                    entry.result, caster_name=caster_name, target_name=target_name, rng=rng, state=state, is_sea=is_sea
+                    entry.result, caster_name=caster_name, target_name=target_name, rng=rng, state=state, is_sea=is_sea,
+                    caster_leader_id=entry.leader_id,
                 )
             )
             continue
@@ -10699,7 +10805,8 @@ def describe_turn_results(
             is_sea = province is not None and province.effective_terrain() is Terrain.SEA
             lines.extend(
                 describe_search(
-                    entry.result, state=state, character_name=caster_name, feature_name=feature_name, rng=rng, is_sea=is_sea
+                    entry.result, state=state, character_name=caster_name, feature_name=feature_name, rng=rng, is_sea=is_sea,
+                    leader_id=entry.leader_id,
                 )
             )
             continue
@@ -12415,7 +12522,7 @@ def render_illegal_move_choice(
         "<": character_name,
         "⟦CTRL-S:province-2⟧": origin_province_name,
         "@": destination_province_name,
-        ">": f"{character_name}'s",
+        ">": _own(character_name),
     }
     return render(ILLMOVE_TEMPLATE[choice], values, rng=rng)
 
@@ -12647,7 +12754,7 @@ def render_quest_fled_in_fear(character_name: str, monster_name: str, rng: rando
     values = {
         "<": character_name,
         "[": monster_name,
-        ">": f"{character_name}'s",
+        ">": _own(character_name),
     }
     return render(QUEST_FLED_IN_FEAR_TEMPLATE, values, rng=rng)
 
@@ -13314,7 +13421,7 @@ def render_search_attempt(character_name: str, feature_name: str, rng: random.Ra
     """
 
     variant = pick_variant(_FSEARCH_TEMPLATES, rng)
-    values = {"<": character_name, ">": f"{character_name}'s", "&": feature_name}
+    values = {"<": character_name, ">": _own(character_name), "&": feature_name}
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
@@ -13483,6 +13590,27 @@ def describe_search(
     feature_name: str,
     rng: random.Random,
     is_sea: bool = False,
+    leader_id: int | None = None,
+) -> list[str]:
+    """``_describe_search_lines`` with the pronouns of the duel with the guardian ("The Succubus assailed Hokuto but
+    her sword whiffed"): the character's by ``leader_id``, the monster's by its species."""
+
+    monster = result.guardian_monster
+    monster_name = MONSTER_NAMES.get(monster, "guardian") if monster is not None else "guardian"
+    with combat_pronouns(_combat_possessives(state, leader_id, character_name, monster, f"the {monster_name}", rng)):
+        return _describe_search_lines(
+            result, state=state, character_name=character_name, feature_name=feature_name, rng=rng, is_sea=is_sea
+        )
+
+
+def _describe_search_lines(
+    result: SearchExecutionResult,
+    *,
+    state: GameState | None = None,
+    character_name: str,
+    feature_name: str,
+    rng: random.Random,
+    is_sea: bool = False,
 ) -> list[str]:
     """Assembles Search's own turn-report lines from an already-computed
     ``SearchExecutionResult`` (``turn/search_execution.py
@@ -13608,6 +13736,8 @@ def describe_search(
     lines = [opening]
 
     monster_name = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
+    # The original writes a monster as "the Succubus" wherever the sentence does not carry its own article.
+    foe = f"the {monster_name}"
     weapon = MONSTER_RANGED_WEAPON.get(result.guardian_monster) if result.guardian_monster is not None else None
     flavor = missile_attack_flavor(weapon) if weapon is not None else None
 
@@ -13618,9 +13748,9 @@ def describe_search(
     # other 18 quest/agreement replies still render nothing beyond the
     # opening line above, unchanged.
     if result.guardian_riddle is not None:
-        lines.append(render_guardian_poses_riddle(monster_name, result.guardian_riddle))
+        lines.append(render_guardian_poses_riddle(foe, result.guardian_riddle))
     if result.guardian_quest_location is not None:
-        lines.append(render_guardian_proposes_quest_location(monster_name, result.guardian_quest_location))
+        lines.append(render_guardian_proposes_quest_location(foe, result.guardian_quest_location))
     if (
         result.guardian_talk_reply is not None
         and result.guardian_riddle is None
@@ -13632,7 +13762,7 @@ def describe_search(
         lines.extend(
             render_guardian_talk_offer(
                 character_name,
-                monster_name,
+                foe,
                 result.guardian_talk_reply,
                 province_name=_province_label(state, result.guardian_talk_coord),
                 treasure_name=TREASURE_NAME[treasure] if treasure is not None else "treasure",
@@ -13664,11 +13794,11 @@ def describe_search(
     # `describe_encounter_combat()` sibling's own documented placement
     # choice (Cast never needs to close range).
     for side, spell in result.fizzled_spells:
-        caster_name = character_name if side == "leader" else monster_name
+        caster_name = character_name if side == "leader" else foe
         lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
 
     for side, hits, interrupt_damage in result.hand_of_death_aborts:
-        caster_name, target_name = (character_name, monster_name) if side == "leader" else (monster_name, character_name)
+        caster_name, target_name = (character_name, foe) if side == "leader" else (foe, character_name)
         lines.extend(render_hand_of_death_abort(caster_name, target_name, hits, interrupt_damage, rng))
 
     for shot in result.fire_arrow_shots:
@@ -13691,7 +13821,7 @@ def describe_search(
                 else render_petrifying_gaze_missed(monster_name, character_name, rng)
             )
         else:
-            attacker_name, defender_name = (monster_name, character_name) if shot.shooter == "b" else (character_name, monster_name)
+            attacker_name, defender_name = (foe, character_name) if shot.shooter == "b" else (character_name, foe)
             attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
             attack_line += (
                 render_attack_hit(defender_name, shot.damage, rng)
@@ -13709,7 +13839,7 @@ def describe_search(
     # winning channel ever populates squeeze_hits at all -- see
     # SearchExecutionResult.squeeze_hits's own Phase 413 note).
     squeeze_attacker, squeeze_defender = (
-        (monster_name, character_name) if result.winner == "monster" else (character_name, monster_name)
+        (foe, character_name) if result.winner == "monster" else (character_name, foe)
     )
     for damage in result.squeeze_hits:
         lines.append(render_squeeze_attack(squeeze_attacker, squeeze_defender, rng) + render_attack_hit(squeeze_defender, damage, rng))
@@ -13725,7 +13855,7 @@ def describe_search(
     # result.winner here.
     for swing in result.melee_swings:
         melee_attacker, melee_defender = (
-            (character_name, monster_name) if swing.attacker == "a" else (monster_name, character_name)
+            (character_name, foe) if swing.attacker == "a" else (foe, character_name)
         )
         attack_line = render_melee_attack(
             melee_attacker, melee_defender,
@@ -13734,7 +13864,7 @@ def describe_search(
         attack_line += (
             render_attack_hit(melee_defender, swing.damage, rng)
             if swing.hit
-            else render_attack_missed(melee_attacker, melee_defender, "blade", rng, is_sea=is_sea)
+            else render_attack_missed(melee_attacker, melee_defender, melee_weapon_noun(None if swing.attacker == "a" else result.guardian_monster), rng, is_sea=is_sea)
         )
         lines.append(attack_line)
         proc_line = render_weapon_proc_line(swing.weapon_proc, melee_attacker, melee_defender, swing.weapon_proc_hit_points, rng)
@@ -13747,14 +13877,14 @@ def describe_search(
     # before any fatal-death lines below. The frozen side is whichever
     # side didn't win this encounter.
     if result.ice_suspend_immobilized:
-        frozen_name = monster_name if result.winner == "leader" else character_name
+        frozen_name = foe if result.winner == "leader" else character_name
         lines.append(render_ice_immobilized(frozen_name, rng))
 
     if result.monster_fled:
-        lines.append(render_monster_fled(monster_name, character_name, rng))
+        lines.append(render_monster_fled(foe, character_name, rng))
 
     if result.gold_found > 0:
-        lines.append(render_gold_spoils(character_name, monster_name, result.gold_found, rng))
+        lines.append(render_gold_spoils(character_name, foe, result.gold_found, rng))
 
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
@@ -13768,11 +13898,11 @@ def describe_search(
     if result.guardian_pacified_by_fulfill or result.guardian_intimidated or result.guardian_undeterred:
         province_name = _search_province_name(state, result)
         if result.guardian_pacified_by_fulfill:
-            lines.append(render_guardian_pacified_by_fulfill(monster_name, province_name, rng))
+            lines.append(render_guardian_pacified_by_fulfill(foe, province_name, rng))
         if result.guardian_intimidated:
-            lines.append(render_guardian_intimidated(monster_name, province_name, rng))
+            lines.append(render_guardian_intimidated(foe, province_name, rng))
         if result.guardian_undeterred:
-            lines.append(render_guardian_undeterred(monster_name, province_name, rng))
+            lines.append(render_guardian_undeterred(foe, province_name, rng))
 
     # Phase 790 (MAGFEAT.X2, Phase 96): a real magic-feature-discovery
     # crossing (see `SearchExecutionResult.magic_feature_discovered`'s
@@ -14448,7 +14578,7 @@ def describe_finances_report(
         if province is None or province.owner_kingdom_id != kingdom_id:
             continue
         province_name = _province_label(state, raid_event.province_coord)
-        monster_name = MONSTER_NAMES[raid_event.monster]
+        monster_name = f"the {MONSTER_NAMES[raid_event.monster]}"
         is_sea = province.effective_terrain() is Terrain.SEA
         if raid_event.kind == "thunderbird":
             story_sink.append(render_thunderbird_intervention(province_name, monster_name, rng))
@@ -19044,7 +19174,7 @@ def record_encounter_world_events(
             is_sea = province is not None and province.effective_terrain() is Terrain.SEA
             lines = describe_search(
                 result, state=state, character_name=name, feature_name=_province_label(state, coord), rng=rng,
-                is_sea=is_sea,
+                is_sea=is_sea, leader_id=entry.leader_id,
             )
         else:
             continue
@@ -19578,11 +19708,91 @@ def _lower_first_after_connector(sentence: str, units: set[str]) -> str:
     return sentence
 
 
+def _indefinite(noun: str) -> str:
+    """"a Minotaur" / "an Ice Devil": the article the original writes at a monster's first mention."""
+
+    return f"{'an' if noun[:1] in 'AEIOU' else 'a'} {noun}"
+
+
 def _possessive_for(state: GameState, leader_id: int | None) -> str:
     leader = state.leaders.get(leader_id) if leader_id is not None else None
     if leader is not None and leader.sex is not None and leader.sex.name.upper().startswith("F"):
         return "her"
     return "his"
+
+
+# The possessive (``>``) of a combatant in the personal-combat sentences: the real reports write "Kurator swang at
+# the Ice Devil but its aim was just off", "The Succubus assailed Hokuto but her sword whiffed", "Kurator ... his
+# sword" -- ``RUMORS.PAS Posse()`` (her / its / his by ``Gender()``) -- never "the Ice Devil's aim". The renderers
+# cannot know whom they narrate, so the describer that does (``describe_search``, ``describe_random_encounter_
+# combat``, ``describe_encounter_combat``) opens a ``combat_pronouns`` scope; a name outside any scope keeps the
+# literal "Name's".
+_COMBAT_POSSESSIVES: ContextVar[Mapping[str, str]] = ContextVar("combat_possessives", default={})
+
+
+@contextmanager
+def combat_pronouns(possessives: Mapping[str, str]) -> Iterator[None]:
+    """Makes ``_own(name)`` answer ``possessives[name]`` ("his"/"her"/"its") inside the ``with`` block."""
+
+    token = _COMBAT_POSSESSIVES.set({**_COMBAT_POSSESSIVES.get(), **possessives})
+    try:
+        yield
+    finally:
+        _COMBAT_POSSESSIVES.reset(token)
+
+
+def _own(name: str) -> str:
+    """The possessive of ``name`` for a ``>`` marker: the scope's pronoun, else "Name's"."""
+
+    return _COMBAT_POSSESSIVES.get().get(name, f"{name}'s")
+
+
+# Real reports (12 SE3 turns): the Succubus and the Dryad are "her", a Renegade Necromancer "her" and a Renegade
+# Swordsman "his" (so a renegade's sex is rolled), the Medusa, Chimera, Ice Devil, Rakshasha, Treant and Giant "its".
+# `Gender()` is not among the Pascal sources, so no other species is assumed female (the Medusa shows that "a female
+# monster" is not enough for "her").
+_FEMALE_MONSTERS = frozenset({Monster.SUCCUBUS, Monster.DRYAD})
+_RENEGADE_MONSTERS = frozenset(
+    {Monster.ARCHER, Monster.SWORDSMAN, Monster.WHITE_MAGE, Monster.NEC_MAGE, Monster.ELE_MAGE, Monster.PSY_MAGE, Monster.ILL_MAGE}
+)
+
+
+def monster_possessive(monster: Monster | None, rng: random.Random) -> str:
+    """"her" / "his" / "its" for a monster in the combat narration."""
+
+    if monster in _FEMALE_MONSTERS:
+        return "her"
+    if monster in _RENEGADE_MONSTERS:
+        return "her" if rng.random() < 0.5 else "his"
+    return "its"
+
+
+# The noun of the weapon a monster strikes with (``^W`` of ANDMISS.X: "its claws whiffed", "dodged the claws"):
+# ``RUMORS.PAS`` ``wname[mtweap1[_mtype]]`` verbatim, positional with ``_WEAPON_NAMES``.
+_WEAPON_NOUNS = (
+    "talons", "fangs", "claws", "maw", "jaws", "fists", "sword", "dagger", "staff", "hooves", "teeth", "jaws", "club",
+    "axe", "deathly touch", "tentacles", "beak", "boulder", "arrow", "flame breath", "acid stream", "poisonous breath",
+    "horrid scream", "plasmic pseudopod", "mandible", "stinger", "limb", "stony gaze", "no weapon",
+)
+
+
+def melee_weapon_noun(monster: Monster | None = None) -> str:
+    """The ``^W`` noun of a melee swing: a character's "sword", a monster's own weapon."""
+
+    if monster is not None and 0 <= monster.value < len(_MONSTER_MELEE_WEAPON):
+        return _WEAPON_NOUNS[_WEAPON_NAMES.index(_MONSTER_MELEE_WEAPON[monster.value])]
+    return "sword"
+
+
+def _combat_possessives(
+    state: GameState | None, leader_id: int | None, character_name: str, monster: Monster | None, monster_name: str, rng: random.Random
+) -> dict[str, str]:
+    """The pronoun table of a hero-against-monster duel."""
+
+    table = {monster_name: monster_possessive(monster, rng)} if monster is not None else {}
+    if state is not None and leader_id is not None:
+        table[character_name] = _possessive_for(state, leader_id)
+    return table
 
 
 def _phase_paragraph(

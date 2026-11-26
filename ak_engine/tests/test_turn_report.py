@@ -1223,8 +1223,8 @@ def test_describe_battle_renders_monster_assistance_before_everything_else():
     ))
 
     assert lines[:2] == [
-        "Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with the 10th Garrison.",
-        "Gold Dragon was of some slight help in the battle.",
+        "The Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with the 10th Garrison.",
+        "The Gold Dragon was of some slight help in the battle.",
     ]
     assert _at(lines, r"^Across the") > 1 and _at(lines, r"^The 10th Garrison (fought|battled)") > 1
 
@@ -1251,8 +1251,8 @@ def test_describe_battle_renders_defender_side_monster_assistance_too():
         rng=rng,
     ))
 
-    assert lines[0] == "Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with the 20th Legion."
-    assert lines[1] == "Gold Dragon was of some slight help in the battle."
+    assert lines[0] == "The Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with the 20th Legion."
+    assert lines[1] == "The Gold Dragon was of some slight help in the battle."
 
 
 def test_describe_battle_skips_monster_assistance_for_a_column_with_no_named_army():
@@ -4663,7 +4663,7 @@ def test_describe_encounter_combat_for_patrol_narrates_the_spoils_line_with_one_
 
     assert lines == [
         "Borin was mortally wounded.",
-        "and so it was that Borin met Borin's unseemly end.",
+        "and so it was that Borin met his unseemly end.",
         "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
         "Aldric looked with satisfaction at the remains of Borin.",
     ]
@@ -4690,7 +4690,7 @@ def test_describe_encounter_combat_for_patrol_narrates_the_spoils_line_when_the_
 
     assert lines == [
         "Aldric was mortally wounded.",
-        "and so it was that Aldric met Aldric's unseemly end.",
+        "and so it was that Aldric met his unseemly end.",
         "Borin crept up on Aldric's treasure, hoping to steal a great treasure.",
         "Borin looked with satisfaction at the remains of Aldric.",
     ]
@@ -4747,7 +4747,7 @@ def test_describe_turn_results_narrates_a_patrol_interception_sentinel():
     lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0, 0, 0]))
 
     assert "Patroller assailed Intruder and inflicted 6 damage points." in lines
-    assert "and so it was that Intruder met Intruder's unseemly end." in lines
+    assert "and so it was that Intruder met his unseemly end." in lines
 
 
 # -- Phase 709: random-encounter report narration --
@@ -4859,7 +4859,7 @@ def test_describe_random_encounter_wandering_sense_danger_evasion_has_no_resolut
 
     lines = describe_random_encounter(result, state, "Arthur", rng)
 
-    assert lines == ["during Arthur's travels, Arthur was crossing an open field when Giant spotted Arthur from a distance."]
+    assert lines == ["during Arthur's travels, Arthur was crossing an open field when a Giant spotted Arthur from a distance."]
 
 
 def test_describe_random_encounter_wandering_combat_uses_the_real_species_name():
@@ -4877,7 +4877,7 @@ def test_describe_random_encounter_wandering_combat_uses_the_real_species_name()
 
     lines = describe_random_encounter(result, state, "Arthur", rng)
 
-    assert lines[0] == "during Arthur's travels, Arthur was crossing an open field when Giant spotted Arthur from a distance."
+    assert lines[0] == "during Arthur's travels, Arthur was crossing an open field when a Giant spotted Arthur from a distance."
     assert "Giant" in lines[1]
     assert "Officer" not in lines[1]
 
@@ -9312,7 +9312,7 @@ def test_describe_search_guardian_riddle_appends_the_riddle_line():
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        render_guardian_poses_riddle("Sphinx", Treasure.QUEST_RA_BRIDGE),
+        render_guardian_poses_riddle("the Sphinx", Treasure.QUEST_RA_BRIDGE),
     ]
 
 
@@ -9454,7 +9454,7 @@ def test_describe_search_guardian_quest_location_appends_the_quest_line():
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        render_guardian_proposes_quest_location("Sphinx", Treasure.QUEST_GODS_QUEST),
+        render_guardian_proposes_quest_location("the Sphinx", Treasure.QUEST_GODS_QUEST),
     ]
 
 
@@ -9539,7 +9539,7 @@ def test_describe_search_renders_a_fizzled_monster_cast_using_the_guardians_own_
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "Gargoyle attempted to bolster Gargoyle's fortunes with a Fireball spell, but it fizzled at the last moment.",
+        "the Gargoyle attempted to bolster the Gargoyle's fortunes with a Fireball spell, but it fizzled at the last moment.",
     ]
 
 
@@ -9559,7 +9559,7 @@ def test_describe_search_ice_suspend_immobilized_guardian_renders_before_win():
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "guardian was immobilized by the shell of ice.",
+        "the guardian was immobilized by the shell of ice.",
     ]
 
 
@@ -9624,7 +9624,7 @@ def test_describe_search_renders_fulfill_pacification_line():
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "in Gargoyle's gratitude, Gargoyle swore off any raids in these lands.",
+        "in the Gargoyle's gratitude, the Gargoyle swore off any raids in these lands.",
     ]
 
 
@@ -9641,7 +9641,7 @@ def test_describe_search_renders_intimidation_line():
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
-        "Gargoyle was intimidated by the encounter, and surely will not be raiding these lands again for some time!",
+        "the Gargoyle was intimidated by the encounter, and surely will not be raiding these lands again for some time!",
     ]
 
 
@@ -9658,7 +9658,7 @@ def test_describe_search_renders_undeterred_line():
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
-        "In Gargoyle's judgement, Gargoyle was undaunted by the encounter and surely intends to continue plundering these lands.",
+        "In the Gargoyle's judgement, the Gargoyle was undaunted by the encounter and surely intends to continue plundering these lands.",
     ]
 
 
@@ -9679,7 +9679,7 @@ def test_describe_search_pacification_line_falls_back_to_generic_guardian_name()
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
-    assert lines[-1] == "in guardian's gratitude, guardian swore off any raids in these lands."
+    assert lines[-1] == "in the guardian's gratitude, the guardian swore off any raids in these lands."
 
 
 def test_search_province_name_resolves_the_real_province():
@@ -10746,7 +10746,7 @@ def test_describe_search_leader_shot_always_uses_the_generic_renderer_even_vs_a_
 
     assert len(lines) == 2
     assert "breathes" not in lines[1]
-    assert lines[1] == "Aldric fired an arrow at Red Dragon and inflicted 4 damage points."
+    assert lines[1] == "Aldric fired an arrow at the Red Dragon and inflicted 4 damage points."
 
 
 def test_describe_search_titan_has_no_flavor_mapping_falls_back_to_generic():
@@ -10766,7 +10766,7 @@ def test_describe_search_titan_has_no_flavor_mapping_falls_back_to_generic():
 
     assert len(lines) == 2
     assert "hurls a huge boulder" not in lines[1]
-    assert lines[1] == "Titan fired an arrow at Aldric and missed."
+    assert lines[1] == "the Titan fired an arrow at Aldric and missed."
 
 
 def test_describe_search_shot_narration_appears_before_the_mortal_wound_line():
@@ -10808,8 +10808,8 @@ def test_describe_search_squeeze_hits_narrated_for_a_leader_win():
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "Aldric curled Aldric's phantasmal hand around guardian's heart and squeezed it and inflicted 3 damage points.",
-        "Aldric curled Aldric's phantasmal hand around guardian's heart and squeezed it and inflicted 2 damage points.",
+        "Aldric curled Aldric's phantasmal hand around the guardian's heart and squeezed it and inflicted 3 damage points.",
+        "Aldric curled Aldric's phantasmal hand around the guardian's heart and squeezed it and inflicted 2 damage points.",
     ]
 
 
@@ -10828,7 +10828,7 @@ def test_describe_search_squeeze_hits_narrated_before_the_mortal_wound_line_for_
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "guardian curled guardian's phantasmal hand around Aldric's heart and squeezed it and inflicted 4 damage points.",
+        "the guardian curled the guardian's phantasmal hand around Aldric's heart and squeezed it and inflicted 4 damage points.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
     ]
@@ -10854,8 +10854,8 @@ def test_describe_search_melee_swings_narrated_in_chronological_order_both_direc
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "Aldric swang at guardian and inflicted 5 damage points.",
-        "guardian swang at Aldric and missed.",
+        "Aldric swang at the guardian and inflicted 5 damage points.",
+        "the guardian swang at Aldric and missed.",
     ]
 
 
@@ -10874,7 +10874,7 @@ def test_describe_search_melee_swings_narrated_before_the_mortal_wound_line_for_
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "guardian swang at Aldric and inflicted 6 damage points.",
+        "the guardian swang at Aldric and inflicted 6 damage points.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
     ]
@@ -10895,8 +10895,8 @@ def test_describe_search_melee_swings_narrated_after_squeeze_hits():
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "Aldric curled Aldric's phantasmal hand around guardian's heart and squeezed it and inflicted 3 damage points.",
-        "Aldric swang at guardian and inflicted 2 damage points.",
+        "Aldric curled Aldric's phantasmal hand around the guardian's heart and squeezed it and inflicted 3 damage points.",
+        "Aldric swang at the guardian and inflicted 2 damage points.",
     ]
 
 
@@ -14778,7 +14778,7 @@ def test_compose_letter_report_narrates_a_non_king_leader_who_dies_this_turn():
 
     assert "From: Guerin" in lines
     assert "Borin assailed Guerin and inflicted 6 damage points." in lines
-    assert "and so it was that Guerin met Guerin's unseemly end." in lines
+    assert "and so it was that Guerin met his unseemly end." in lines
 
 
 def test_compose_letter_report_all_four_wired_sections_present_even_when_empty():
@@ -19557,3 +19557,130 @@ def test_exploration_and_discoveries_are_news_for_the_gir():
     text = " ".join(line for event in state.world_events for line in event.lines)
     assert "Saladin (#1)" in text and "(#75)" not in text  # named with his id once; the feature without its number
     assert "Renegade Swordsman" in text or "Swordsman" in text
+
+
+# ---- NODRU.X: the armies the commander's Druidic skill is too low to lead -------------------------------------------
+
+
+def test_the_druidic_shortfall_sentence_names_the_race_and_the_commander():
+    # NODRU.X, variant 1 (real): "The Elves commanded by Giovanna were not impressed by her lack of leadership ability."
+    from ak_engine.report.turn_report import render_druidic_shortfall
+
+    seen = set()
+    for seed in range(30):
+        text = render_druidic_shortfall(Race.ELVEN, 1, "Giovanna", "her", random.Random(seed))
+        assert re.fullmatch(
+            r"the Elves (led|commanded) by Giovanna were (not impressed by|disgusted with) her (lack of leadership ability|strange appearance)\.",
+            text,
+        )
+        seen.add(text)
+    assert len(seen) > 1
+
+
+def test_the_druidic_shortfall_variant_follows_the_size_of_the_shortfall():
+    from ak_engine.report.turn_report import render_druidic_shortfall
+
+    second = render_druidic_shortfall(Race.EAGLES, 2, "Teleko", "his", random.Random(1))
+    assert re.fullmatch(
+        r"Teleko (was frustrated by|could make almost no use of) the Eagles, who (virtually ignored|could not comprehend) his (commands|military strategy)\.",
+        second,
+    )
+    third = render_druidic_shortfall(Race.DRAGONS, 3, "Guerin", "his", random.Random(1))
+    assert re.fullmatch(
+        r"the Dragons Guerin (commanded|led) were (rendered worthless by|ineffective because of) their (intolerance of|poor relations with) Guerin\.",
+        third,
+    )
+    for shortfall in (4, 5, 6):
+        fourth = render_druidic_shortfall(Race.DRAGONS, shortfall, "Guerin", "his", random.Random(1))
+        assert "would rather" in fourth or "would sooner" in fourth
+
+
+def test_a_battle_tells_which_armies_are_led_by_a_commander_without_the_druidic_skill():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.BOWMEN, 10.0, source_id=10, druidic_shortfall=1, army_race=Race.ELVEN, commander_leader_id=11)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"The Elves (led|commanded) by \w+ were (not impressed by|disgusted with) (his|her) (lack of leadership ability|strange appearance)\.", text)
+
+
+def test_a_battle_without_a_druidic_shortfall_does_not_get_the_sentence():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.BOWMEN, 10.0, source_id=10, army_race=Race.ELVEN, commander_leader_id=11)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert "not impressed" not in text and "disgusted with" not in text
+
+
+# ---- Monsters in the reports: article, pronoun and weapon of the personal combat --------------------------------
+
+
+def test_a_monster_in_the_personal_combat_is_named_with_its_article_pronoun_and_weapon():
+    # Real: "The Succubus assailed Hokuto but her sword whiffed", "The Ice Devil ... but its aim was just off the mark",
+    # "Hokuto dodged the claws", "walloped the Medusa".
+    from ak_engine.models.monster import Monster
+    from ak_engine.turn.encounter import MeleeSwing
+    from ak_engine.turn.search_execution import SearchExecutionResult
+
+    from ak_engine.models.monster import MONSTER_NAMES
+
+    state = GameState()
+    for monster, pronoun, weapon in ((Monster.SUCCUBUS, "her", "sword"), (Monster.ICE_DEVIL, "its", "claws"), (Monster.MEDUSA, "its", "dagger")):
+        result = SearchExecutionResult(
+            accepted=True, combat_resolved=True, winner="leader", guardian_monster=monster,
+            melee_swings=tuple(MeleeSwing("b", False, 0) for _ in range(8)),
+        )
+        lines = describe_search(result, state=state, character_name="Hokuto", feature_name="Tomb", rng=random.Random(4))
+        text = " ".join(lines[1:])
+        name = MONSTER_NAMES[monster]
+        assert f"the {name} " in text and f"{name}'s" not in text
+        assert not re.search(rf"[^e] {name}", text.replace(f"the {name}", "")), text
+        assert f"{pronoun} aim" in text or f"{pronoun} {weapon} whiffed" in text or f"the {weapon}" in text, text
+
+
+def test_a_hero_in_the_personal_combat_has_his_or_her_pronoun():
+    from ak_engine.models.monster import Monster
+    from ak_engine.turn.encounter import MeleeSwing
+    from ak_engine.turn.search_execution import SearchExecutionResult
+
+    state = GameState()
+    state.leaders[1] = LeaderState(leader_id=1, kingdom_id=1, name="Hokuto", location=HexCoord(0, 0))
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="leader", guardian_monster=Monster.TROLL,
+        melee_swings=tuple(MeleeSwing("a", False, 0) for _ in range(8)),
+    )
+    text = " ".join(describe_search(result, state=state, character_name="Hokuto", feature_name="Tomb", rng=random.Random(2), leader_id=1))
+    assert "Hokuto's" not in text and re.search(r"\bhis (aim|sword)\b", text)
+
+
+def test_the_succubus_fights_with_a_sword_and_the_rakshasha_with_a_dagger():
+    # The real reports (13 swings "swang at"/"thrust at", "evaded the sword") against the Pascal table's Fangs.
+    from ak_engine.models.monster import Monster
+    from ak_engine.report.turn_report import melee_weapon_noun
+
+    assert melee_weapon_noun(Monster.SUCCUBUS) == "sword"
+    assert melee_weapon_noun(Monster.RAKSHASHA) == "dagger"
+    assert melee_weapon_noun(Monster.ICE_DEVIL) == "claws"
+    assert melee_weapon_noun(None) == "sword"
+
+
+def test_monster_possessives_follow_the_real_reports():
+    from ak_engine.models.monster import Monster
+    from ak_engine.report.turn_report import monster_possessive
+
+    rng = random.Random(0)
+    assert monster_possessive(Monster.SUCCUBUS, rng) == "her" and monster_possessive(Monster.DRYAD, rng) == "her"
+    assert {monster_possessive(Monster.NEC_MAGE, random.Random(i)) for i in range(20)} == {"his", "her"}  # sex is rolled
+    assert all(monster_possessive(m, rng) == "its" for m in (Monster.MEDUSA, Monster.CHIMERA, Monster.ICE_DEVIL, Monster.TROLL))
+
+
+def test_a_wandering_monster_is_met_as_a_or_an_and_then_is_the_one():
+    # Real: "when a Renegade Illusionist spotted me", "approached by a Renegade Necromancer", "an Ice Devil".
+    from ak_engine.report.turn_report import _indefinite
+
+    assert _indefinite("Ice Devil") == "an Ice Devil" and _indefinite("Minotaur") == "a Minotaur"

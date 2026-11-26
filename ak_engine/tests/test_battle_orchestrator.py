@@ -2236,6 +2236,10 @@ def test_build_battle_units_druidic_shortfall_penalizes_a_foreign_race_led_army(
     # own led_by_insufficient_druid quality-improve-chance penalty.
     assert units[0].led_by_insufficient_druid is True
     assert units[0].druid_fought_as == Quality.GREEN  # ELITE(5) - 4
+    # NODRU.X: the shortfall, the army's race and its commander are what the report sentence is written from.
+    assert units[0].druidic_shortfall == 4
+    assert units[0].army_race is Race.DRAGONS
+    assert units[0].commander_leader_id == 1
 
 
 def test_build_battle_units_records_the_rank_a_druid_led_army_fought_as():
