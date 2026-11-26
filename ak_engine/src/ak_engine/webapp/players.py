@@ -24,6 +24,7 @@ from pathlib import Path
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.race import Race
+from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 
 _PLAYERS_FILENAME = "players.json"
@@ -85,6 +86,7 @@ class PlayerEntry:
     # unset exactly as generate_new_game() already left every King before
     # this phase.
     temper: str | None = None  # Temper.name
+    sex: str | None = None  # Sex.name (MALE / FEMALE / NON_BINARY); None for a players.json predating this field
     talent_allocation: dict[str, int] = field(default_factory=dict)  # Ability.name -> points (0..2)
 
     @property
@@ -98,6 +100,10 @@ class PlayerEntry:
     @property
     def temper_enum(self) -> Temper | None:
         return Temper[self.temper] if self.temper is not None else None
+
+    @property
+    def sex_enum(self) -> Sex | None:
+        return Sex[self.sex] if self.sex is not None else None
 
     @property
     def talent_allocation_by_ability(self) -> dict[Ability, int]:
@@ -129,6 +135,7 @@ def add_player(
     alignment: Alignment,
     temper: Temper | None = None,
     talent_allocation: dict[Ability, int] | None = None,
+    sex: Sex | None = None,
 ) -> PlayerEntry:
     players = list_players(game_dir)
     if len(players) >= MAX_PLAYERS:
@@ -141,6 +148,7 @@ def add_player(
         race=race.name,
         alignment=alignment.name,
         temper=temper.name if temper is not None else None,
+        sex=sex.name if sex is not None else None,
         talent_allocation={ability.name: points for ability, points in (talent_allocation or {}).items()},
     )
     players.append(entry)

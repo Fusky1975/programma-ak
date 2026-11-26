@@ -753,6 +753,9 @@ def _resolve_feature_power_attempt_effect(
         # "current value" to invert; toggling from an assumed MALE is a
         # low-stakes default (either starting point is a real, symmetric
         # outcome), not a sourced magnitude.
+        if leader.sex is Sex.NON_BINARY:
+            # Nothing to invert for a non-binary leader: the power finds nothing to change (like Temper already matching).
+            return FeaturePowerAttemptResult(power=power, applied=True, already_matched=True)
         leader.sex = Sex.FEMALE if leader.sex is Sex.MALE else Sex.MALE
         return FeaturePowerAttemptResult(power=power, applied=True, new_sex=leader.sex)
 
@@ -1248,6 +1251,8 @@ def _resolve_chance(
     assert sub_power is not None
 
     if sub_power is Power.NEW_SEX:
+        if leader.sex is Sex.NON_BINARY:
+            return FeaturePowerAttemptResult(power=sub_power, applied=True, already_matched=True)
         leader.sex = Sex.FEMALE if leader.sex is Sex.MALE else Sex.MALE
         return FeaturePowerAttemptResult(power=sub_power, applied=True, new_sex=leader.sex)
 

@@ -16,6 +16,7 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, record_newly_known_column
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
+from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.worldgen.generate_new_game import STARTING_TREASURY
 from ak_engine.worldgen.king_talent import build_king_skill_table
@@ -58,6 +59,7 @@ def create_kingdom(
     temper: Temper,
     talent_allocation: dict[Ability, int],
     coord: HexCoord,
+    sex: Sex | None = None,
 ) -> int:
     """Creates a new Kingdom and its King at ``coord``, returning the new
     ``kingdom_id`` (always equal to the King's own ``leader_id``, the
@@ -105,6 +107,7 @@ def create_kingdom(
             skills=skills,
             is_king=True,
             temper=temper,
+            sex=sex,
             alignment=alignment,
             race=race,
             birth_x=coord.x,

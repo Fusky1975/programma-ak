@@ -28,6 +28,13 @@
         {% endfor %}
       </select>
 
+      <label for="sex">Sex</label>
+      <select id="sex" name="sex" required>
+        {% for sex in sexes %}
+          <option value="{{ sex.name }}">{{ sex.value }} &mdash; {{ sex|display_name }}</option>
+        {% endfor %}
+      </select>
+
       <label for="temper">Temper</label>
       <select id="temper" name="temper" required>
         {% for temper in tempers %}

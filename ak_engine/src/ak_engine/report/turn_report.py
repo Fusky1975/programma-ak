@@ -17949,8 +17949,7 @@ def _gir_leader_retreat(
     if name is None:
         return None
     leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
-    female = leader is not None and leader.sex is not None and leader.sex.name.upper().startswith("F")
-    possessive = "her" if female else "his"
+    possessive = _sex_possessive(leader.sex if leader is not None else None)
     if alone:
         template = "> forces completely dispersed/Rdestroyed, < fled/Rescaped {frightened and }alone to ^S."
         text = render(template, {"<": name, "^S": destination, ">": possessive}, rng=rng)
@@ -19716,8 +19715,16 @@ def _indefinite(noun: str) -> str:
 
 def _possessive_for(state: GameState, leader_id: int | None) -> str:
     leader = state.leaders.get(leader_id) if leader_id is not None else None
-    if leader is not None and leader.sex is not None and leader.sex.name.upper().startswith("F"):
+    return _sex_possessive(leader.sex if leader is not None else None)
+
+
+def _sex_possessive(sex: Sex | None) -> str:
+    """"her" / "their" / "his" (the default when the sex was never recorded)."""
+
+    if sex is Sex.FEMALE:
         return "her"
+    if sex is Sex.NON_BINARY:
+        return "their"
     return "his"
 
 
@@ -20010,6 +20017,7 @@ def _battle_block_for(
     return None
 
 
+_NODRU_POSSESSIVE = re.compile(r"\b(?:his|her|their) (lack of leadership ability|strange appearance|commands|military strategy)\b")
 _ARMY_NOUNS = "men|soldiers|host|forces|armies|army|fleet|armada|navy|campaign|well-planned|minions"
 
 
@@ -20024,6 +20032,9 @@ def _first_person_battle(lines: list[str], name: str, units: Iterable[str]) -> l
     def convert(sentence: str) -> str:
         masked = keep.sub(lambda m: m.group(0).replace(name, "\x03"), sentence)
         converted = _to_first_person(masked, name, units).replace("\x03", name)
+        if name in sentence:
+            # NODRU.X: "... by her lack of leadership ability" is "... by my lack ..." in the commander's own letter.
+            converted = _NODRU_POSSESSIVE.sub(r"my \1", converted)
         return converted[:1].upper() + converted[1:]
 
     out: list[str] = []
