@@ -19714,3 +19714,38 @@ def test_the_commanders_letter_tells_the_druidic_shortfall_in_first_person():
         "The Elves commanded by me were not impressed by my lack of leadership ability.",
         "I was frustrated by the Dragons, who virtually ignored my commands.",
     ]
+
+
+# ---- Oratory shows in the speech, not in the line of battle ---------------------------------------------------------
+
+
+def test_the_line_of_battle_names_the_rank_an_army_really_has_not_the_one_oratory_adds():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10, quality=Quality.VETERAN, oratory_boosted=True)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20, quality=Quality.VETERAN)],
+    )
+
+    lines = _narrate(state, report)
+    diagram = "\n".join(lines)
+
+    assert "10th/A" in diagram and "20th/V" in diagram
+    assert not re.search(r"Veteran 10th", diagram)  # the Average Garrison is not named "Veteran" in the prose either
+    assert "Veteran 20th" in diagram or "the Veteran 20th" in diagram
+
+
+def test_the_emperor_best_hope_gets_the_emerald_crown_paragraph_in_the_imperial_office_report():
+    from ak_engine.turn.office_holder import commit_office_holders
+
+    state = GameState()
+    for kingdom_id, name, tax in ((1, "Aldric", 9), (2, "Borin", 4)):
+        coord = HexCoord(kingdom_id, 0)
+        state.add_kingdom(KingdomState(kingdom_id, name, Race.HUMAN, Alignment.NEUTRAL, coord))
+        state.add_leader(LeaderState(kingdom_id, kingdom_id, name, coord, is_king=True))
+        state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=kingdom_id, tax=tax))
+    commit_office_holders(state)
+
+    lines = describe_imperial_office_report(state, 1)
+    text = " ".join(lines)
+
+    assert "World Emperor" in text and "Emerald Crown" in text and "Aldric's head" in text
+    assert "Emerald Crown" not in " ".join(describe_imperial_office_report(state, 2))  # Borin is not the best hope

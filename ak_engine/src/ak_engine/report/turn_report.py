@@ -1466,6 +1466,7 @@ from ak_engine.turn.office_holder import (
     OfficeHolder,
     army_office_rank,
     army_office_rival_best_points,
+    emperor_best_hope,
     kingdom_best_army_candidate,
     kingdom_best_candidate,
     kingdom_runner_up,
@@ -2841,10 +2842,19 @@ def _battle_diagram_blank_row(n_cols: int) -> str:
     return " " * (_BATTLE_DIAGRAM_CELL_WIDTH * n_cols)
 
 
+def _reported_quality(unit: BattleUnit) -> Quality:
+    """The quality the battle report names an army by: the army's own, without the rank the Oratory spell adds for
+    the turn -- that boost counts in the fight and is told by the commander's speech, not in the line of battle."""
+
+    if unit.oratory_boosted:
+        return Quality(max(int(unit.quality) - 1, min(int(member) for member in Quality)))
+    return unit.quality
+
+
 def _battle_diagram_name_cell(unit: BattleUnit | None) -> str:
     if unit is None or unit.source_id is None:
         return _battle_diagram_cell("")
-    letter = _BATTLE_DIAGRAM_QUALITY_LETTER[unit.quality]
+    letter = _BATTLE_DIAGRAM_QUALITY_LETTER[_reported_quality(unit)]
     suffix = f"/{letter}{'S' if unit.is_skeletal else ''}"
     return _battle_diagram_cell(f"{make_army_ordinal(unit.source_id)}{suffix}")
 
@@ -3118,7 +3128,7 @@ def _narrative_army_name(base: str, unit: BattleUnit | None, *, quality: bool = 
     if unit is not None and unit.source_id is not None:
         # The real reports name an army by ordinal and type alone ("the 240th Skeletal Bowmen"), whatever its race.
         base = f"{make_army_ordinal(unit.source_id)} {'Skeletal ' if unit.is_skeletal else ''}{ARMY_TYPE_NAME[unit.army_type]}"
-        adjective = _QUALITY_ADJECTIVE[unit.quality] if quality else ""
+        adjective = _QUALITY_ADJECTIVE[_reported_quality(unit)] if quality else ""
         if adjective:
             return f"the {adjective} {base}"
     return f"the {base}"
@@ -11007,6 +11017,9 @@ def describe_turn_results(
 
     if board_width is not None:
         heard_leader_ids = {entry.leader_id for entry in results}
+        phases_of: dict[int, set[str]] = {}
+        for entry in results:
+            phases_of.setdefault(entry.leader_id, set()).add(entry.phase_label)
         for leader_id in sorted(heard_leader_ids):
             # Phase 835 bug fix: a bare `state.leaders.get(...)` silently
             # dropped this leader's own already-heard rumor(s) whenever
@@ -11021,6 +11034,9 @@ def describe_turn_results(
                 continue
             for rumor in state.rumors_heard_by(leader.kingdom_id):
                 if rumor.leader_id != leader_id:
+                    continue
+                # Told in the phase in which it was heard, not again in every other phase of the story.
+                if rumor.phase_label is not None and rumor.phase_label not in phases_of[leader_id]:
                     continue
                 lines.append(describe_rumor(rumor, state, leader.name, board_width, rng))
 
@@ -15772,6 +15788,8 @@ def _render_stranger_row(
 def _offices_by_leader(state: GameState) -> dict[int, list[Office]]:
     held: dict[int, list[Office]] = {}
     for office, holder in resolve_all_office_holders(state).items():
+        if office is Office.EMPEROR:
+            holder = emperor_best_hope(state)
         if office is not Office.NO_OFFICE and holder is not None:
             held.setdefault(holder.leader_id, []).append(office)
     return held

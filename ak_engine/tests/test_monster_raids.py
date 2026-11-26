@@ -15,6 +15,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.turn.monster_raids import (
+    MONSTER_RAIDS_FIRST_TURN,
     age_all_feature_guardians,
     age_feature_guardian,
     apply_fulfill_pacification,
@@ -32,6 +33,7 @@ HOME = HexCoord(0, 0)
 
 def _state_with_owned_province(coord: HexCoord = HOME, owner_kingdom_id: int | None = 1) -> GameState:
     state = GameState()
+    state.turn_number = MONSTER_RAIDS_FIRST_TURN  # monsters do not plunder before this turn
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HOME))
     state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=owner_kingdom_id))
     return state
@@ -572,3 +574,26 @@ def test_every_feature_kind_has_some_species_that_can_move_in():
         if kind.name.startswith("EF") or kind is FeatureType.NOFTYPE:
             continue
         assert monsters_for_feature_kind(kind), kind
+
+
+def test_monsters_do_not_plunder_before_turn_four():
+    for turn in (1, 2, 3):
+        state = _state_with_owned_province()
+        state.turn_number = turn
+        state.add_feature(_feature(guardian_state=MonsterEngagementState.BOLD))
+
+        income, thunder_used, events = resolve_province_raids(
+            state, 1, state.provinces[HOME], 100, None, False, ScriptedRandom([0.0] * 10)
+        )
+
+        assert (income, thunder_used, events) == (100, False, [])
+
+
+def test_monsters_plunder_from_turn_four_on():
+    state = _state_with_owned_province()
+    state.turn_number = MONSTER_RAIDS_FIRST_TURN
+    state.add_feature(_feature(guardian_state=MonsterEngagementState.BOLD))
+
+    income, _, events = resolve_province_raids(state, 1, state.provinces[HOME], 100, None, False, ScriptedRandom([0.0] * 10))
+
+    assert events and income < 100

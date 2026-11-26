@@ -549,6 +549,24 @@ def resolve_office_holder(
     return best
 
 
+def emperor_best_hope(state: GameState) -> OfficeHolder | None:
+    """Who "holds" the World Emperor title in the reports: the elected Emperor once there is one, before that the King of
+    the Kingdom with the largest tax base -- the "best hope to become the next World Emperor" that wears the Emerald
+    Crown ("for as long as you are the best hope", real reports) and has its "Know Tax Bases" perk. A tie for the lead,
+    or no Kingdom with any tax base yet, leaves it with nobody."""
+
+    elected = resolve_office_holder(state, Office.EMPEROR)
+    if elected is not None:
+        return elected
+    ranked = sorted(
+        ((emperor_merit_points(state, kingdom_id), kingdom_id) for kingdom_id in state.kingdoms), reverse=True
+    )
+    if not ranked or ranked[0][0] <= 0 or (len(ranked) > 1 and ranked[1][0] == ranked[0][0]):
+        return None
+    king = find_king_of_kingdom(state, ranked[0][1])
+    return OfficeHolder(king.leader_id, ranked[0][0]) if king is not None else None
+
+
 def cached_office_holder_leader_id(
     state: GameState, office: Office, cache: dict[Office, int | None] | None = None
 ) -> int | None:
@@ -628,6 +646,14 @@ def commit_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]
 
     results = resolve_all_office_holders(state)
     title_changes: dict[Office, int] = {}
+    # The World Emperor row of the report: its "holder" is the best hope (see ``emperor_best_hope()``), who is told of
+    # the Crown the turn he becomes it. The Emperor is not a Rank contest (``state.office_holders`` never holds it), so
+    # who it was last turn is remembered apart, in ``state.emperor_best_hope_leader_id``.
+    best_hope = emperor_best_hope(state)
+    if best_hope is not None:
+        if state.emperor_best_hope_leader_id != best_hope.leader_id:
+            title_changes[Office.EMPEROR] = best_hope.leader_id
+        state.emperor_best_hope_leader_id = best_hope.leader_id
     for office, holder in results.items():
         if office is Office.EMPEROR or holder is None:
             continue

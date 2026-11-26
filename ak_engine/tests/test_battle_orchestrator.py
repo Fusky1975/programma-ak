@@ -6384,3 +6384,44 @@ def test_the_garrison_commander_has_nobody_to_remove():
     _resolve_duel_death(state, _DuelOutcome(501, None, "defender", loser_died=True), attacker_armies, defender_armies, [], [])
 
     assert 501 in state.leaders
+
+
+# ---- Oratory's rank counts in the fight, not in the chance to improve ----------------------------------------------
+
+
+def test_the_post_battle_roll_is_made_on_the_rank_without_oratory_and_reported_that_way():
+    from ak_engine.turn.battle_orchestrator import BattleReport, _roll_army_quality
+
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.VETERAN, location=FIELD)  # an Average army, +1 from Oratory
+    army.oratory_boost_levels = 1
+    report = BattleReport(battle_result=None, conquered=False, province_coord=FIELD)  # type: ignore[arg-type]
+
+    # 25% is below the 30% an Average front-line unit has, above the 15% a Veteran one would.
+    _roll_army_quality(army, report, ScriptedRandom([0.25]), is_winner=True)
+
+    assert report.quality_changes[101] == QualityChange(old=Quality.AVERAGE, new=Quality.VETERAN)
+    assert army.quality is Quality.CRACK  # the turn's Oratory rank is still on top; the end of the turn takes it back
+
+
+def test_a_winner_who_does_not_improve_keeps_its_boosted_rank_for_the_turn_end_to_take_back():
+    from ak_engine.turn.battle_orchestrator import BattleReport, _roll_army_quality
+
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.VETERAN, location=FIELD)
+    army.oratory_boost_levels = 1
+    report = BattleReport(battle_result=None, conquered=False, province_coord=FIELD)  # type: ignore[arg-type]
+
+    _roll_army_quality(army, report, ScriptedRandom([0.9]), is_winner=True)
+
+    assert army.quality is Quality.VETERAN
+    assert report.quality_changes[101] == QualityChange(old=Quality.AVERAGE, new=Quality.AVERAGE)
+
+
+def test_an_army_without_oratory_rolls_on_its_own_rank():
+    from ak_engine.turn.battle_orchestrator import BattleReport, _roll_army_quality
+
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD)
+    report = BattleReport(battle_result=None, conquered=False, province_coord=FIELD)  # type: ignore[arg-type]
+
+    _roll_army_quality(army, report, ScriptedRandom([0.25]), is_winner=True)
+
+    assert army.quality is Quality.VETERAN
