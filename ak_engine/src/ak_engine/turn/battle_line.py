@@ -69,6 +69,8 @@ import random
 from dataclasses import dataclass, replace
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.models.army_type import BEASTS, ArmyType, is_overflight_unit, overflight_group
 from ak_engine.models.map import TERRAIN_LINE_LENGTH_RANGE, Terrain
 from ak_engine.turn.combat import Quality, apply_nemesis_penalty, line_contribution, win_probability
@@ -181,6 +183,11 @@ class BattleUnit:
     # commander had cast Phantasmal Armies ("Magical phantasmal armies fought with his soldiers").
     desert_thirst: bool = False
     phantasmal_armies: bool = False
+    # Report-only: the army fought under an Oratory speech of its commander ("Using my magical powers of Oratory, I
+    # started with an inspiring harangue to my army"), and the race-matching leadership item it fought under (the
+    # commander "waved his Sword Excalibur and his Humans were virtually hypnotized!"): (treasure, race).
+    oratory_boosted: bool = False
+    rallied_by_item: "tuple[Treasure, Race] | None" = None
     kingdom_id: int | None = None
     commanded_by: int | None = None
 

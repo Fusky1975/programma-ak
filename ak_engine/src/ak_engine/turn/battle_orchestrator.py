@@ -299,6 +299,9 @@ class BattleReport:
     # Every pursuit that caught its target, in order: (pursuer army id, pursued army id, whether it was destroyed). The
     # others "were beaten off by" the rearguard (SAY.PAS `_BPFail`).
     pursuit_outcomes: list[tuple[int, int, bool]] = field(default_factory=list)
+    # The summoned monster armies that were asked to join a side's commander (a Dragon/Eagle/Whale item): ("attacker" or
+    # "defender", army id, whether it defected to him) -- the others "stayed loyal to their brethren".
+    monster_defections: list[tuple[str, int, bool]] = field(default_factory=list)
     quality_changes: dict[int, QualityChange] = field(default_factory=dict)
     attacker_commander_leader_id: int | None = None
     defender_commander_leader_id: int | None = None
@@ -1032,6 +1035,12 @@ def _build_battle_units(
                 fanatic_alignment=fanatic_alignment,
                 desert_thirst=desert_without_camels,
                 phantasmal_armies=phantasmal_armies_level > 0,
+                oratory_boosted=army.oratory_boost_levels > 0,
+                rallied_by_item=(
+                    (RACE_LEADERSHIP_TREASURE[army_race], army_race)
+                    if race_item_bonus > 0 and army_race in RACE_LEADERSHIP_TREASURE
+                    else None
+                ),
                 kingdom_id=army.kingdom_id,
                 commanded_by=army.commanded_by,
             )
@@ -2816,6 +2825,7 @@ def _apply_monster_summoning_aid(
     duellist_side: bool = False,
     alignment_king_office: Office | None = None,
     race_fanatic_units: list[tuple[int, Race, int]] | None = None,
+    defections: list[tuple[str, int, bool]] | None = None,
 ) -> None:
     """AKGEN's own confirmed `battle_engine.special_events` "Dragon/Eagle/
     Whale summoning item" row: "adjacent unled matching units aid the
@@ -2900,7 +2910,10 @@ def _apply_monster_summoning_aid(
                 defection_chance = MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE
             else:
                 defection_chance = MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE
-            if rng.random() >= defection_chance:
+            defected = rng.random() < defection_chance
+            if defections is not None:
+                defections.append(("defender" if is_defender else "attacker", army.army_id, defected))
+            if not defected:
                 continue
             if army.kingdom_id is None:
                 strength = compute_effective_strength(
@@ -3333,6 +3346,7 @@ def fight_battle(
     # actually succeeds for a given army -- see _build_battle_units()'s
     # own docstring addendum.
     attacker_race_fanatic_units: list[tuple[int, Race, int]] = []
+    monster_defections: list[tuple[str, int, bool]] = []
     defender_race_fanatic_units: list[tuple[int, Race, int]] = []
     attacker_units = _build_battle_units(
         attacker_armies, state, is_defender=False, terrain=terrain, province_coord=province_coord, rng=rng,
@@ -3383,6 +3397,7 @@ def fight_battle(
         duellist_side=attacker_is_duellist_side,
         alignment_king_office=attacker_alignment_king_office,
         race_fanatic_units=attacker_race_fanatic_units,
+        defections=monster_defections,
     )
     _apply_monster_summoning_aid(
         defender_units, defender_commander, state, province_coord, monster_summoning_bounds,
@@ -3397,6 +3412,7 @@ def fight_battle(
         duellist_side=defender_is_duellist_side,
         alignment_king_office=defender_alignment_king_office,
         race_fanatic_units=defender_race_fanatic_units,
+        defections=monster_defections,
     )
 
     duel = _maybe_fight_duel(
@@ -3500,6 +3516,7 @@ def fight_battle(
         defender_present_leader_ids=defender_present_leader_ids,
         attacker_race_fanatic_units=tuple(attacker_race_fanatic_units),
         defender_race_fanatic_units=tuple(defender_race_fanatic_units),
+        monster_defections=monster_defections,
     )
 
     award_battle_command_experience(
