@@ -48,6 +48,7 @@ from ak_engine.turn.movement import Direction, neighbor_in_direction_wrapped
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.report.turn_report import (
+    _province_label,
     ALREADY_ALLIED_TEMPLATE,
     ATTACK_DEVASTATING_HIT_TEMPLATE,
     CAUGHT_UP_TEMPLATE,
@@ -165,6 +166,7 @@ from ak_engine.report.turn_report import (
     describe_battle_for_outsider,
     describe_invasion_paragraph,
     record_battle_world_events,
+    record_encounter_world_events,
     record_blackmail_narratives,
     record_illusory_fog_foreign_entry_world_events,
     record_move_world_events,
@@ -203,6 +205,7 @@ from ak_engine.report.turn_report import (
     render_attack_missed,
     render_battle_winner,
     render_invasion_commanders,
+    render_invasion_repulsed,
     render_invasion_intro,
     render_invasion_won,
     render_bluck_narration,
@@ -468,6 +471,28 @@ from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 from _helpers import ScriptedRandom
 
 
+def _flat(lines):
+    """A battle narrative as one sentence per entry: the narrative now delimits whole paragraphs (``\u00b6`` prefix),
+    and these tests are about the sentences."""
+
+    out = []
+    for line in lines:
+        if not line.startswith("\u00b6"):
+            out.append(line)  # the intro of the diagram, the diagram itself
+            continue
+        out.extend(sentence for sentence in re.split(r"(?<=[.!?]) (?=[A-Z\"])", line[1:]) if sentence)
+    return out
+
+
+def _at(lines, pattern):
+    """Index of the first sentence of ``lines`` matching ``pattern`` (fails when none does)."""
+
+    for index, line in enumerate(lines):
+        if re.search(pattern, line):
+            return index
+    raise AssertionError(f"no sentence matches {pattern!r} in {lines!r}")
+
+
 def _column(bres: int, attacker_source_id: int = 1, defender_source_id: int = 2) -> BattleColumnResult:
     return BattleColumnResult(
         attacker_strength=10.0,
@@ -637,27 +662,33 @@ def test_render_battle_winner_uses_winner_template_for_the_attacker():
     assert result == "the forces of Attackia broke through and were victorious."
 
 
-def test_render_battle_winner_uses_defwin_template_for_the_defender():
+def test_render_battle_winner_tells_the_battle_for_the_defender_too():
+    # WINNER.X is the battle's line for whichever side won (real reports: "The battle ended victoriously for the
+    # soldiers of Giovanna ..." when the invader lost); DEFWIN.X is how the *invasion* ended (render_invasion_repulsed).
     battle_result = BattleResult(winner="defender")
-    rng = ScriptedRandom([0.1, 0.1, 0.1], choice_indices=[2])
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
     result = render_battle_winner(battle_result, "Attackia", "Defendia", "the Dolphin Sea", rng)
-    assert result == "the attacking Kingdom was defeated in its attempt to conquer the Dolphin Sea."
+    assert result == "the forces of Defendia broke through and were victorious."
 
 
 def test_render_battle_winner_resolves_sea_markers_land():
-    # DEFWIN variant 1 carries two "/S" markers ("armies/Sfleets",
-    # "pushed/Schased") plus one "/R" ("beaten/Rdefeated").
-    battle_result = BattleResult(winner="defender")
-    rng = ScriptedRandom([0.1], choice_indices=[1])
+    # WINNER variant 1 carries two "/S" markers ("armies/Ssquadrons", "charge/Ssally") plus a "/R" and an optional.
+    battle_result = BattleResult(winner="attacker")
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[1])
     result = render_battle_winner(battle_result, "Attackia", "Defendia", "the Dolphin Sea", rng)
-    assert result == "Attackia's armies were beaten and pushed out of the Dolphin Sea."
+    assert result == "Attackia's armies vanquished the army opposing them with a final charge."
 
 
 def test_render_battle_winner_resolves_sea_markers_sea():
-    battle_result = BattleResult(winner="defender")
-    rng = ScriptedRandom([0.1], choice_indices=[1])
+    battle_result = BattleResult(winner="attacker")
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[1])
     result = render_battle_winner(battle_result, "Attackia", "Defendia", "the Dolphin Sea", rng, is_sea=True)
-    assert result == "Attackia's fleets were beaten and chased out of the Dolphin Sea."
+    assert result == "Attackia's squadrons vanquished the fleet opposing them with a final sally."
+
+
+def test_render_invasion_repulsed_is_defwin():
+    rng = ScriptedRandom([0.9, 0.1], choice_indices=[3])
+    assert render_invasion_repulsed("Drake (#44)", "Elkhome", rng) == "the attacking Kingdom was defeated and forced out of Elkhome."
 
 
 # -- render_destroyed_army ----------------------------------------------------
@@ -717,27 +748,22 @@ def test_describe_battle_assembles_clash_winner_and_destroyed_sentences_in_order
     battle_result = BattleResult(winner="attacker", columns=[column])
     report = BattleReport(battle_result=battle_result, conquered=True, destroyed_army_ids=[20])
 
-    # clash opening (2 draws) + bucket-3 variant 0's own "{almost }" (1 draw)
-    # + winner-attacker variant 0 (2 draws) = 5 draws; killarmy variant 0 has
-    # none.
-    rng = ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
         province_name="the Dolphin Sea",
         state=GameState(),
         destination_names={},
-        rng=rng,
-    )
-    # Phase 236: army_names is now synthesized via build_battle_army_names()
-    # -- make_army_name(10, ArmyType.GARRISON, Race.HUMAN) / (20, LEGION,
-    # Race.HUMAN), the same names _column()'s own unit types/ids produce.
-    assert lines == [
-        "10th Garrison fought 20th Legion and advanced at will.",
-        "the forces of Attackia broke through and were victorious.",
-        "Attackia annihilated 20th Legion.",
-    ]
+        rng=random.Random(11),
+    ))
+    # The real order: where the column stands and who faced whom, the clash, the winner's line, the lost army by the
+    # army that beat it.  (Phase 236: names come from build_battle_army_names(); the prose names an army with "the".)
+    face = _at(lines, r"^Across the (entire|whole) front, the 10th Garrison (faced|were arrayed against) the 20th Legion\.$")
+    clash = _at(lines, r"^The 10th Garrison (fought|battled)( with)? the 20th Legion and ")
+    winner = _at(lines, r"Attackia")
+    kill = _at(lines, r"^The 10th Garrison (annihilated|slew|destroyed|demolished|scattered) the 20th Legion")
+    assert face < clash < winner < kill
 
 
 def test_describe_battle_renders_batldr_lines_before_everything_else():
@@ -756,7 +782,7 @@ def test_describe_battle_renders_batldr_lines_before_everything_else():
     )
 
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -764,11 +790,11 @@ def test_describe_battle_renders_batldr_lines_before_everything_else():
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
     assert lines == [
-        "Aldric led Aldric's armies into the battle.",
-        "Borin led Borin's armies into the battle.",
+        "Aldric led his armies into the battle.",
+        "Borin led his armies into the battle.",
     ]
 
 
@@ -784,7 +810,7 @@ def test_describe_battle_skips_a_commanding_leader_no_longer_in_state():
     )
 
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -792,9 +818,9 @@ def test_describe_battle_skips_a_commanding_leader_no_longer_in_state():
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
-    assert lines == ["Aldric led Aldric's armies into the battle."]
+    assert lines == ["Aldric led his armies into the battle."]
 
 
 # -- Phase 739: _ADishK/_ADishF (duel-loser demoralization narrative) --
@@ -814,7 +840,7 @@ def test_describe_battle_renders_the_died_narration_for_an_ordinary_duel_loss():
     )
 
     rng = ScriptedRandom([0.1] * 20)
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -822,7 +848,7 @@ def test_describe_battle_renders_the_died_narration_for_an_ordinary_duel_loss():
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
     assert lines == [
         "The forces commanded by Borin were disheartened by Borin's death, "
@@ -844,7 +870,7 @@ def test_describe_battle_renders_the_fled_narration_when_the_loser_fled():
     )
 
     rng = ScriptedRandom([0.1] * 20)
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -852,11 +878,11 @@ def test_describe_battle_renders_the_fled_narration_when_the_loser_fled():
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
     assert lines == [
-        "The forces commanded by Aldric were disappointed by Aldric's "
-        "cowardice.They marched on, though with lessened confidence."
+        "The forces commanded by Aldric were disappointed by Aldric's cowardice.",
+        "They marched on, though with lessened confidence.",
     ]
 
 
@@ -866,7 +892,7 @@ def test_describe_battle_renders_no_duel_demoralization_line_when_no_duel_occurr
     report = BattleReport(battle_result=BattleResult(), conquered=False, attacker_commander_leader_id=1)
 
     rng = ScriptedRandom([0.1] * 20)
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -874,7 +900,7 @@ def test_describe_battle_renders_no_duel_demoralization_line_when_no_duel_occurr
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
     assert lines == []
 
@@ -891,7 +917,7 @@ def test_describe_battle_skips_the_duel_demoralization_line_when_the_loser_no_lo
     )
 
     rng = ScriptedRandom([0.1] * 20)
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -899,7 +925,7 @@ def test_describe_battle_skips_the_duel_demoralization_line_when_the_loser_no_lo
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
     assert lines == []
 
@@ -922,7 +948,7 @@ def test_describe_battle_renders_present_but_not_commanding_leaders():
     )
 
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -930,10 +956,10 @@ def test_describe_battle_renders_present_but_not_commanding_leaders():
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
     assert lines == [
-        "Aldric led Aldric's armies into the battle.",
+        "Aldric led his armies into the battle.",
         "Borin was there, leading no armies.",
         "Vraxis was there, leading no armies.",
     ]
@@ -943,7 +969,7 @@ def test_describe_battle_skips_a_present_leader_no_longer_in_state():
     state = GameState()
     report = BattleReport(battle_result=BattleResult(), conquered=False, attacker_present_leader_ids=[999])
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -951,7 +977,7 @@ def test_describe_battle_skips_a_present_leader_no_longer_in_state():
         state=state,
         destination_names={},
         rng=ScriptedRandom([]),
-    )
+    ))
 
     assert lines == []
 
@@ -975,7 +1001,7 @@ def test_describe_battle_renders_no_generals_line_for_a_side_with_nobody_present
         defender_commanding_leader_ids=[1],
     )
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -983,11 +1009,11 @@ def test_describe_battle_renders_no_generals_line_for_a_side_with_nobody_present
         state=state,
         destination_names={},
         rng=ScriptedRandom([0.1] * 10, choice_indices=[0]),
-    )
+    ))
 
     assert lines == [
-        "no generals were present to lead the forces of Defendia.",
-        "Vraxis led Vraxis's armies into the battle.",
+        "No generals were present to lead the forces of Defendia.",
+        "Vraxis led his armies into the battle.",
     ]
 
 
@@ -998,7 +1024,7 @@ def test_describe_battle_omits_no_generals_line_for_the_instant_conquest_shortcu
     # a "no generals" sentence for a battle that never actually happened.
     report = BattleReport(battle_result=BattleResult(), conquered=True)
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1006,7 +1032,7 @@ def test_describe_battle_omits_no_generals_line_for_the_instant_conquest_shortcu
         state=GameState(),
         destination_names={},
         rng=ScriptedRandom([]),
-    )
+    ))
 
     assert lines == []
 
@@ -1028,7 +1054,7 @@ def test_describe_battle_renders_homeland_defense_morale_right_after_the_leader_
     )
 
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1036,11 +1062,11 @@ def test_describe_battle_renders_homeland_defense_morale_right_after_the_leader_
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
     assert lines == [
-        "Aldric led Aldric's armies into the battle.",
-        "Borin led Borin's armies into the battle.",
+        "Aldric led his armies into the battle.",
+        "Borin led his armies into the battle.",
         "Aldric's troops were prepared to fight desperately for their homeland.",
         "Borin's troops were prepared to fight desperately for their homeland.",
     ]
@@ -1052,7 +1078,7 @@ def test_describe_battle_skips_a_home_province_leader_no_longer_in_state():
     state = GameState()
     report = BattleReport(battle_result=BattleResult(), conquered=False, attacker_home_province_leader_ids=[999])
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1060,7 +1086,7 @@ def test_describe_battle_skips_a_home_province_leader_no_longer_in_state():
         state=state,
         destination_names={},
         rng=ScriptedRandom([]),
-    )
+    ))
 
     assert lines == []
 
@@ -1077,7 +1103,7 @@ def test_describe_battle_omits_homeland_defense_morale_when_nobody_is_home():
     )
 
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1085,9 +1111,9 @@ def test_describe_battle_omits_homeland_defense_morale_when_nobody_is_home():
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
-    assert lines == ["Aldric led Aldric's armies into the battle."]
+    assert lines == ["Aldric led his armies into the battle."]
 
 
 def test_describe_battle_renders_race_fanaticism_right_after_home_province_morale():
@@ -1104,7 +1130,7 @@ def test_describe_battle_renders_race_fanaticism_right_after_home_province_moral
     )
 
     rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1112,9 +1138,13 @@ def test_describe_battle_renders_race_fanaticism_right_after_home_province_moral
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
-    assert "101st Garrison were inspired to fanaticism by Sir Roland, their glorious Savior of Humankind." in lines
+    # `Check_BFace`'s `_ARFan`: the clause is part of the column's introduction, "... the 101st Garrison were inspired
+    # to fanaticism by Sir Roland, their glorious Savior of Humankind.  They faced the 201st Legion."
+    face = lines[_at(lines, r"101st Garrison were inspired to fanaticism by Sir Roland, their glorious Savior of Humankind\.$")]
+    assert face.startswith("Across the entire front, the 101st Garrison")
+    assert lines[_at(lines, r"^They (faced|were arrayed against) the 201st Legion\.$")]
 
 
 def test_describe_battle_skips_race_fanaticism_when_the_title_holder_is_no_longer_in_state():
@@ -1130,7 +1160,7 @@ def test_describe_battle_skips_race_fanaticism_when_the_title_holder_is_no_longe
     )
 
     rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1138,7 +1168,7 @@ def test_describe_battle_skips_race_fanaticism_when_the_title_holder_is_no_longe
         state=state,
         destination_names={},
         rng=rng,
-    )
+    ))
 
     assert not any("fanaticism" in line for line in lines)
 
@@ -1154,7 +1184,7 @@ def test_describe_battle_skips_race_fanaticism_for_an_army_with_no_name():
         attacker_race_fanatic_units=((101, Race.HUMAN, 501),),
     )
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1162,7 +1192,7 @@ def test_describe_battle_skips_race_fanaticism_for_an_army_with_no_name():
         state=state,
         destination_names={},
         rng=ScriptedRandom([]),
-    )
+    ))
 
     assert lines == []
 
@@ -1182,7 +1212,7 @@ def test_describe_battle_renders_monster_assistance_before_everything_else():
     )
 
     rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1190,15 +1220,13 @@ def test_describe_battle_renders_monster_assistance_before_everything_else():
         state=GameState(),
         destination_names={},
         rng=rng,
-    )
+    ))
 
-    assert lines == [
-        "Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with 10th Garrison.",
+    assert lines[:2] == [
+        "Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with the 10th Garrison.",
         "Gold Dragon was of some slight help in the battle.",
-        "10th Garrison fought 20th Legion and advanced at will.",
-        "the forces of Attackia broke through and were victorious.",
-        "Attackia annihilated 20th Legion.",
     ]
+    assert _at(lines, r"^Across the") > 1 and _at(lines, r"^The 10th Garrison (fought|battled)") > 1
 
 
 def test_describe_battle_renders_defender_side_monster_assistance_too():
@@ -1213,7 +1241,7 @@ def test_describe_battle_renders_defender_side_monster_assistance_too():
     )
 
     rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1221,9 +1249,9 @@ def test_describe_battle_renders_defender_side_monster_assistance_too():
         state=GameState(),
         destination_names={},
         rng=rng,
-    )
+    ))
 
-    assert lines[0] == "Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with 20th Legion."
+    assert lines[0] == "Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with the 20th Legion."
     assert lines[1] == "Gold Dragon was of some slight help in the battle."
 
 
@@ -1248,7 +1276,7 @@ def test_describe_battle_skips_monster_assistance_for_a_column_with_no_named_arm
         },
     )
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1256,34 +1284,34 @@ def test_describe_battle_skips_monster_assistance_for_a_column_with_no_named_arm
         state=GameState(),
         destination_names={},
         rng=ScriptedRandom([]),
-    )
+    ))
 
     assert lines == []
 
 
 def test_describe_battle_threads_is_sea_to_every_sub_renderer():
-    # Phase 74: is_sea propagates to both the per-column clash sentence
-    # (bucket -1 variant 0, "/S" only) and the winner sentence (DEFWIN
-    # variant 1, "/S" x2 + "/R").
+    # Phase 74: is_sea propagates to the per-column clash sentence, the winner sentence (WINNER.X's "/S" markers) and
+    # the invasion sentences -- no marker is left unresolved, and a sea battle speaks of fleets.
     column = _column(bres=-1, attacker_source_id=10, defender_source_id=20)
     battle_result = BattleResult(winner="defender", columns=[column])
     report = BattleReport(battle_result=battle_result, conquered=False)
 
-    rng = ScriptedRandom([0.1, 0.1, 0.1], choice_indices=[0, 1])
-    lines = describe_battle(
-        report,
-        attacker_name="Attackia",
-        defender_name="Defendia",
-        province_name="the Dolphin Sea",
-        state=GameState(),
-        destination_names={},
-        rng=rng,
-        is_sea=True,
-    )
-    assert lines == [
-        "10th Garrison fought 20th Legion and gradually was pushed back.",
-        "Attackia's fleets were beaten and chased out of the Dolphin Sea.",
-    ]
+    sea_words = set()
+    for seed in range(30):
+        lines = _flat(describe_battle(
+            report,
+            attacker_name="Attackia",
+            defender_name="Defendia",
+            province_name="the Dolphin Sea",
+            state=GameState(),
+            destination_names={},
+            rng=random.Random(seed),
+            is_sea=True,
+        ))
+        assert not any("/S" in line or "/R" in line for line in lines)
+        text = " ".join(lines)
+        sea_words.update(word for word in ("fleet", "squadrons", "armada", "sally") if word in text)
+    assert sea_words
 
 
 def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
@@ -1304,7 +1332,7 @@ def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
     report = BattleReport(battle_result=battle_result, conquered=False)
 
     rng = ScriptedRandom([])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1312,39 +1340,43 @@ def test_describe_battle_skips_unnamed_armies_and_ties_without_erroring():
         state=GameState(),
         destination_names={},
         rng=rng,
-    )
+    ))
     assert lines == []
 
 
 def test_describe_battle_appends_quality_change_sentences_after_retreats():
-    # Phase 610: quality_changes narration is the final section describe_
-    # battle() appends, after clashes/winner/destroyed/pursuit/retreats.
+    # Phase 610 / 2026-11-27: the changes of quality close the narrative, under SAY.PAS `_AQuals`' own header ("The
+    # battle affected the quality of our forces:"), and only for the reader's own armies.
     column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
     battle_result = BattleResult(winner="attacker", columns=[column])
     report = BattleReport(
         battle_result=battle_result,
         conquered=True,
-        quality_changes={10: QualityChange(old=Quality.VETERAN, new=Quality.CRACK)},
+        quality_changes={
+            10: QualityChange(old=Quality.VETERAN, new=Quality.CRACK),
+            20: QualityChange(old=Quality.AVERAGE, new=Quality.VETERAN),
+        },
     )
 
-    # clash opening (2 draws) + bucket-3 variant 0's own "{almost }" (1 draw)
-    # + winner-attacker variant 0 (2 draws) + INCQ variant 0's own "/R"
-    # alternations -- generously padded rather than counted exactly.
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
-    lines = describe_battle(
-        report,
-        attacker_name="Attackia",
-        defender_name="Defendia",
-        province_name="the Dolphin Sea",
-        state=GameState(),
-        destination_names={},
-        rng=rng,
-    )
-    assert lines == [
-        "10th Garrison fought 20th Legion and advanced at will.",
-        "the forces of Attackia broke through and were victorious.",
-        "10th Garrison proved its mettle in the battle and we now rate it a Crack unit.",
-    ]
+    def narrate(viewer_side):
+        return _flat(describe_battle(
+            report,
+            attacker_name="Attackia",
+            defender_name="Defendia",
+            province_name="the Dolphin Sea",
+            state=GameState(),
+            destination_names={},
+            rng=random.Random(3),
+            viewer_side=viewer_side,
+        ))
+
+    attacker_text = " ".join(narrate("attacker"))
+    assert "The battle affected the quality of our forces:" in attacker_text
+    assert "10th Garrison" in attacker_text.split("quality of our forces:")[1]
+    assert "20th Legion" not in attacker_text.split("quality of our forces:")[1]  # the defender's change is his own
+    defender_text = " ".join(narrate("defender"))
+    assert "20th Legion" in defender_text.split("quality of our forces:")[1]
+    assert "10th Garrison" not in defender_text.split("quality of our forces:")[1]
 
 
 # -- render_battle_line_diagram (Phase 1035) ---------------------------------
@@ -1510,7 +1542,7 @@ def test_describe_battle_skips_diagram_when_province_coord_is_unset():
     report = BattleReport(battle_result=battle_result, conquered=True)
 
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1518,7 +1550,7 @@ def test_describe_battle_skips_diagram_when_province_coord_is_unset():
         state=GameState(),
         destination_names={},
         rng=rng,
-    )
+    ))
     assert lines[0] != "The armies were drawn up into lines of battle as shown here:"
 
 
@@ -1633,8 +1665,8 @@ def test_describe_battle_includes_reserve_sentence_right_after_the_diagram():
     battle_result = BattleResult(winner="attacker", columns=[column])
     report = BattleReport(battle_result=battle_result, conquered=True, province_coord=HexCoord(3, 5))
 
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
-    lines = describe_battle(
+    rng = random.Random(2)
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1642,7 +1674,7 @@ def test_describe_battle_includes_reserve_sentence_right_after_the_diagram():
         state=GameState(),
         destination_names={},
         rng=rng,
-    )
+    ))
     diagram_end = lines.index("  DEFENDING ARMY")
     assert lines[diagram_end + 1] == "The attackers had the 13th Garrison in reserve."
 
@@ -1662,9 +1694,9 @@ def test_describe_battle_prepends_bluck_and_interleaves_cluck_when_phase_is_supp
         attacker_commander_leader_id=100,
         defender_commander_leader_id=200,
     )
-    rng = ScriptedRandom([0.1] * 60, choice_indices=[0, 0, 0, 0, 0])
+    rng = ScriptedRandom([0.1] * 300, choice_indices=[0] * 12)
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1673,41 +1705,21 @@ def test_describe_battle_prepends_bluck_and_interleaves_cluck_when_phase_is_supp
         destination_names={},
         rng=rng,
         phase=0,
-    )
+    ))
 
-    assert lines == [
-        # Phase 1035: the real battle-line ASCII diagram is this
-        # composer's own first output, before any narrative line -- see
-        # `render_battle_line_diagram()`'s own module comment.
-        "The armies were drawn up into lines of battle as shown here:",
-        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
-        "",
-        "  10th/A  ",
-        " Garrison ",
-        "    GC    ",
-        "----------",
-        "    GC    ",
-        "  20th/A  ",
-        "  Legion  ",
-        "          ",
-        "  DEFENDING ARMY",
-        # Phase 927: neither side's own `*_commanding_leader_ids`/
-        # `*_present_leader_ids` roster is populated on this fixture (only
-        # the separate, singular `attacker_commander_leader_id`/`defender_
-        # commander_leader_id` BLUCK/CLUCK fields are) -- per real
-        # `_BLList` semantics this is a genuine "no leaders present at
-        # all" case for both sides, always narrated with the province
-        # owner's (defender's) name even for the attacker.
-        "no generals were present to lead the forces of Defendia.",
-        "no generals were present to lead the forces of Defendia.",
-        "no luck of great significance altered the battle.",
-        # Phase 712: TACTICS.X2, right after BLUCK -- both tactical
-        # abilities default to 0 here, bucket 5 (even).
-        "as the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
-        "10th Garrison fought 20th Legion and advanced at will.",
-        "10th Garrison expected to have the upper hand because they had constructed prepared "
-        "defenses, but were suprised to discover that their opponents had done the same.",
-        "the forces of Attackia broke through and were victorious.",
+    # Phase 1035: the diagram (and the sentence that introduces it) comes first; the narrative follows, paragraph by
+    # paragraph (SAY.PAS: the roster and luck, each column, the outcome).  Phase 927: neither side's roster is populated
+    # on this fixture, so both are the "no generals were present" case, always with the province owner's name.
+    assert lines[0] == "The armies were drawn up into lines of battle as shown here:"
+    assert lines[lines.index("  DEFENDING ARMY") + 1 :] == [
+        "No generals were present to lead the forces of Defendia.",
+        "No generals were present to lead the forces of Defendia.",
+        "No luck of great significance altered the battle.",
+        "As the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
+        "Across the entire front, the 10th Garrison faced the 20th Legion.",
+        "The 10th Garrison expected to have the upper hand because they had constructed prepared defenses, but were suprised to discover that their opponents had done the same.",
+        "The 10th Garrison fought the 20th Legion and advanced at will.",
+        "The forces of Attackia broke through and were victorious.",
     ]
 
 
@@ -1725,9 +1737,9 @@ def test_describe_battle_skips_bluck_and_cluck_when_phase_is_not_supplied():
         attacker_commander_leader_id=100,
         defender_commander_leader_id=200,
     )
-    rng = ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0])
+    rng = ScriptedRandom([0.1] * 300, choice_indices=[0] * 12)
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1735,29 +1747,18 @@ def test_describe_battle_skips_bluck_and_cluck_when_phase_is_not_supplied():
         state=GameState(),
         destination_names={},
         rng=rng,
-    )
+    ))
 
-    assert lines == [
-        # Phase 1035: see the previous test's own comment -- the diagram
-        # always prints first, regardless of whether `phase` is supplied.
-        "The armies were drawn up into lines of battle as shown here:",
-        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
-        "",
-        "  10th/A  ",
-        " Garrison ",
-        "    GC    ",
-        "----------",
-        "    GC    ",
-        "  20th/A  ",
-        "  Legion  ",
-        "          ",
-        "  DEFENDING ARMY",
-        # Phase 927: same "no BATLDR roster populated on this fixture"
-        # case as the previous test -- see its own comment.
-        "no generals were present to lead the forces of Defendia.",
-        "no generals were present to lead the forces of Defendia.",
-        "10th Garrison fought 20th Legion and advanced at will.",
-        "the forces of Attackia broke through and were victorious.",
+    # Phase 1035: the diagram (and the sentence that introduces it) comes first; the narrative follows, paragraph by
+    # paragraph (SAY.PAS: the roster and luck, each column, the outcome).  Phase 927: neither side's roster is populated
+    # on this fixture, so both are the "no generals were present" case, always with the province owner's name.
+    assert lines[0] == "The armies were drawn up into lines of battle as shown here:"
+    assert lines[lines.index("  DEFENDING ARMY") + 1 :] == [
+        "No generals were present to lead the forces of Defendia.",
+        "No generals were present to lead the forces of Defendia.",
+        "Across the entire front, the 10th Garrison faced the 20th Legion.",
+        "The 10th Garrison fought the 20th Legion and advanced at will.",
+        "The forces of Attackia broke through and were victorious.",
     ]
 
 
@@ -1780,9 +1781,9 @@ def test_describe_battle_tactics_reflects_a_real_asymmetric_ability_gap():
         attacker_tactical_ability=7,
         defender_tactical_ability=2,
     )
-    rng = ScriptedRandom([0.1] * 60, choice_indices=[0, 0, 0, 0, 0])
+    rng = ScriptedRandom([0.1] * 300, choice_indices=[0] * 12)
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1791,9 +1792,9 @@ def test_describe_battle_tactics_reflects_a_real_asymmetric_ability_gap():
         destination_names={},
         rng=rng,
         phase=0,
-    )
+    ))
 
-    assert "tactical supremacy was guaranteed by Attackia's unmatched tactical mind." in lines
+    assert "Tactical supremacy was guaranteed by Attackia's unmatched tactical mind." in lines
 
 
 def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
@@ -1810,9 +1811,9 @@ def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
     report = BattleReport(
         battle_result=battle_result, conquered=True, province_coord=HexCoord(3, 5), attacker_kingdom_id=1, defender_kingdom_id=2
     )
-    rng = ScriptedRandom([0.1] * 60, choice_indices=[0, 0, 0, 0, 0])
+    rng = ScriptedRandom([0.1] * 300, choice_indices=[0] * 12)
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1821,38 +1822,21 @@ def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
         destination_names={},
         rng=rng,
         phase=0,
-    )
+    ))
 
-    assert lines == [
-        # Phase 1035: the diagram prints first -- see the earlier tests'
-        # own comment.
-        "The armies were drawn up into lines of battle as shown here:",
-        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
-        "",
-        "  10th/A  ",
-        " Garrison ",
-        "    GC    ",
-        "----------",
-        "    GC    ",
-        "  20th/A  ",
-        "  Legion  ",
-        "          ",
-        "  DEFENDING ARMY",
-        # Phase 927: the Kings added above are real leaders, but neither
-        # is *present at the battle province* (their own `LeaderState.
-        # location` is each Kingdom's home, not `HexCoord(3, 5)`) -- so
-        # per real `_BLList` "present" semantics (`LeaderState.location`),
-        # this is still a genuine "no leaders present" case for both
-        # sides, distinct from BLUCK/CLUCK's own separate King-fallback
-        # (which doesn't require physical presence).
-        "no generals were present to lead the forces of Defendia.",
-        "no generals were present to lead the forces of Defendia.",
-        "no luck of great significance seemed to affect the overall battle before it commenced.",
-        # Phase 712: TACTICS.X2, right after BLUCK.
-        "as the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
-        "10th Garrison fought 20th Legion and advanced at will.",
-        "the contest was a slugfest decided by the courage of the men in hand-to-hand combat.",
-        "the forces of Attackia broke through and were victorious.",
+    # Phase 1035: the diagram (and the sentence that introduces it) comes first; the narrative follows, paragraph by
+    # paragraph (SAY.PAS: the roster and luck, each column, the outcome).  Phase 927: neither side's roster is populated
+    # on this fixture, so both are the "no generals were present" case, always with the province owner's name.
+    assert lines[0] == "The armies were drawn up into lines of battle as shown here:"
+    assert lines[lines.index("  DEFENDING ARMY") + 1 :] == [
+        "No generals were present to lead the forces of Defendia.",
+        "No generals were present to lead the forces of Defendia.",
+        "No luck of great significance seemed to affect the overall battle before it commenced.",
+        "As the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
+        "Across the entire front, the 10th Garrison faced the 20th Legion.",
+        "The contest was a slugfest decided by the courage of the men in hand-to-hand combat.",
+        "The 10th Garrison fought the 20th Legion and advanced at will.",
+        "The forces of Attackia broke through and were victorious.",
     ]
 
 
@@ -1864,9 +1848,9 @@ def test_describe_battle_skips_bluck_and_cluck_when_no_leader_id_resolves_for_ei
     report = BattleReport(
         battle_result=battle_result, conquered=True, province_coord=HexCoord(3, 5), attacker_kingdom_id=1, defender_kingdom_id=2
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0])
+    rng = ScriptedRandom([0.1] * 300, choice_indices=[0] * 12)
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1875,29 +1859,18 @@ def test_describe_battle_skips_bluck_and_cluck_when_no_leader_id_resolves_for_ei
         destination_names={},
         rng=rng,
         phase=0,
-    )
+    ))
 
-    assert lines == [
-        # Phase 1035: the diagram prints first -- see the earlier tests'
-        # own comment.
-        "The armies were drawn up into lines of battle as shown here:",
-        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
-        "",
-        "  10th/A  ",
-        " Garrison ",
-        "    GC    ",
-        "----------",
-        "    GC    ",
-        "  20th/A  ",
-        "  Legion  ",
-        "          ",
-        "  DEFENDING ARMY",
-        # Phase 927: no BATLDR roster on this fixture -- see the earlier
-        # "phase is not supplied" test's own comment.
-        "no generals were present to lead the forces of Defendia.",
-        "no generals were present to lead the forces of Defendia.",
-        "10th Garrison fought 20th Legion and advanced at will.",
-        "the forces of Attackia broke through and were victorious.",
+    # Phase 1035: the diagram (and the sentence that introduces it) comes first; the narrative follows, paragraph by
+    # paragraph (SAY.PAS: the roster and luck, each column, the outcome).  Phase 927: neither side's roster is populated
+    # on this fixture, so both are the "no generals were present" case, always with the province owner's name.
+    assert lines[0] == "The armies were drawn up into lines of battle as shown here:"
+    assert lines[lines.index("  DEFENDING ARMY") + 1 :] == [
+        "No generals were present to lead the forces of Defendia.",
+        "No generals were present to lead the forces of Defendia.",
+        "Across the entire front, the 10th Garrison faced the 20th Legion.",
+        "The 10th Garrison fought the 20th Legion and advanced at will.",
+        "The forces of Attackia broke through and were victorious.",
     ]
 
 
@@ -1917,9 +1890,9 @@ def test_describe_battle_bluck_appears_without_cluck_for_an_ineligible_column():
         attacker_commander_leader_id=100,
         defender_commander_leader_id=200,
     )
-    rng = ScriptedRandom([0.1] * 60, choice_indices=[0, 0, 0, 0])
+    rng = ScriptedRandom([0.1] * 300, choice_indices=[0] * 12)
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report,
         attacker_name="Attackia",
         defender_name="Defendia",
@@ -1928,32 +1901,20 @@ def test_describe_battle_bluck_appears_without_cluck_for_an_ineligible_column():
         destination_names={},
         rng=rng,
         phase=0,
-    )
+    ))
 
-    assert lines == [
-        # Phase 1035: the diagram prints first -- see the earlier tests'
-        # own comment.
-        "The armies were drawn up into lines of battle as shown here:",
-        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
-        "",
-        "  10th/A  ",
-        " Garrison ",
-        "    GC    ",
-        "----------",
-        "    GC    ",
-        "  20th/A  ",
-        "  Legion  ",
-        "          ",
-        "  DEFENDING ARMY",
-        # Phase 927: no BATLDR roster on this fixture -- see the "phase
-        # is not supplied" test's own comment above.
-        "no generals were present to lead the forces of Defendia.",
-        "no generals were present to lead the forces of Defendia.",
-        "no luck of great significance altered the battle.",
-        # Phase 712: TACTICS.X2, right after BLUCK.
-        "as the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
-        "10th Garrison fought 20th Legion and advanced at will.",
-        "the forces of Attackia broke through and were victorious.",
+    # Phase 1035: the diagram (and the sentence that introduces it) comes first; the narrative follows, paragraph by
+    # paragraph (SAY.PAS: the roster and luck, each column, the outcome).  Phase 927: neither side's roster is populated
+    # on this fixture, so both are the "no generals were present" case, always with the province owner's name.
+    assert lines[0] == "The armies were drawn up into lines of battle as shown here:"
+    assert lines[lines.index("  DEFENDING ARMY") + 1 :] == [
+        "No generals were present to lead the forces of Defendia.",
+        "No generals were present to lead the forces of Defendia.",
+        "No luck of great significance altered the battle.",
+        "As the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
+        "Across the entire front, the 10th Garrison faced the 20th Legion.",
+        "The 10th Garrison fought the 20th Legion and advanced at will.",
+        "The forces of Attackia broke through and were victorious.",
     ]
 
 
@@ -3925,6 +3886,9 @@ def test_render_battle_leader_intro_first_variant_land():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
     result = render_battle_leader_intro("Aldric", rng)
     assert result == "Aldric led Aldric's armies into the battle."
+    # ... and with the possessive pronoun the reports use for a character's own forces
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    assert render_battle_leader_intro("Aldric", rng, possessive="his") == "Aldric led his armies into the battle."
 
 
 def test_render_battle_leader_intro_first_variant_resolves_sea_marker():
@@ -17533,10 +17497,400 @@ def test_an_uncontested_conquest_of_nobodys_province_is_just_conq():
     assert event.lines[0].startswith("In late summer, ") and "invaded" not in event.lines[0]
 
 
+# -- 2026-11-27: the battle narrative of the ACTION REPORT, against the real SE3 reports and SAY.PAS ---------------
+
+
+def _battle_with(attacker_units, defender_units, *, winner="attacker", state_and_coord=None, **report_fields):
+    """A fought battle of one column; returns ``(state, report)`` for ``describe_battle()``."""
+
+    state, coord = state_and_coord if state_and_coord is not None else (None, None)
+    if state is None:
+        state, coord, _watcher = _gir_battle_state()
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=3 if winner == "attacker" else -3,
+        attacker_won=winner == "attacker", cluck_index=20, attacker_units=attacker_units, defender_units=defender_units,
+        attacker_switched=report_fields.pop("attacker_switched", False),
+        defender_switched=report_fields.pop("defender_switched", False),
+    )
+    fields = dict(
+        battle_result=BattleResult(winner=winner, columns=[column]), conquered=winner == "attacker",
+        province_coord=coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+        attacker_commander_leader_id=11, defender_commander_leader_id=12,
+        attacker_commanding_leader_ids=[11], defender_commanding_leader_ids=[12],
+    )
+    fields.update(report_fields)
+    return state, BattleReport(**fields)
+
+
+def _narrate(state, report, *, seed=1, viewer_side="attacker", viewer=1, **kwargs):
+    return _flat(describe_battle(
+        report, attacker_name="Attackia (#1)", defender_name="Defendia (#2)", province_name="Border Fort",
+        state=state, destination_names={}, rng=random.Random(seed), viewer_side=viewer_side,
+        viewer_kingdom_id=viewer, **kwargs,
+    ))
+
+
+def test_column_position_follows_the_line_and_swaps_for_the_defender():
+    from ak_engine.report.turn_report import _column_position
+
+    assert [_column_position(i, 3, False) for i in range(3)] == [1, 2, 3]  # left, interior, right
+    assert [_column_position(i, 3, True) for i in range(3)] == [3, 2, 1]  # `IF attside <> playking`
+    assert _column_position(0, 1, False) == 0 and _column_position(0, 1, True) == 0  # the whole front
+    assert [_column_position(i, 2, False) for i in range(2)] == [1, 3]
+
+
+def test_a_battle_opens_with_the_invasion_and_the_commanders_then_the_diagram():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+
+    lines = _narrate(state, report)
+
+    # One paragraph with the sentence that introduces the diagram (SAY.PAS _BInvas, _BCdrs, Check_BAList).
+    assert "Border Fort" in lines[0] and "Defendia (#2)" in lines[0]
+    assert re.search(r"(commanded|in command of) the (attacking|invading) armies", lines[0])
+    assert "Tlazolteotl commanded" in lines[0] or "Tlazolteotl was in command" in lines[0]  # the reader's own: bare
+    assert "Marlon (#12)" in lines[0]  # the others with their "(#n)"
+    assert lines[0].endswith("The armies were drawn up into lines of battle as shown here:")
+    # ... and the Kingdom of the reader is named without its number
+    assert "Attackia (#1)" not in lines[0].replace("Lord Attackia Master orango", "")
+
+
+def test_the_defenders_report_names_the_invader_with_his_number_and_himself_bare():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+
+    lines = _narrate(state, report, viewer_side="defender", viewer=2)
+
+    assert "Tlazolteotl (#11)" in lines[0]
+    assert "Marlon" in lines[0] and "Marlon (#12)" not in lines[0]
+
+
+def test_the_column_is_introduced_with_the_quality_each_army_fought_as():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10, quality=Quality.VETERAN)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20, quality=Quality.CRACK, is_skeletal=True)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    # "the Veteran 10th Garrison faced the Crack 20th Skeletal Legion" -- later mentions carry no quality
+    assert re.search(r"the Veteran 10th Garrison (faced|were arrayed against) the Crack 20th Skeletal Legion\.", text)
+    assert re.search(r"The 10th Garrison (fought|battled)( with)? the 20th Skeletal Legion", text)
+
+
+def test_an_average_army_is_named_without_a_quality_and_the_type_by_its_full_name():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.LT_CAVALRY, 10.0, source_id=10, quality=Quality.AVERAGE)],
+        [BattleUnit(ArmyType.CAMEL_CORPS, 10.0, source_id=20, quality=Quality.GREEN)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"the 10th Light Cavalry (faced|were arrayed against) the Green 20th Camel Corps", text)
+
+
+def test_the_left_and_right_flanks_swap_for_the_defender():
+    from ak_engine.report.turn_report import _column_position
+
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+    two = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.BOWMEN, 10.0, source_id=11)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=21)],
+    )
+    report.battle_result.columns.append(two)
+
+    attacker_text = " ".join(_narrate(state, report, viewer_side="attacker"))
+    defender_text = " ".join(_narrate(state, report, viewer_side="defender", viewer=2))
+
+    assert re.search(r"[Ll]eft (outside )?(flank|wing), the 10th Garrison", attacker_text)
+    assert re.search(r"[Rr]ight (outside )?(flank|wing), the 10th Garrison", defender_text)
+
+
+def test_a_fanatic_column_carries_its_clause_in_the_introduction():
+    # SAY.PAS Check_BFace: the attacker's clause is followed by "They", the defender's by ", who ...".
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10, fanatic_alignment=Alignment.EVIL)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20, fanatic_alignment=Alignment.GOOD)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"the 10th Garrison (screamed|shouted) their (hideous )?(battle|war) cries", text)
+    assert re.search(r"by their diabolical King[^.]*\. They (faced|were arrayed against) the 20th Legion, who ", text)
+    assert re.search(r"the 20th Legion, who sang (out )?their (fiery |thunderous )?(battle hymns|heroic ballads)", text)
+    assert "by their exalted King" in text
+
+
+def test_the_unit_an_alignment_kings_title_made_fanatic_is_blessed_by_his_followers():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20, alignment_king_selected=True, kingdom_id=2)],
+    )
+    state.kingdoms[2].alignment = Alignment.PAGAN
+
+    text = " ".join(_narrate(state, report))
+
+    assert "the 20th Legion, who were blessed" in text or "the 20th Legion, who were aided" in text
+    assert "League of Pagan Clerics" in text
+
+
+def test_flying_armies_soar_over_the_enemys_rearmost_army_and_attack_it():
+    state, report = _battle_with(
+        [
+            BattleUnit(ArmyType.GARRISON, 10.0, source_id=10),
+            BattleUnit(ArmyType.EAGLE_WING, 5.0, source_id=13),
+        ],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20), BattleUnit(ArmyType.BOWMEN, 5.0, source_id=21)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    # `_AFly`/`_AFly2`; the target is the enemy column's last army (rear targeting, rulebook [7.2])
+    assert re.search(r"The 13th Eagles (soared over|swooped down on) the 21st Bowmen and attacked (them|without mercy)\.", text)
+
+
+def test_a_rearward_land_army_outflanks_an_enemy_column_that_is_shorter():
+    state, report = _battle_with(
+        [
+            BattleUnit(ArmyType.GARRISON, 10.0, source_id=10),
+            BattleUnit(ArmyType.BOWMEN, 5.0, source_id=14),
+            BattleUnit(ArmyType.AXEMEN, 5.0, source_id=15),
+        ],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"The 14th Bowmen and the 15th Axemen (out)?flanked the (undermanned )?enemy (lines )?and ", text)
+
+
+def test_the_armies_in_reserve_take_no_part_in_the_column_narrative():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)] + [BattleUnit(ArmyType.EAGLE_WING, 5.0, source_id=i) for i in (13, 14, 15)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert "13th Eagles" in text and "14th Eagles" in text  # lines 2 and 3
+    assert "The 15th Eagles" not in text  # the fourth waits in reserve ("The attackers had the 15th Eagles in reserve.")
+
+
+def test_a_side_that_moved_a_stronger_army_to_the_front_line_says_so():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        attacker_switched=True,
+    )
+
+    lines = _narrate(state, report)
+
+    assert any(re.search(r"Tlazolteotl (switched|maneuvered) the 10th Garrison to the (front line|fore)", line) for line in lines)
+
+
+def test_each_lost_army_is_destroyed_by_the_army_that_beat_it_in_its_column():
+    # "The 177th Legion scattered the 20th Legion in all directions." (real SE3__T10.K1)
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        destroyed_army_ids=[20],
+    )
+
+    lines = _narrate(state, report)
+
+    assert any(re.fullmatch(r"The 10th Garrison (annihilated|slew|destroyed|demolished|scattered) the 20th Legion.*", l) for l in lines)
+
+
+def test_a_flying_army_of_the_winners_pursues_the_fleeing_enemy():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10), BattleUnit(ArmyType.DRAGON_WING, 5.0, source_id=12)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        pursuit_destroyed_army_ids=[20],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(
+        r"The 12th Dragons (pursued the enemy and|gave chase and|overtook the enemy (in their \w+ retreat )?and|chased after the enemy and) "
+        r"(annihilated|slew|destroyed|demolished|scattered) the 20th Legion",
+        text,
+    )
+
+
+def test_the_defender_who_wins_gets_winner_x_with_his_own_name_and_the_invasion_ends_with_defwin():
+    # Real report: "The battle ended victoriously for the soldiers of Giovanna as they broke through at a critical
+    # moment." ... "The host of the attacking Kingdom was defeated and forced out of Kajaani."
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        winner="defender",
+    )
+
+    for seed in range(8):
+        lines = _narrate(state, report, seed=seed)
+        assert "Defendia (#2)" in " ".join(lines[-2:])  # WINNER.X names the winner, whichever side it was
+        outcome = lines[-1]
+        assert re.search(r"(defeated|beaten|turned back|driven|pushed|chased|drove)[^.]*Border Fort\.$", outcome), outcome
+        assert "overrun" not in outcome
+
+
+def test_the_invader_who_wins_conquers_the_province_with_invwin():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+
+    for seed in range(8):
+        assert re.search(
+            r"Border Fort was (overrun|conquered)|conquered (the province of )?Border Fort|conquest of Border Fort",
+            _narrate(state, report, seed=seed)[-1],
+        )
+
+
+def test_an_invader_who_won_but_left_the_defenders_standing_is_told_they_regrouped():
+    # SAY.PAS _LStays: "Although Riose's host were triumphant, the provincial Merman chieftain regrouped its men and
+    # prepared to fight for the Stonegard Sea." -- in place of INVWIN.X
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        conquered=False,
+    )
+
+    for seed in range(6):
+        outcome = _narrate(state, report, seed=seed)[-1]
+        assert re.search(r"[Tt]hough Tlazolteotl's (host|forces) were (victorious|triumphant)", outcome), outcome
+        assert re.search(r"Marlon( \(#12\))? (regrouped|rallied) his (forces|men) and (prepared|decided) to (contest|fight for) Border Fort", outcome)
+        assert "overrun" not in outcome
+
+
+def test_a_battle_fought_again_in_the_same_province_opens_with_brought_to_bay():
+    # SAY.PAS _BRevolt: "in the Stonegard Sea, Lord Babba Sissoko Master orango (#0) brought to bay the provincial
+    # Merman chieftain." in place of INVAS.X
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+
+    for seed in range(6):
+        opening = _narrate(state, report, seed=seed, rebattle=True)[0]
+        assert re.search(r"in Border Fort, .*(campaigned against|brought to bay) (the forces of )?Defendia \(#2\)", opening), opening
+        assert "invaded" not in opening and "banner" not in opening
+
+
+def test_the_gir_paragraph_of_a_stalled_invasion_and_of_a_renewed_one():
+    state, battle_coord, _watcher = _gir_battle_state()
+    state.provinces[battle_coord].owner_kingdom_id = 1
+    _report, results = _fought_battle(state, battle_coord)
+    report = results[0].result
+    report.conquered = False
+
+    stalled = describe_invasion_paragraph(state, report, random.Random(2))
+    renewed = describe_invasion_paragraph(state, report, random.Random(2), rebattle=True)
+
+    assert re.search(r"[Tt]hough Tlazolteotl( \(#11\))?'s (host|forces) were (victorious|triumphant)", stalled)
+    assert "overrun" not in stalled
+    assert re.search(r"in Border Fort, .*(campaigned against|brought to bay)", renewed) and "invaded" not in renewed
+
+
+def test_each_column_of_the_narrative_is_a_paragraph_of_its_own_in_the_flowed_report():
+    from ak_engine.report.turn_report import _flow_story_lines, _layout_units
+
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+    report.battle_result.columns.append(
+        BattleColumnResult(
+            attacker_strength=10.0, defender_strength=10.0, bres=3, attacker_won=True, cluck_index=20,
+            attacker_units=[BattleUnit(ArmyType.BOWMEN, 10.0, source_id=11)],
+            defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=21)],
+        )
+    )
+    lines = describe_battle(
+        report, attacker_name="Attackia (#1)", defender_name="Defendia (#2)", province_name="Border Fort",
+        state=state, destination_names={}, rng=random.Random(1), viewer_kingdom_id=1,
+    )
+
+    flowed = _flow_story_lines(["He moved on."] + lines, _layout_units(state), {})
+
+    assert not any("\u00b6" in line for line in flowed)
+    starts = [line for line in flowed if re.match(r"  (Across|Out on|On the|In the|Within)", line)]
+    assert len(starts) == 2  # one paragraph per column, as in the real reports
+
+
+def test_the_leaderless_army_that_retreated_does_so_under_the_acting_commander():
+    state, battle_coord, _watcher = _gir_battle_state()
+    other = HexCoord(7, 7)
+    state.add_province(ProvinceState(other, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Mare Imbrium"))
+    state.add_army(ArmyState(20, kingdom_id=2, army_type=ArmyType.LEGION, quality=Quality.AVERAGE, location=other))
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        state_and_coord=(state, battle_coord), retreated_army_ids=[20], retreat_destination_coord={20: other},
+        attacker_commander_leader_id=None, defender_commander_leader_id=None,
+        attacker_commanding_leader_ids=[], defender_commanding_leader_ids=[],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"[Tt]he acting commander [^.]*Mare Imbrium", text)
+
+
+def test_the_gir_battle_narrative_carries_the_same_columns_mirrored():
+    state, battle_coord, _watcher = _gir_battle_state()
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10, quality=Quality.ELITE)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)], state_and_coord=(state, battle_coord),
+    )
+    report.battle_result.columns.append(
+        BattleColumnResult(
+            attacker_strength=10.0, defender_strength=10.0, bres=3, attacker_won=True, cluck_index=20,
+            attacker_units=[BattleUnit(ArmyType.BOWMEN, 10.0, source_id=11)],
+            defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=21)],
+        )
+    )
+
+    from_defender = " ".join(describe_battle_for_outsider(state, report, "defender", random.Random(1), set()))
+    from_attacker = " ".join(describe_battle_for_outsider(state, report, "attacker", random.Random(1), set()))
+
+    assert re.search(r"[Rr]ight (outside )?(flank|wing), the Elite 10th Garrison", from_defender)
+    assert re.search(r"[Ll]eft (outside )?(flank|wing), the Elite 10th Garrison", from_attacker)
+
+
+# -- 2026-11-27: encounters as GENERAL INTELLIGENCE news -------------------------------------------------------------
+
+
+def test_a_foreign_leaders_random_encounter_is_news_with_its_season():
+    from ak_engine.turn.random_encounter_execution import RandomEncounterResult
+
+    state, battle_coord, _watcher = _gir_battle_state()
+    state.provinces[battle_coord].owner_kingdom_id = 2
+    result = RandomEncounterResult(11, battle_coord, terrain_roll_succeeded=True, monster=Monster.GO_DRAGON, evaded_via_sense_danger=True)
+    results = [PhaseDispatchResult(leader_id=11, segment_index=0, phase_label="P3", action=None, result=result, error=None)]
+
+    record_encounter_world_events(state, results, random.Random(4))
+
+    (event,) = state.world_events
+    assert event.coord == battle_coord and event.phase == "P3" and event.leader_id == 11
+    assert event.lines[0].startswith("In fall, ") and "Tlazolteotl (#11)" in event.lines[0]
+    # read by the Kingdom whose borders it happened in ... and by a neighbour, under the owner
+    assert any("Tlazolteotl" in line for line in describe_general_intelligence_report(state, 1))
+    assert not any("Tlazolteotl" in line for line in describe_general_intelligence_report(state, 2))  # his own province
+
+
+def test_a_failed_random_encounter_roll_is_news_too():
+    from ak_engine.turn.random_encounter_execution import RandomEncounterResult
+
+    state, battle_coord, _watcher = _gir_battle_state()
+    result = RandomEncounterResult(11, battle_coord, terrain_roll_succeeded=False)
+    results = [PhaseDispatchResult(leader_id=11, segment_index=0, phase_label="P0", action=None, result=result, error=None)]
+
+    record_encounter_world_events(state, results, random.Random(4))
+
+    assert len(state.world_events) == 1 and state.world_events[0].lines[0].startswith("In spring, ")
+
+
 # -- Phase 711: record_battle_narratives --------------------------------------
 
 
-def test_record_battle_narratives_populates_both_kingdoms_with_identical_content():
+def test_record_battle_narratives_populates_both_kingdoms_each_with_its_own_rendering():
     state, battle_coord, _watcher_coord = _gir_state()
     column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
     battle_result = BattleResult(winner="attacker", columns=[column])
@@ -17551,13 +17905,13 @@ def test_record_battle_narratives_populates_both_kingdoms_with_identical_content
     results = [
         PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)
     ]
-    rng = ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0])
+    record_battle_narratives(state, results, random.Random(6))
 
-    record_battle_narratives(state, results, rng)
-
-    assert state.battle_narratives_by_kingdom[1] == state.battle_narratives_by_kingdom[2]
-    assert state.battle_narratives_by_kingdom[1] != []
-    assert any("Attackia" in line for line in state.battle_narratives_by_kingdom[1])
+    # 2026-11-27: each side reads its own rendering (as in the real letters: left and right swapped for the defender,
+    # only its own armies' changes of quality, its own Kingdom named bare).
+    assert state.battle_narratives_by_kingdom[1] != [] and state.battle_narratives_by_kingdom[2] != []
+    assert any("Defendia" in line for line in state.battle_narratives_by_kingdom[1])
+    assert any("Attackia" in line for line in state.battle_narratives_by_kingdom[2])
 
 
 def test_record_battle_narratives_skips_a_report_missing_the_attacker_kingdom_id():
@@ -17595,12 +17949,13 @@ def test_record_battle_narratives_narrates_a_battle_against_independent_defender
         PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)
     ]
 
-    record_battle_narratives(state, results, ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0]))
+    record_battle_narratives(state, results, random.Random(6))
 
     assert list(state.battle_narratives_by_kingdom) == [1]
     lines = state.battle_narratives_by_kingdom[1]
     assert lines != []
-    assert any("the natives of" in line for line in lines)
+    # the natives lead the defence under the name the report gives them
+    assert any("the provincial garrison commander" in line for line in lines)
 
 
 def test_record_battle_narratives_resolves_real_retreat_destination_names():
@@ -17627,11 +17982,11 @@ def test_record_battle_narratives_resolves_real_retreat_destination_names():
     results = [
         PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)
     ]
-    rng = ScriptedRandom([0.1] * 20, choice_indices=[0] * 10)
+    record_battle_narratives(state, results, random.Random(6))
 
-    record_battle_narratives(state, results, rng)
-
-    assert any("retreated" in line for line in state.battle_narratives_by_kingdom[1])
+    # the retreat is told under the general who led the army (here none: "the acting commander"), with the place
+    assert any("the acting commander" in line.lower() and _province_label(state, watcher_coord) in line
+               for line in state.battle_narratives_by_kingdom[1])
 
 
 def test_record_battle_narratives_deduplicates_a_multi_attacker_shared_battle_report():
@@ -17667,8 +18022,8 @@ def test_record_battle_narratives_deduplicates_a_multi_attacker_shared_battle_re
             result=_FakeMultiAttackerMoveResult(single_report), error=None,
         )
     ]
-    record_battle_narratives(state, single_results, ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0]))
-    single_run_lines = list(state.battle_narratives_by_kingdom[1])
+    record_battle_narratives(state, single_results, random.Random(6))
+    single_run_lines = {kingdom: list(lines) for kingdom, lines in state.battle_narratives_by_kingdom.items()}
 
     state2, battle_coord, _watcher_coord = _gir_state()
     shared_report = _build_report()
@@ -17682,10 +18037,9 @@ def test_record_battle_narratives_deduplicates_a_multi_attacker_shared_battle_re
             result=_FakeMultiAttackerMoveResult(shared_report), error=None,
         ),
     ]
-    record_battle_narratives(state2, shared_results, ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0]))
+    record_battle_narratives(state2, shared_results, random.Random(6))
 
-    assert state2.battle_narratives_by_kingdom[1] == single_run_lines
-    assert state2.battle_narratives_by_kingdom[2] == single_run_lines
+    assert state2.battle_narratives_by_kingdom == single_run_lines
 
 
 # -- Phase 713: render_blackmail_demand / record_blackmail_narratives ---------
@@ -18492,14 +18846,19 @@ def test_describe_battle_narrates_a_commander_retreating_with_his_armies_and_one
         leaders_retreated_alone=[2],
     )
 
-    lines = describe_battle(
+    lines = _flat(describe_battle(
         report, attacker_name="Attackia", defender_name="Defendia", province_name="the Field",
         state=state, destination_names={}, rng=ScriptedRandom([0.1] * 20, choice_indices=[0, 0]),
-    )
+    ))
 
+    # RETREAT.X for a general who took his armies with him, `_LRFlee` for one whose forces are gone (the real reports:
+    # "Rolando (#55) retreated to Kajaani." / "His forces completely destroyed, Marlon (#68) escaped alone to ...").
     assert len(lines) == 2
-    assert lines[0].startswith("Aldric withdrew to ") and lines[0].endswith(" together with the defeated armies.")
-    assert lines[1].startswith("Borin fled to ") and lines[1].endswith(".")
+    assert lines[0].startswith("Aldric (#1) ") and "(1, 1)" in lines[0] and lines[0].endswith(".")
+    assert re.fullmatch(
+        r"His forces completely (dispersed|destroyed), Borin \(#2\) (fled|escaped)( frightened and)? alone to \(1, 1\)\.",
+        lines[1],
+    ), lines[1]
 
 
 # -- 2026-11-24: record_mercenary_quality_narratives() (SAY.PAS _MInc/_MDec/_MSplut) -----

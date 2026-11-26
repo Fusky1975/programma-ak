@@ -68,6 +68,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, replace
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import BEASTS, ArmyType, is_overflight_unit, overflight_group
 from ak_engine.models.map import TERRAIN_LINE_LENGTH_RANGE, Terrain
 from ak_engine.turn.combat import Quality, apply_nemesis_penalty, line_contribution, win_probability
@@ -170,6 +171,12 @@ class BattleUnit:
     # (every pre-Phase-1035 caller), not a real unit's own data.
     quality: Quality = Quality.AVERAGE
     is_skeletal: bool = False
+    # The alignment of the Kingdom the unit fights for when it became fanatical by that alignment's own roll (the
+    # report tells it: "who sang out their fiery battle hymns, inspired ... by their exalted King"), and whether it is
+    # the front-line unit an alignment King's title made fanatic ("who were blessed by a band of priests sent by the
+    # League of Pagan Clerics"). Report-only: the strength already carries both bonuses.
+    fanatic_alignment: Alignment | None = None
+    alignment_king_selected: bool = False
     kingdom_id: int | None = None
     commanded_by: int | None = None
 

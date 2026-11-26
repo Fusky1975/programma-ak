@@ -1746,6 +1746,24 @@ def test_build_battle_units_title_fanaticism_off_by_default_never_touches_a_seco
     assert units[0].effective_strength == baseline
 
 
+def test_build_battle_units_records_the_alignment_of_a_unit_that_became_fanatic():
+    # The report tells "who sang out their fiery battle hymns ..." for a column fanatical by its Kingdom's alignment.
+    state, army = _human_king_state()
+    state.kingdoms[1].alignment = Alignment.GOOD
+
+    fanatic = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.1]), apply_fanaticism=True,
+    )
+    ordinary = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.99, 0.99]), apply_fanaticism=True,
+    )
+
+    assert fanatic[0].fanatic_alignment is Alignment.GOOD
+    assert ordinary[0].fanatic_alignment is None
+
+
 def test_build_battle_units_race_fanatic_units_records_a_real_success():
     state, army = _human_king_state()
     collected: list[tuple[int, Race, int]] = []

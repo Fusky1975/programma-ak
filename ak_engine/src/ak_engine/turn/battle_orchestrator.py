@@ -893,6 +893,7 @@ def _build_battle_units(
         # Short-circuited: roll_fanaticism (and its rng.random() call) never
         # runs at all when apply_fanaticism is False -- see docstring.
         is_fanatical = apply_fanaticism and kingdom is not None and roll_fanaticism(kingdom.alignment, rng)
+        fanatic_alignment = kingdom.alignment if is_fanatical and kingdom is not None else None
         if apply_fanaticism and not is_fanatical and army.commanded_by is not None:
             # See this function's own Phase 390 addendum: an independent,
             # additive second chance, only rolled (consuming rng) when a
@@ -1025,6 +1026,7 @@ def _build_battle_units(
                 has_druidic_horse_control=has_druidic_horse_control,
                 quality=army.quality,
                 is_skeletal=army.is_skeletal,
+                fanatic_alignment=fanatic_alignment,
                 kingdom_id=army.kingdom_id,
                 commanded_by=army.commanded_by,
             )
