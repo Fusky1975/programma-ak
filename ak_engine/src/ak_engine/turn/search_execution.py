@@ -523,7 +523,9 @@ docstring for the full disassembly citation.
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass, replace
+from enum import Enum
 
 from ak_engine.models.advanced_ability import LAVA_POOL_IMMUNE_MONSTERS, AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
@@ -976,6 +978,15 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
 SLAVE_DEAL_YEARS = 2
 
 
+class QuestNote(Enum):
+    """Why a Fulfill did not hand over the treasure (``SAY.PAS`` ``_LF*``/``_LHaHa``/``_LPrDie``)."""
+
+    WRONG_ANSWER = "wrong_answer"  # _LFWrong: the riddle was not answered (right)
+    SERVICE_NOT_PERFORMED = "service_not_performed"  # _LFTryAg: the hero did not do what the monster asked
+    KING_ONLY = "king_only"  # _LFKOnly: only a King can sell his soul
+    BETRAYED = "betrayed"  # the monster does not keep its word and attacks (_LHaHa / _LWGrr, _LPrDie)
+
+
 @dataclass(slots=True)
 class SearchExecutionResult:
     accepted: bool
@@ -1168,6 +1179,12 @@ class SearchExecutionResult:
     # that went to the hero, for the report (FULFILL.X2 then MACCEPT.X2).
     quest_fulfilled: MonsterTalkReply | None = None
     quest_treasure: Treasure | None = None
+    # What the monster said about a Fulfill that did not go through (a wrong answer, a service not done, a soul
+    # only a King can sell, a betrayal), in order, for the report (``QuestNote``).
+    quest_notes: tuple[QuestNote, ...] = ()
+    # The hero a monster of vengeance asks the character to kill (the target of the Talk that proposed it).
+    quest_target_leader_id: int | None = None
+    quest_reply: MonsterTalkReply | None = None  # the quest the notes above are about
     guardian_talk_treasure: Treasure | None = None
     guardian_talk_coord: HexCoord | None = None
 
@@ -1800,6 +1817,71 @@ def quest_item_for_reply(reply: MonsterTalkReply, monster: Monster, feature_id: 
     return None
 
 
+_RIDDLE_ANSWERS: dict[Treasure, tuple[str, ...]] = {
+    Treasure.QUEST_RA_RIDDLE: ("riddle",),
+    Treasure.QUEST_RA_COFFIN: ("coffin", "coffins"),
+    Treasure.QUEST_RA_BRIDGE: ("bridge", "bridges"),
+    Treasure.QUEST_RA_CANDLE: ("candle", "candles"),
+    Treasure.QUEST_RA_SMOKE: ("smoke",),
+    Treasure.QUEST_RA_OWNER: ("onion", "onions"),
+    Treasure.QUEST_RA_MAN: ("man",),
+}
+
+
+def riddle_answer_is_right(riddle: Treasure, say_text: str | None) -> bool:
+    """Whether what the hero SA-ys answers the riddle. In the original a moderator judged the answer ("a character
+    who possesses the riddle and the answer returns to SA-y the answer"); here the answer counts if one of its words
+    is the riddle's solution (``riddle.txt``: a riddle, a coffin, a bridge, a candle, smoke, an onion, man)."""
+
+    if not say_text:
+        return False
+    words = set(re.findall(r"[a-z]+", say_text.lower()))
+    return any(answer in words for answer in _RIDDLE_ANSWERS.get(riddle, ()))
+
+
+def select_revenge_target(state: GameState, leader_id: int, feature: Feature) -> int | None:
+    """The hero a monster of vengeance wants dead: one of the living Heroes of another Kingdom or of none (never a
+    King, never the talker or one of his own Kingdom's), picked deterministically per (monster, feature)."""
+
+    talker = state.leaders.get(leader_id)
+    if talker is None or feature.guardian_monster is None:
+        return None
+    candidates = sorted(
+        other.leader_id
+        for other in state.leaders.values()
+        if not other.is_king and other.leader_id != leader_id and (talker.kingdom_id is None or other.kingdom_id != talker.kingdom_id)
+    )
+    if not candidates:
+        return None
+    return candidates[(feature.guardian_monster.value * len(candidates) + feature.feature_id) % len(candidates)]
+
+
+_MODELLED_QUESTS = frozenset(
+    {
+        MonsterTalkReply.R_RIDDLE,
+        MonsterTalkReply.R_FREVENGE,
+        MonsterTalkReply.R_PREVENGE,
+        MonsterTalkReply.R_SOUL,
+    }
+)
+
+
+def _close_quest_item(state: GameState, leader_id: int, feature: Feature, reply: MonsterTalkReply) -> None:
+    """The quest is done: the hero's quest item of this monster goes (the original frees it, ``trowner:= noleader``);
+    the signed contract of the soul stays with the King as the mark of what he sold ("Soul is gone!")."""
+
+    if feature.guardian_monster is None:
+        return
+    quest_item = quest_item_for_reply(reply, feature.guardian_monster, feature.feature_id)
+    for item in list(state.items_held_by(leader_id)):
+        if item.treasure is quest_item and item.charges == feature.feature_id:
+            if reply is MonsterTalkReply.R_SOUL:
+                item.treasure = Treasure.QUEST_CONTRACT_FULFILL
+            else:
+                state.remove_item(item.item_id)
+            return
+
+
 def give_quest_item(state: GameState, leader_id: int, feature: Feature) -> Treasure | None:
     """The hero leaves the monster with its quest item in his inventory, tagged with the feature it came from
     (Pascal ``trcharges`` = the feature number, which the CHARACTERS report reads back as "(from the Dragon in
@@ -1898,8 +1980,12 @@ def _resolve_search_encounter(
     """``_resolve_search_encounter_body()`` plus the gold a captured Hoard paid out, for the report."""
 
     gold_log: list[int] = []
-    result = _resolve_search_encounter_body(state, leader_id, request, rng, gold_log)
+    quest_log: list[tuple[QuestNote, MonsterTalkReply]] = []
+    result = _resolve_search_encounter_body(state, leader_id, request, rng, gold_log, quest_log)
     result.gold_found = sum(gold_log)
+    if quest_log:
+        result.quest_notes = tuple(note for note, _ in quest_log)
+        result.quest_reply = quest_log[-1][1]
     return result
 
 
@@ -1909,6 +1995,7 @@ def _resolve_search_encounter_body(
     request: SearchRequest,
     rng: random.Random,
     gold_log: list[int],
+    quest_log: list[tuple[QuestNote, MonsterTalkReply]] | None = None,
 ) -> SearchExecutionResult:
     """The real Search-encounter resolution body -- see module docstring
     for exactly which cases resolve real combat and which honestly
@@ -1917,6 +2004,9 @@ def _resolve_search_encounter_body(
     last, whatever else happened" rule can wrap this function's result
     without threading a post-hoc hook through every return site below.
     """
+
+    if quest_log is None:
+        quest_log = []
 
     leader = state.leaders.get(leader_id)
     if leader is None:
@@ -3886,6 +3976,8 @@ def _resolve_search_encounter_body(
             )
             feature.psychic_mage_sensed_fulfill_honor = sensed_fulfill_honor
         give_quest_item(state, leader_id, feature)
+        if reply in (MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE) and feature.quest_target_leader_id is None:
+            feature.quest_target_leader_id = select_revenge_target(state, leader_id, feature)
         intimidated, undeterred = _resolve_guardian_pacification()
         guardian_riddle = (
             _select_guardian_riddle(feature.guardian_monster, feature.feature_id) if reply is MonsterTalkReply.R_RIDDLE else None
@@ -3908,6 +4000,7 @@ def _resolve_search_encounter_body(
             guardian_talk_reply=reply,
             guardian_talk_treasure=feature.treasure,
             guardian_talk_coord=feature.coord,
+            quest_target_leader_id=feature.quest_target_leader_id,
         )
 
     def _resolve_slave_fulfill() -> SearchExecutionResult | None:
@@ -3943,6 +4036,73 @@ def _resolve_search_encounter_body(
             quest_fulfilled=MonsterTalkReply.R_SLAVE,
             quest_treasure=treasure,
         )
+        outcome.guardian_monster = feature.guardian_monster
+        return outcome
+
+    def _resolve_modelled_quest_fulfill(reply: MonsterTalkReply) -> SearchExecutionResult | None:
+        """Fulfill of a quest whose own requirement is checked (``AKGEN_reverse_engineering_report (3).md`` SS77):
+        the riddle (the hero SA-ys the answer in the same plan), the two vengeances (the hero the monster wants dead is
+        dead), the contract of the soul (only a King signs). A requirement not met is not a betrayal: the monster says
+        what is wrong and the deal stays, no roll made. Once it is met the monster either honors the deal -- a roll with
+        bonus 100 (``WillHonor``), the Silver Tongue always, the soul contract with no roll at all -- and gives its
+        treasure, or breaks its word and attacks."""
+
+        nonlocal combat_attempted
+        if reply is MonsterTalkReply.R_RIDDLE:
+            riddle = _select_guardian_riddle(feature.guardian_monster, feature.feature_id)
+            say_tactic = next((t for t in request.tactics if t.maneuver is Maneuver.SAY), None)
+            if not riddle_answer_is_right(riddle, say_tactic.say_text if say_tactic is not None else None):
+                return _quest_requirement_unmet(QuestNote.WRONG_ANSWER, reply)
+        elif reply in (MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE):
+            target_id = feature.quest_target_leader_id
+            if target_id is None or target_id in state.leaders:
+                return _quest_requirement_unmet(QuestNote.SERVICE_NOT_PERFORMED, reply)
+        elif reply is MonsterTalkReply.R_SOUL and not leader.is_king:
+            return _quest_requirement_unmet(QuestNote.KING_ONLY, reply)
+
+        feature.pending_deal_leader_id = None
+        sensed_fulfill_honor = feature.psychic_mage_sensed_fulfill_honor
+        feature.psychic_mage_sensed_fulfill_honor = None
+        silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
+        caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
+        if reply is MonsterTalkReply.R_SOUL:
+            honored = True  # the compiled Fulfill makes no honor roll for the contract of the soul
+        elif sensed_fulfill_honor is not None:
+            honored = sensed_fulfill_honor
+        else:
+            honored = resolve_fulfill_honored(
+                feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
+            )
+        if not honored:
+            quest_log.append((QuestNote.BETRAYED, reply))
+            combat_attempted = True  # "now, prepare to die": the plan goes on to its fight
+            return None
+
+        treasure = feature.treasure
+        feature.treasure = None
+        if treasure is not None:
+            _grant_search_treasure(state, leader_id, treasure, rng, gold_log)
+        pacified = apply_fulfill_pacification(feature)
+        if pacified:
+            leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
+        _close_quest_item(state, leader_id, feature, reply)
+        if reply is MonsterTalkReply.R_SOUL:
+            leader.soul_sold = True
+        outcome = SearchExecutionResult(
+            accepted=True,
+            combat_resolved=False,
+            winner="leader",
+            guardian_pacified_by_fulfill=pacified,
+            quest_fulfilled=reply,
+            quest_treasure=treasure,
+            quest_target_leader_id=feature.quest_target_leader_id,
+        )
+        outcome.guardian_monster = feature.guardian_monster
+        return outcome
+
+    def _quest_requirement_unmet(note: QuestNote, reply: MonsterTalkReply) -> SearchExecutionResult:
+        quest_log.append((note, reply))
+        outcome = SearchExecutionResult(accepted=True, combat_resolved=False, reason="the quest is not fulfilled yet")
         outcome.guardian_monster = feature.guardian_monster
         return outcome
 
@@ -3984,6 +4144,8 @@ def _resolve_search_encounter_body(
             return None
         if feature.guardian_talk_reply_id == MonsterTalkReply.R_SLAVE.value:
             return _resolve_slave_fulfill()
+        if feature.guardian_talk_reply_id is not None and MonsterTalkReply(feature.guardian_talk_reply_id) in _MODELLED_QUESTS:
+            return _resolve_modelled_quest_fulfill(MonsterTalkReply(feature.guardian_talk_reply_id))
         feature.pending_deal_leader_id = None
         # 2026-11-20 bug fix: if Talk's own Psychic Mage sensing already
         # rolled this exact deal's real honor outcome (see Feature.

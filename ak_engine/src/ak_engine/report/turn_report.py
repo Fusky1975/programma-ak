@@ -1497,7 +1497,7 @@ from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
-from ak_engine.turn.search_execution import SearchExecutionResult
+from ak_engine.turn.search_execution import QuestNote, SearchExecutionResult
 from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base, province_tax_yield
 from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
@@ -13560,6 +13560,7 @@ def render_guardian_quest_fulfilled(
     king_name: str,
     possessive: str,
     rng: random.Random,
+    target_name: str | None = None,
 ) -> list[str]:
     """The story of a fulfilled agreement: what the character did (``FULFILL.X2``, SAY.PAS ``_LSpake``) and then the
     monster's reply that hands over the reward (``MACCEPT.X2``, ``_MFulf``) -- for the old monster of ``R_SLAVE`` it
@@ -13581,12 +13582,40 @@ def render_guardian_quest_fulfilled(
         if not source:
             continue
         text = _resolve_ctrl_a_markers(source).replace("⟦CTRL-K:king-title⟧", king_name)
+        if target_name is not None:
+            text = text.replace("⟦CTRL-C:quest-character⟧", target_name)
         for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
             text = text.replace(marker, placeholder)
         rendered = render(text, values, rng=rng).strip()
         rendered = re.sub(r'([.!?]"?)(?=[A-Za-z(])', r"\1 ", rendered)
         rendered = _tidy_sentences(rendered)
         lines.append(rendered[0].upper() + rendered[1:])
+    return lines
+
+
+def render_quest_fulfill_notes(
+    character_name: str, monster_name: str, notes: tuple[QuestNote, ...], reply: MonsterTalkReply | None, rng: random.Random
+) -> list[str]:
+    """What a quest-giving monster says when a Fulfill does not hand over the treasure: the riddle not answered
+    (``_LFWrong``), the service not done (``_LFTryAg``), the soul only a King can sell (``_LFKOnly``), or its word
+    broken -- the soul contract's ``_LHaHa`` "I've tricked you", otherwise the angry retort of ``_LWGrr`` -- and
+    ``_LPrDie``, "now, prepare to die"."""
+
+    lines: list[str] = []
+    for note in notes:
+        if note is QuestNote.WRONG_ANSWER:
+            text = render_quest_wrong_answer(monster_name, rng)
+        elif note is QuestNote.SERVICE_NOT_PERFORMED:
+            text = render_quest_service_not_performed(monster_name, rng)
+        elif note is QuestNote.KING_ONLY:
+            text = render_quest_fled_in_fear(character_name, monster_name, rng)
+        elif reply is MonsterTalkReply.R_SOUL:
+            text = render_quest_mockery(monster_name, rng) + render(_MONSTER_THREAT_DEATH_TEMPLATES[1], {"[1": monster_name}, rng=rng)
+        else:
+            text = render_monster_threat_death(monster_name, rng)
+        text = re.sub(r'([.!?]"?)(?=[A-Za-z(])', r"\1 ", text)
+        text = _tidy_sentences(text)
+        lines.append(text[0].upper() + text[1:])
     return lines
 
 
@@ -13599,6 +13628,7 @@ def render_guardian_talk_offer(
     treasure_name: str,
     feature_name: str,
     rng: random.Random,
+    target_name: str | None = None,
 ) -> list[str]:
     """Two lines: that the character spoke with the guardian, then the
     guardian's own offer (``MONSTER_TALK_OFFER_TEXT[reply]``), with the
@@ -13606,6 +13636,8 @@ def render_guardian_talk_offer(
     """
 
     text = _resolve_ctrl_a_markers(MONSTER_TALK_OFFER_TEXT[reply])
+    if target_name is not None:
+        text = text.replace("⟦CTRL-C:quest-character⟧", target_name)
     for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
         text = text.replace(marker, placeholder)
     text = text.replace("FU-lfill", "Fulfill").replace("# gold", "a hefty sum in gold")
@@ -13666,6 +13698,15 @@ def describe_search(
             result, state=state, character_name=character_name, feature_name=feature_name, rng=rng, is_sea=is_sea,
             leader_id=leader_id,
         )
+
+
+def _quest_target_name(state: GameState | None, leader_id: int | None) -> str | None:
+    """The name of the hero a monster of vengeance wants dead, living or already dead."""
+
+    if state is None or leader_id is None:
+        return None
+    target = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+    return target.name if target is not None else None
 
 
 def _quest_king_name(state: GameState | None, leader_id: int | None) -> str:
@@ -13823,8 +13864,12 @@ def _describe_search_lines(
                 king_name=_quest_king_name(state, leader_id),
                 possessive=_COMBAT_POSSESSIVES.get().get(character_name, "his"),
                 rng=rng,
+                target_name=_quest_target_name(state, result.quest_target_leader_id),
             )
         )
+    if result.quest_notes:
+        guardian = f"the {MONSTER_NAMES.get(result.guardian_monster, 'guardian')}" if result.guardian_monster is not None else "the guardian"
+        lines.extend(render_quest_fulfill_notes(character_name, guardian, result.quest_notes, result.quest_reply, rng))
 
     monster_name = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
     # The original writes a monster as "the Succubus" wherever the sentence does not carry its own article.
@@ -13859,6 +13904,7 @@ def _describe_search_lines(
                 treasure_name=TREASURE_NAME[treasure] if treasure is not None else "treasure",
                 feature_name=feature_name,
                 rng=rng,
+                target_name=_quest_target_name(state, result.quest_target_leader_id),
             )
         )
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
