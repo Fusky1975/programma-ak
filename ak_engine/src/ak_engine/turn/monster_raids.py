@@ -355,6 +355,11 @@ def resolve_monster_raid_reply(
         return candidate
 
 
+# Monsters do not plunder yet in the first turns of a game (GM ruling, 2026-11-27: "the first turn is really too early for
+# monster plunder", not before turn 4).
+MONSTER_RAIDS_FIRST_TURN = 4
+
+
 def resolve_province_raids(
     state: GameState,
     kingdom_id: int,
@@ -369,6 +374,8 @@ def resolve_province_raids(
     events)``.
     """
 
+    if state.turn_number < MONSTER_RAIDS_FIRST_TURN:
+        return income, thunder_used, []
     events: list[RaidEvent] = []
     for feature in sorted(state.features_at(province.coord), key=lambda f: f.feature_id):
         # Bug fix (crash): `Monster.NOMONSTER` (the "no monster" sentinel)

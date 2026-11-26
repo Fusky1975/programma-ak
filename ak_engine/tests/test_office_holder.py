@@ -1023,3 +1023,62 @@ def test_apply_battle_fool_aptitude_escalation_skips_a_titleholder_with_no_recor
     apply_battle_fool_aptitude_escalation(state)  # must not raise
 
     assert state.leaders[1].skills is None
+
+
+# ---- The World Emperor "best hope" (Emerald Crown, "Know Tax Bases") -----------------------------------------------
+
+
+def _two_kings_with_tax(first_tax: int, second_tax: int) -> GameState:
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.add_leader(LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True))
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=first_tax))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=second_tax))
+    return state
+
+
+def test_the_emperor_best_hope_is_the_king_with_the_largest_tax_base_before_any_election():
+    from ak_engine.turn.office_holder import emperor_best_hope
+
+    best = emperor_best_hope(_two_kings_with_tax(9, 4))
+
+    assert best is not None and best.leader_id == 1
+
+
+def test_a_tie_for_the_lead_or_no_tax_at_all_leaves_the_emperor_best_hope_with_nobody():
+    from ak_engine.turn.office_holder import emperor_best_hope
+
+    assert emperor_best_hope(_two_kings_with_tax(5, 5)) is None
+    assert emperor_best_hope(_two_kings_with_tax(0, 0)) is None
+
+
+def test_the_elected_emperor_is_the_emperor_best_hope():
+    from ak_engine.turn.office_holder import emperor_best_hope
+
+    state = _two_kings_with_tax(1, 8)
+    state.emperor_kingdom_id = 1
+
+    assert emperor_best_hope(state).leader_id == 1
+
+
+def test_becoming_the_emperor_best_hope_is_a_title_change_once_and_only_once():
+    state = _two_kings_with_tax(9, 4)
+
+    commit_office_holders(state)
+    assert state.office_title_change_notices[Office.EMPEROR] == 1
+    assert Office.EMPEROR not in state.office_holders
+
+    commit_office_holders(state)
+    assert Office.EMPEROR not in state.office_title_change_notices  # nothing changed the second time
+
+
+def test_the_emperor_best_hope_lists_know_tax_bases_among_his_special_abilities():
+    from ak_engine.report.turn_report import _offices_by_leader, _special_abilities_lines
+
+    state = _two_kings_with_tax(9, 4)
+
+    offices = _offices_by_leader(state)[1]
+    lines = _special_abilities_lines(state.leaders[1], offices)
+
+    assert Office.EMPEROR in offices
+    assert any("WORLD EMPEROR: Know Tax Bases" in line for line in lines)

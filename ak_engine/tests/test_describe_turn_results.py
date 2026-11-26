@@ -1097,3 +1097,42 @@ def test_describe_turn_results_only_narrates_rumors_heard_by_that_leader():
     assert len(lines) == 1
     assert "Aldric" in lines[0]
     assert "heard" not in lines[0]
+
+
+# ---- A rumor is told in the phase it was heard, once -----------------------------------------------------------------
+
+
+def _rumor_state():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.add_feature(Feature(feature_id=5, coord=HexCoord(3, 4), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    state.add_rumor(
+        Rumor(
+            rumor_id=state.new_rumor_id(), kingdom_id=1, leader_id=1, source_action=ActionCode.LMOVE,
+            content=RumorContent.FEATURE_AND_MONSTER, feature_id=5, is_true=True, described_coord=HexCoord(3, 4),
+            described_monster=Monster.GARGOYLE, phase_label="P2",
+        )
+    )
+    return state
+
+
+def _explore_entry(label: str) -> PhaseDispatchResult:
+    result = ExploreResult(new_percent=50, delta_applied=50, fully_explored=False)
+    return PhaseDispatchResult(leader_id=1, segment_index=0, phase_label=label, action=ActionCode.EXPLORE, result=result, error=None)
+
+
+def test_a_rumor_is_told_only_in_the_phase_in_which_it_was_heard():
+    state = _rumor_state()
+    told = []
+    for label in ("P0", "P1", "P2", "P3", "P4"):
+        lines = describe_turn_results([_explore_entry(label)], state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]), board_width=10)
+        told.append(any("heard" in line for line in lines))
+
+    assert told == [False, False, True, False, False]
+
+
+def test_a_new_turn_starts_without_last_turns_rumors():
+    state = _rumor_state()
+
+    state.reset_turn_report_scratch()
+
+    assert state.rumors == {}

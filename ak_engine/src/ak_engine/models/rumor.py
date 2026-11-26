@@ -50,3 +50,6 @@ class Rumor:
     described_coord: HexCoord  # possibly false -- see turn/rumor.py
     described_monster: Monster | None = None  # set when content is FEATURE_AND_MONSTER
     described_treasure: Treasure | None = None  # set when content is ITEM
+    # The phase of the plan in which the leader heard it ("P2"): the report tells a rumor in that phase only, not in
+    # every phase of the turn. ``None`` (a rumor built by hand, e.g. in a test) is told wherever its leader appears.
+    phase_label: str | None = None

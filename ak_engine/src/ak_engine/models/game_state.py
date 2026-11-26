@@ -2323,6 +2323,9 @@ class GameState:
     # holders` above), read by `report/turn_report.py describe_
     # imperial_office_report()` to decide whether to append the
     # acquisition paragraph after a given office's row.
+    # Who was the World Emperor "best hope" (the elected Emperor once there is one) at the last
+    # ``commit_office_holders()``: what the Emerald Crown paragraph compares against.
+    emperor_best_hope_leader_id: int | None = None
     office_title_change_notices: dict[Office, int] = field(default_factory=dict)
     # Same as `office_title_change_notices` right above, for the 3 army-
     # scoped Royal Titles (`turn/office_holder.py ARMY_RANKED_OFFICES`)
@@ -2753,6 +2756,8 @@ class GameState:
         sunk-cargo events and the per-Kingdom narrative/notice lists."""
 
         self.world_events.clear()
+        # Rumors are only ever read to be told in the report of the turn that produced them.
+        self.rumors.clear()
         self.spy_watches.clear()
         self.spy_force_reports.clear()
         self.sunk_cargo_events.clear()

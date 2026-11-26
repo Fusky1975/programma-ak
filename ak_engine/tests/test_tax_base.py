@@ -246,6 +246,7 @@ def test_apply_turn_revenue_credits_each_kingdom_independently():
 
 def test_apply_turn_revenue_reduces_credit_for_a_raided_province_and_records_the_event():
     state = make_state()
+    state.turn_number = 4  # monsters do not plunder before turn 4
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=700))
     state.add_feature(
         Feature(

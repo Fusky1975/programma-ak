@@ -1220,6 +1220,18 @@ def _clear_mystic_winds_before_battle(armies: list[ArmyState], state: GameState)
             commander.mystic_winds_active = False
 
 
+def _roll_army_quality(army: ArmyState, report: BattleReport, rng: random.Random, **kwargs) -> None:
+    """The post-battle quality roll of ``army``, made on the rank it really has: the rank Oratory adds for the turn
+    (``ArmyState.oratory_boost_levels``) counts in the fight but not in the chance to improve or decline, and is
+    still on top of the result when the turn ends and takes it back. ``report.quality_changes`` records the real ranks."""
+
+    boost = army.oratory_boost_levels
+    old_real = Quality(int(army.quality) - boost) if boost else army.quality
+    new_real = roll_quality_change(old_real, rng, **kwargs)
+    army.quality = Quality(min(int(new_real) + boost, int(Quality.ELITE))) if boost else new_real
+    report.quality_changes[army.army_id] = QualityChange(old=old_real, new=new_real)
+
+
 def _retreat_or_disband(
     army: ArmyState,
     state: GameState,
@@ -1258,12 +1270,10 @@ def _retreat_or_disband(
             destination_province = state.provinces.get(destination)
             if destination_province is None or destination_province.effective_terrain() is not Terrain.SEA:
                 disembark_army(state, army.army_id)
-        old_quality = army.quality
-        army.quality = roll_quality_change(
-            army.quality, rng, is_winner=False, retreated=True,
+        _roll_army_quality(
+            army, report, rng, is_winner=False, retreated=True,
             led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
         )
-        report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         report.retreated_army_ids.append(army.army_id)
         report.retreat_destination_coord[army.army_id] = destination
         return
@@ -3637,12 +3647,10 @@ def fight_battle(
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         score = score_by_army_id.get(army.army_id, 0)
         if battle_result.winner == "attacker":
-            old_quality = army.quality
-            army.quality = roll_quality_change(
-                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as,
+            _roll_army_quality(
+                army, report, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as,
                 formation_divisor=formation_divisor, score=score,
             )
-            report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif attacker_clean_swept and _whale_forced_retreat_applies(army, terrain):
             bounds = MapBounds(state.board_width, state.board_height)
             destination = _whale_sea_retreat_destination(army, state, bounds)
@@ -3679,13 +3687,11 @@ def fight_battle(
             state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
             state.remove_army(army.army_id)
         else:
-            old_quality = army.quality
-            army.quality = roll_quality_change(
-                army.quality, rng, is_winner=False, retreated=False,
+            _roll_army_quality(
+                army, report, rng, is_winner=False, retreated=False,
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
                 score=score,
             )
-            report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
 
     for army in defender_armies:
         if army.army_id in defender_pursuit_destroyed:
@@ -3695,12 +3701,10 @@ def fight_battle(
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         score = score_by_army_id.get(army.army_id, 0)
         if battle_result.winner == "defender":
-            old_quality = army.quality
-            army.quality = roll_quality_change(
-                army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as,
+            _roll_army_quality(
+                army, report, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as,
                 formation_divisor=formation_divisor, score=score,
             )
-            report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif defender_clean_swept and _whale_forced_retreat_applies(army, terrain):
             bounds = MapBounds(state.board_width, state.board_height)
             destination = _whale_sea_retreat_destination(army, state, bounds)
@@ -3728,13 +3732,11 @@ def fight_battle(
             state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
             state.remove_army(army.army_id)
         else:
-            old_quality = army.quality
-            army.quality = roll_quality_change(
-                army.quality, rng, is_winner=False, retreated=False,
+            _roll_army_quality(
+                army, report, rng, is_winner=False, retreated=False,
                 led_by_insufficient_druid=led_by_insufficient_druid, druid_fought_as=druid_fought_as, formation_divisor=formation_divisor,
                 score=score,
             )
-            report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
 
     _move_retreating_commanders(state, attacker_retreat_plan, report)
     _move_retreating_commanders(state, defender_retreat_plan, report)

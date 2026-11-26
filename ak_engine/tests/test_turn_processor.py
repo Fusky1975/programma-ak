@@ -188,6 +188,7 @@ def test_run_turn_ages_feature_guardians_only_from_fall_phase_index_3_onward():
 
 def test_run_turn_apply_turn_revenue_consumes_the_real_shared_rng():
     state = GameState()
+    state.turn_number = 4  # monsters do not plunder before turn 4: the raid roll this test follows is only made from then on
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     coord = HexCoord(5, 5)
     state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=700))
