@@ -5331,6 +5331,66 @@ def test_select_guardian_quest_location_covers_all_5_real_entries_across_feature
     }
 
 
+def _talk_with_reply(state, reply):
+    request = _talk_request(1, Maneuver.MELEE)
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=reply
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel"):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        (MonsterTalkReply.R_FREVENGE, Treasure.QUEST_KILL_QUEST),
+        (MonsterTalkReply.R_PREVENGE, Treasure.QUEST_KILL_QUEST),
+        (MonsterTalkReply.R_SOUL, Treasure.QUEST_CONTRACT),
+    ],
+)
+def test_talk_hands_the_hero_the_quest_item_tagged_with_the_feature(reply, expected):
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX)
+    state.add_feature(feature)
+
+    _talk_with_reply(state, reply)
+
+    held = state.items_held_by(LEADER_ID)
+    assert [(item.treasure, item.charges) for item in held] == [(expected, 1)]
+
+
+def test_talk_visit_and_riddle_hand_over_the_item_the_guardian_chose():
+    for reply, chooser in (
+        (MonsterTalkReply.R_VISIT, _select_guardian_quest_location),
+        (MonsterTalkReply.R_RIDDLE, _select_guardian_riddle),
+    ):
+        state = _state_with_leader()
+        state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX))
+
+        _talk_with_reply(state, reply)
+
+        assert [item.treasure for item in state.items_held_by(LEADER_ID)] == [chooser(Monster.SPHINX, 1)]
+
+
+def test_a_second_talk_does_not_hand_over_a_second_quest_item():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX))
+
+    _talk_with_reply(state, MonsterTalkReply.R_SOUL)
+    _talk_with_reply(state, MonsterTalkReply.R_SOUL)
+
+    assert len(state.items_held_by(LEADER_ID)) == 1
+
+
+def test_quests_without_an_item_leave_the_hero_empty_handed():
+    for reply in (MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_SELL, MonsterTalkReply.R_SLAVE, MonsterTalkReply.R_DRAIN):
+        state = _state_with_leader()
+        state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX))
+
+        _talk_with_reply(state, reply)
+
+        assert state.items_held_by(LEADER_ID) == []
+
+
 # -- Phase 727: real, deterministic reply selector wired in -----------------
 # turn/monster_raids.py resolve_monster_raid_reply() (Phase 679, Desktop/
 # NOARMY.md) replaces turn/encounter.py select_monster_talk_reply() here --
