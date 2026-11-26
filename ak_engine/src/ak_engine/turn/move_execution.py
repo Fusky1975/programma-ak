@@ -700,6 +700,11 @@ class MoveExecutionResult:
     # 766: wired into the report layer via a sentinel PhaseDispatchResult
     # -- see `_naval_hug_coastline_move_is_legal()`'s own Phase 766 note.
     straggler_result: MoveExecutionResult | None = None
+    # The Kingdom that owned the province before an uncontested conquest (None for a province nobody owned), and the
+    # one that took it: the GENERAL INTELLIGENCE REPORT files the news under both ("... invaded the province of
+    # Orielle, a Plain area ruled by Bradipo I (#2)").
+    previous_owner_kingdom_id: int | None = None
+    conquering_kingdom_id: int | None = None
     # Phase 769: MARCH.md section 12's own real dispatcher condition,
     # `CountArmies(leader) <= 0` -- `True` when this specific call's own
     # (pre-straggler-split) `army_ids` was empty, i.e. the leader moved
@@ -2205,6 +2210,7 @@ def execute_move(
 
     battle_report = None
     conquered = False
+    previous_owner_kingdom_id = target_province.owner_kingdom_id
     if occupied_by_enemy:
         army_types_before_battle = snapshot_army_types(state)
         battle_report = fight_battle(
@@ -2406,6 +2412,8 @@ def execute_move(
         reached_target=reached_target,
         stopped_chasing=False,
         conquered=conquered,
+        previous_owner_kingdom_id=previous_owner_kingdom_id if conquered else None,
+        conquering_kingdom_id=kingdom_id if conquered else None,
         wind_walking=wind_walking,
         discovered_features=entry_exploration.discovered_features,
         boarded_army_ids=boarded_army_ids,

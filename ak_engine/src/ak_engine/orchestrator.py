@@ -319,7 +319,8 @@ def process_turn(
     # events()'s own docstring) -- called exactly once here, never once
     # per Kingdom, or GENERAL INTELLIGENCE REPORT would show every event
     # duplicated once per Kingdom in the loop below.
-    record_battle_world_events(state, results, rng)
+    # (The battles are recorded after the Moves, below: the news of an invasion goes right after the news of the
+    # Move that started it.)
     # Phase 711 -- same once-per-turn requirement as its sibling above;
     # populates the two involved Kingdoms' own ACTION REPORT narrative
     # (state.battle_narratives_by_kingdom), not GENERAL INTELLIGENCE.
@@ -340,7 +341,8 @@ def process_turn(
     record_exploration_world_events(state, results, rng, gir_announced)
     record_recruit_world_events(state, results, rng, gir_announced)
     record_illusory_fog_foreign_entry_world_events(state, results, rng)
-    record_uncontested_conquest_world_events(state, results, rng)
+    record_battle_world_events(state, results, rng, gir_announced)
+    record_uncontested_conquest_world_events(state, results, rng, gir_announced)
     # Phase 781 -- same once-per-turn requirement as its siblings above;
     # populates state.world_events from the wandering relocations `turn/
     # turn_processor.py run_turn()`'s own end-of-turn tail appended.

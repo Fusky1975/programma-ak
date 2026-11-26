@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 
 import pytest
 
@@ -161,6 +162,8 @@ from ak_engine.report.turn_report import (
     parse_template_choices,
     pick_variant,
     record_battle_narratives,
+    describe_battle_for_outsider,
+    describe_invasion_paragraph,
     record_battle_world_events,
     record_blackmail_narratives,
     record_illusory_fog_foreign_entry_world_events,
@@ -199,6 +202,9 @@ from ak_engine.report.turn_report import (
     render_attack_hit,
     render_attack_missed,
     render_battle_winner,
+    render_invasion_commanders,
+    render_invasion_intro,
+    render_invasion_won,
     render_bluck_narration,
     render_boulder_throw_hit,
     render_boulder_throw_missed,
@@ -16306,7 +16312,16 @@ def _gir_state() -> GameState:
     return state, battle_coord, watcher_coord
 
 
-def test_record_battle_world_events_records_the_winner_sentence():
+def _invasion_paragraph_events(state):
+    """The outer, world-news paragraphs of ``state.world_events`` (the narratives told to the Kingdoms that fought
+    are recorded beside them)."""
+
+    return [event for event in state.world_events if event.involved_view == "hide"]
+
+
+def test_record_battle_world_events_records_the_invasion_paragraph():
+    # 2026-11-26: the GIR tells a battle as INVAS.X + who led the two sides + INVWIN.X (SAY.PAS _BInvas/_BCdrs/_BInv),
+    # filed under the attacker and under the defender -- not as WINNER.X.
     state, battle_coord, _watcher_coord = _gir_state()
     battle_result = BattleResult(winner="attacker")
     report = BattleReport(
@@ -16314,14 +16329,20 @@ def test_record_battle_world_events_records_the_winner_sentence():
         province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
     )
     results = [PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)]
-    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
 
-    record_battle_world_events(state, results, rng)
+    record_battle_world_events(state, results, random.Random(4))
 
-    assert len(state.world_events) == 1
-    event = state.world_events[0]
+    assert len(_invasion_paragraph_events(state)) == 1
+    event = _invasion_paragraph_events(state)[0]
     assert event.coord == battle_coord
-    assert event.lines == ["the forces of Attackia (#1) broke through and were victorious."]
+    assert event.section_kingdom_ids == (1, 2)
+    assert event.involved_kingdom_ids == (1, 2) and event.involved_view == "hide" and event.seasonal
+    (paragraph,) = event.lines
+    assert "Border Fort" in paragraph and "Defendia (#2)" in paragraph
+    assert "Attackia (#1)" in paragraph  # the King leads: "Attackia (#1) was in command of the attacking armies"
+    assert "broke through" not in paragraph  # that is WINNER.X, the line of the full narrative
+    assert re.search(r"(commanded|in command of) the (attacking|invading) armies", paragraph)
+    assert re.search(r"defenders|defending forces", paragraph)
 
 
 def test_record_battle_world_events_skips_a_tie():
@@ -16347,10 +16368,13 @@ def test_record_battle_world_events_records_a_battle_against_independent_defende
     )
     results = [PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)]
 
-    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+    record_battle_world_events(state, results, random.Random(4))
 
-    assert len(state.world_events) == 1
-    assert state.world_events[0].coord == battle_coord
+    (event,) = _invasion_paragraph_events(state)
+    assert event.coord == battle_coord
+    # No defending Kingdom: only the attacker's section, and the natives' chieftain leads the defence.
+    assert event.section_kingdom_ids == (1,)
+    assert "the provincial garrison commander" in event.lines[0]
 
 
 def test_record_battle_world_events_skips_a_report_with_no_attacker_kingdom():
@@ -16384,9 +16408,9 @@ def test_record_battle_world_events_finds_a_battle_report_nested_under_battle_re
         )
     ]
 
-    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+    record_battle_world_events(state, results, random.Random(4))
 
-    assert len(state.world_events) == 1
+    assert len(_invasion_paragraph_events(state)) == 1
 
 
 def test_record_battle_world_events_finds_a_battle_report_nested_under_battle_dot_report():
@@ -16411,9 +16435,9 @@ def test_record_battle_world_events_finds_a_battle_report_nested_under_battle_do
         )
     ]
 
-    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+    record_battle_world_events(state, results, random.Random(4))
 
-    assert len(state.world_events) == 1
+    assert len(_invasion_paragraph_events(state)) == 1
 
 
 def test_record_battle_world_events_deduplicates_a_multi_attacker_shared_battle_report():
@@ -16448,9 +16472,9 @@ def test_record_battle_world_events_deduplicates_a_multi_attacker_shared_battle_
         ),
     ]
 
-    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+    record_battle_world_events(state, results, random.Random(4))
 
-    assert len(state.world_events) == 1
+    assert len(_invasion_paragraph_events(state)) == 1
 
 
 def test_describe_general_intelligence_report_none_at_present_with_no_events():
@@ -17280,7 +17304,9 @@ def test_season_advent_template_only_spring_is_a_full_sentence():
 
 
 def test_record_battle_world_events_prefixes_the_season_for_a_real_phase_label():
-    state, battle_coord, _watcher_coord = _gir_state()
+    # The paragraph carries no "In <season>, " itself: the GIR writes it once per run of one Kingdom's same-phase
+    # news (SAY.PAS phasewrit), so the event only records the phase.
+    state, battle_coord, watcher_coord = _gir_state()
     report = BattleReport(
         battle_result=BattleResult(winner="attacker"), conquered=True,
         province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
@@ -17291,9 +17317,220 @@ def test_record_battle_world_events_prefixes_the_season_for_a_real_phase_label()
         )
     ]
 
-    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+    record_battle_world_events(state, results, random.Random(4))
 
-    assert state.world_events[0].lines == ["In late summer, the forces of Attackia (#1) broke through and were victorious."]
+    assert state.world_events[0].phase == "P2" and state.world_events[0].seasonal
+    state.provinces[battle_coord].owner_kingdom_id = 1
+    lines = describe_general_intelligence_report(state, 3)
+    assert any(line.startswith("In late summer, ") for line in lines)
+
+
+# -- 2026-11-26: the GIR's battles (INVAS.X / _BCdrs / INVWIN.X, the narrative told to the opponent) ---------------
+
+
+def test_render_invasion_intro_names_the_invader_the_owner_and_the_terrain():
+    # INVAS.X variant 3 (index 3): "an army coming from the empire of <3 invaded @, hoping to conquer that province
+    # owned by [3 and made up of great `s." -- the real SE3__T10.K1 line, "great Deserts".
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[3])
+    text = render_invasion_intro(
+        "Lord Babba Sissoko Master orango (#0)", "Babba Sissoko (#0)", "Abu Matariq", "Desert", "Bradipo I (#2)", rng
+    )
+    assert text == (
+        "an army coming from the empire of Lord Babba Sissoko Master orango (#0) invaded Abu Matariq, hoping to "
+        "conquer that province owned by Bradipo I (#2) and made up of great Deserts."
+    )
+
+
+def test_render_invasion_intro_uses_the_short_name_of_the_empire_in_the_banner_variant():
+    # Variant 5: "... the battle-standards of the <ian empire ..." -- "the Kwoth (#3)ian empire" in the real T5 report.
+    rng = ScriptedRandom([0.1] * 8, choice_indices=[5])
+    text = render_invasion_intro("Lord Kwoth (#3)", "Kwoth (#3)", "Chirfa", "Desert", "the provincial garrison commander", rng)
+    assert text == (
+        "soldiers bearing the battle-standards of the Kwoth (#3)ian empire marched on the Desert province of Chirfa, "
+        "a land garrisoned by the forces of the provincial garrison commander."
+    )
+
+
+def test_render_invasion_commanders_reads_like_the_real_reports():
+    rng = ScriptedRandom([0.1] * 4)
+    assert render_invasion_commanders("Tlazolteotl (#88)", "Prometeo (#5)", rng) == [
+        "Tlazolteotl (#88) commanded the attacking armies.",
+        "the defenders were led by Prometeo (#5).",
+    ]
+    rng = ScriptedRandom([0.9] * 4)
+    assert render_invasion_commanders("Riose (#52)", "the provincial Merman chieftain", rng, is_sea=True) == [
+        "Riose (#52) was in command of the invading fleet.",
+        "the defending forces were commanded by the provincial Merman chieftain.",
+    ]
+
+
+def test_render_invasion_won_names_the_commander_and_the_king():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    assert render_invasion_won("Alain (#33)", "Babba Sissoko (#0)", "Macondo", rng) == (
+        "Macondo was overrun by the forces of Babba Sissoko (#0)."
+    )
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[3])
+    assert render_invasion_won("Alain (#33)", "Babba Sissoko (#0)", "Macondo", rng) == (
+        "Macondo was overrun by Alain (#33)'s men in a hard-fought campaign."
+    )
+
+
+def _gir_battle_state():
+    state, battle_coord, watcher_coord = _gir_state()
+    state.kingdoms[1].king_title_prefix = "Lord"
+    state.kingdoms[1].king_title_suffix = "Master orango"
+    state.add_leader(LeaderState(11, 1, "Tlazolteotl", battle_coord))
+    state.add_leader(LeaderState(12, 2, "Marlon", battle_coord))
+    return state, battle_coord, watcher_coord
+
+
+def _fought_battle(state, battle_coord, winner="attacker", **extra):
+    report = BattleReport(
+        battle_result=BattleResult(winner=winner, columns=[_column(bres=3, attacker_source_id=10, defender_source_id=20)]),
+        conquered=winner == "attacker", province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+        attacker_commander_leader_id=11, defender_commander_leader_id=12,
+        attacker_commanding_leader_ids=[11], defender_commanding_leader_ids=[12], **extra,
+    )
+    results = [PhaseDispatchResult(leader_id=11, segment_index=0, phase_label="P1", action=ActionCode.LMOVE, result=report, error=None)]
+    return report, results
+
+
+def test_the_invasion_paragraph_names_the_king_the_commanders_and_the_province():
+    state, battle_coord, _watcher = _gir_battle_state()
+    report, _results = _fought_battle(state, battle_coord)
+    paragraph = describe_invasion_paragraph(state, report, random.Random(2))
+    assert "Lord Attackia Master orango (#1)" in paragraph or "Attackia (#1)" in paragraph
+    assert "Tlazolteotl (#11)" in paragraph and "Marlon (#12)" in paragraph and "Border Fort" in paragraph
+
+
+def test_the_invasion_paragraph_of_a_lost_invasion_ends_with_defwin():
+    state, battle_coord, _watcher = _gir_battle_state()
+    report, _results = _fought_battle(state, battle_coord, winner="defender")
+    for seed in range(8):
+        paragraph = describe_invasion_paragraph(state, report, random.Random(seed))
+        last = re.split(r"(?<=[.!?]) ", paragraph)[-1]
+        assert re.search(r"defeated|beaten|turned back|driven|pushed|chased|drove", last), last
+
+
+def test_a_tie_has_no_invasion_paragraph():
+    state, battle_coord, _watcher = _gir_battle_state()
+    report, _results = _fought_battle(state, battle_coord, winner="tie")
+    assert describe_invasion_paragraph(state, report, random.Random(0)) is None
+
+
+def test_the_invasion_paragraph_is_filed_under_both_kingdoms_for_a_reader_who_did_not_fight():
+    state, battle_coord, watcher_coord = _gir_battle_state()
+    _report, results = _fought_battle(state, battle_coord)
+    state.provinces[battle_coord].owner_kingdom_id = 1
+    record_battle_world_events(state, results, random.Random(3))
+
+    lines = describe_general_intelligence_report(state, 3)
+    text = "\n".join(lines)
+    assert "Kingdom of Attackia (#1):" in text and "Kingdom of Defendia (#2):" in text
+    assert text.count("Border Fort") >= 2  # the same paragraph, once under each
+    # The Kingdoms that fought read the battle in their own ACTION REPORT, not as world news.
+    assert "invaded" not in "\n".join(describe_general_intelligence_report(state, 1))
+    assert "commanded" not in "\n".join(describe_general_intelligence_report(state, 2)).split("Attackia")[0]
+
+
+def test_the_battle_narrative_goes_to_the_opponent_section_of_a_kingdom_that_fought():
+    # Real GIRs (SE3__T5-T11.K1): under "Kingdom of Prometeo (#5):" the reader finds the Alderwood battle he fought
+    # against Prometeo, told from Prometeo's side.
+    state, battle_coord, _watcher = _gir_battle_state()
+    _report, results = _fought_battle(state, battle_coord)
+    state.provinces[battle_coord].owner_kingdom_id = 1
+    record_battle_world_events(state, results, random.Random(3))
+
+    attacker_view = "\n".join(describe_general_intelligence_report(state, 1))
+    assert "Kingdom of Defendia (#2):" in attacker_view
+    assert "Marlon (#12)" in attacker_view  # the defender's roster
+    assert "Tlazolteotl" not in attacker_view  # his own commander is for his own ACTION REPORT
+    assert "10th Garrison" in attacker_view and "20th Legion" in attacker_view  # the column clash
+
+    defender_view = "\n".join(describe_general_intelligence_report(state, 2))
+    assert "Kingdom of Attackia (#1):" in defender_view
+    assert "Tlazolteotl (#11)" in defender_view and "Marlon" not in defender_view
+
+    watcher_view = "\n".join(describe_general_intelligence_report(state, 3))
+    assert "10th Garrison" not in watcher_view  # a bystander gets the paragraph, not the narrative
+
+
+def test_describe_battle_for_outsider_tells_the_leaders_that_fled():
+    state, battle_coord, _watcher = _gir_battle_state()
+    other = HexCoord(7, 7)
+    state.add_province(ProvinceState(other, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Mare Imbrium"))
+    report, _results = _fought_battle(state, battle_coord)
+    report.leader_retreat_destination_coord = {12: other}
+    report.leaders_retreated_alone = [12]
+
+    paragraphs = describe_battle_for_outsider(state, report, "defender", random.Random(1), set())
+
+    # _LRFlee: "His forces completely dispersed, Marlon escaped frightened and alone to Mare Imbrium." (he was named
+    # with his "(#12)" in the roster, so the bare name now)
+    assert re.fullmatch(
+        r"His forces completely (dispersed|destroyed), Marlon (fled|escaped)( frightened and)? alone to Mare Imbrium\.",
+        paragraphs[-1],
+    ), paragraphs[-1]
+    assert "Marlon (#12)" in paragraphs[0]
+    # the attacker's own side is not told: the reader of the other side is the attacker
+    assert not any("Tlazolteotl" in paragraph for paragraph in paragraphs)
+
+
+def test_the_season_is_written_once_per_run_of_the_same_phase():
+    state, battle_coord, _watcher = _gir_battle_state()
+    state.provinces[battle_coord].owner_kingdom_id = 1
+    state.record_world_event(battle_coord, ["In early summer, Tlazolteotl (#11) flew into Border Fort."], phase="P1", leader_id=11)
+    _report, results = _fought_battle(state, battle_coord)
+    record_battle_world_events(state, results, random.Random(3))
+
+    lines = describe_general_intelligence_report(state, 3)
+    attacker_block = lines[lines.index("Kingdom of Attackia (#1):") + 1 :]
+    assert attacker_block[0].startswith("In early summer, Tlazolteotl (#11) flew")
+    # the invasion that follows the Move is not prefixed again, and starts a capital
+    assert not attacker_block[1].startswith("In ") and attacker_block[1][0].isupper()
+    # ... but the defender's section opens with its own
+    defender_block = lines[lines.index("Kingdom of Defendia (#2):") + 1 :]
+    assert defender_block[0].startswith("In early summer, ")
+
+
+def test_an_invasion_is_recorded_right_after_the_move_that_started_it():
+    state, battle_coord, _watcher = _gir_battle_state()
+    state.record_world_event(battle_coord, ["first"], phase="P1", leader_id=11)
+    state.record_world_event(battle_coord, ["other"], phase="P1", leader_id=99)
+    state.record_world_event(battle_coord, ["invasion"], phase="P1", leader_id=11, after_leader=True)
+    assert [event.lines[0] for event in state.world_events] == ["first", "invasion", "other"]
+
+
+def test_an_uncontested_conquest_of_a_kingdoms_province_is_announced_by_its_invasion():
+    # SE3__T10.K1: "A fleet sent by the empire of Lord Babba Sissoko Master orango (#0) invaded Waterford, hoping to
+    # subjugate that province ruled by Prometeo (#5) ...  Tlazolteotl (#88)'s forces experienced little opposition".
+    state, battle_coord, _watcher = _gir_battle_state()
+    result = _fake_conquest_result(True, battle_coord)
+    result.previous_owner_kingdom_id = 2
+    result.conquering_kingdom_id = 1
+    results = [PhaseDispatchResult(leader_id=11, segment_index=0, phase_label="P2", action=ActionCode.LMOVE, result=result, error=None)]
+
+    record_uncontested_conquest_world_events(state, results, random.Random(5))
+
+    (event,) = state.world_events
+    assert event.section_kingdom_ids == (1, 2) and event.involved_view == "hide" and event.seasonal
+    (paragraph,) = event.lines
+    assert "Defendia (#2)" in paragraph and "Tlazolteotl (#11)" in paragraph and "Border Fort" in paragraph
+    assert "Master orango (#1)" in paragraph or "Attackia (#1)" in paragraph
+
+
+def test_an_uncontested_conquest_of_nobodys_province_is_just_conq():
+    state, battle_coord, _watcher = _gir_battle_state()
+    result = _fake_conquest_result(True, battle_coord)
+    result.previous_owner_kingdom_id = None
+    result.conquering_kingdom_id = 1
+    results = [PhaseDispatchResult(leader_id=11, segment_index=0, phase_label="P2", action=ActionCode.LMOVE, result=result, error=None)]
+
+    record_uncontested_conquest_world_events(state, results, random.Random(5))
+
+    (event,) = state.world_events
+    assert event.involved_view == "" and not event.seasonal
+    assert event.lines[0].startswith("In late summer, ") and "invaded" not in event.lines[0]
 
 
 # -- Phase 711: record_battle_narratives --------------------------------------
@@ -17839,7 +18076,8 @@ def test_record_uncontested_conquest_world_events_records_a_conquest_event():
     assert len(state.world_events) == 1
     event = state.world_events[0]
     assert event.coord == battle_coord
-    assert event.lines == ["In late summer, Attackia's forces conquered Border Fort without any major battles."]
+    # No previous owner: just CONQ.X, the conqueror named with his "(#id)" the first time.
+    assert event.lines == ["In late summer, Attackia (#1)'s forces conquered Border Fort without any major battles."]
 
 
 def test_record_uncontested_conquest_world_events_survives_the_conqueror_dying_later_the_same_turn():
