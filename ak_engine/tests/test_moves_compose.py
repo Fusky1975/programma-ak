@@ -24,6 +24,8 @@ rulebook [5.6]).
 
 from __future__ import annotations
 
+import pytest
+
 import tempfile
 from pathlib import Path
 
@@ -4915,3 +4917,74 @@ def test_build_composed_kingdom_round_trips_a_special_encounter_plan():
         tmp.unlink(missing_ok=True)
 
     assert reparsed.leaders[0].plan.segments[0].sp == (int(Maneuver.FLEE), int(Maneuver.MELEE), -1)
+
+
+# ---- Hand-typed targets of the character-targeted spells ---------------------------------------------------------
+
+
+def test_a_hand_typed_charm_target_need_not_be_in_this_province_when_the_orders_are_written():
+    # The point of typing a number: the hero the dropdown does not offer (yet) -- e.g. one who will be here only when this
+    # phase comes. Where he stands at the start of the turn says nothing; the cast checks it when it is resolved.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Elsewhere", location=HexCoord(5, 5)))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target_number="2")
+
+    assert parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)[0].extra == [2]
+
+
+def test_a_dropdown_charm_target_in_another_province_is_still_refused():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Elsewhere", location=HexCoord(5, 5)))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target="2")
+
+    with pytest.raises(InvalidComposedMovesError, match="choose a Charm target"):
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+
+def test_a_hand_typed_charm_target_that_is_no_hero_says_so():
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target_number="999")
+
+    with pytest.raises(InvalidComposedMovesError, match=r"Charm target #999 is not a hero"):
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+
+def test_a_hand_typed_charm_target_cannot_be_the_caster_himself():
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target_number=str(KING_ID))
+
+    with pytest.raises(InvalidComposedMovesError, match="can't Charm himself"):
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+
+def test_a_hand_typed_kill_enemy_target_elsewhere_is_accepted():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Elsewhere", location=HexCoord(5, 5)))
+    form = _cast_form(cast_spell=str(int(Spell.KILL_ENEMY)), cast_kill_enemy_target_number="2")
+
+    assert parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)[0].extra == [2]
+
+
+def test_a_hand_typed_resurrection_target_must_be_a_known_hero_living_or_dead():
+    state = _state()
+    state.dead_leaders[7] = LeaderState(leader_id=7, kingdom_id=None, name="Late Hero", location=HexCoord(5, 5))
+    accepted = _cast_form(cast_spell=str(int(Spell.RESURRECTION)), cast_resurrection_target_number="7")
+    refused = _cast_form(cast_spell=str(int(Spell.RESURRECTION)), cast_resurrection_target_number="123")
+
+    assert parse_phase_inputs(accepted, KING_ID, board_width=BOARD_WIDTH, state=state)[0].extra == [7]
+    with pytest.raises(InvalidComposedMovesError, match="Resurrection target #123 is not a hero"):
+        parse_phase_inputs(refused, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+
+def test_a_rejected_order_names_the_hero_it_belongs_to():
+    from ak_engine.webapp.moves_compose import build_composed_kingdom
+
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)))  # no Charm target at all
+
+    with pytest.raises(InvalidComposedMovesError) as caught:
+        build_composed_kingdom(state, game_label="G", turn_number=1, kingdom_id=1, form=form)
+
+    assert caught.value.leader_id == KING_ID
+    assert str(caught.value).startswith("King (#") or "(#" in str(caught.value)
+    assert "P0: choose a Charm target." in str(caught.value)

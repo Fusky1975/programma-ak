@@ -9763,3 +9763,80 @@ def test_generated_heroes_get_their_default_sex(tmp_path):
 
     sex_cells = re.findall(r"<td>([^<]*)</td>\s*<td><a class=\"button\"", html)
     assert {"Male", "Female"} <= set(sex_cells) <= {"Male", "Female", "--"}  # "--": the Kings of this fixture chose none
+
+
+# ---- Compose Moves: a rejected save keeps every other order ---------------------------------------------------------
+
+
+def _bad_charm_form(tmp_path, client, meta):
+    _, state = open_game(tmp_path, meta.slug)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.CAST))
+    form[f"cast_spell_{king.leader_id}_0"] = str(int(Spell.CHARM))  # no target at all
+    return form, king
+
+
+def test_a_rejected_compose_save_over_fetch_answers_json_naming_the_hero(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    form, king = _bad_charm_form(tmp_path, client, meta)
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, headers={"X-Requested-With": "fetch"})
+
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["ok"] is False and body["leader_id"] == king.leader_id
+    assert f"{king.name} (#{king.leader_id}) P0: choose a Charm target." == body["error"]
+
+
+def test_a_good_compose_save_over_fetch_answers_json_with_the_hub_to_go_to(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/1/compose", data=_compose_form(roster_ids), headers={"X-Requested-With": "fetch"}
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "redirect": f"/games/{meta.slug}/turns"}
+
+
+def test_a_plain_compose_post_still_redirects_with_the_error_in_the_query(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    form, _ = _bad_charm_form(tmp_path, client, meta)
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form)
+
+    assert response.status_code == 302 and "error=" in response.headers["Location"]
+
+
+def test_the_compose_page_saves_through_fetch_and_marks_each_heroes_heading(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+
+    html = client.get(f"/games/{meta.slug}/turns/1/compose").get_data(as_text=True)
+
+    assert 'id="compose-form"' in html and 'id="compose-error"' in html and '"X-Requested-With": "fetch"' in html
+    for leader in kingdom_leaders_for_compose(state, 1):
+        assert f'id="compose-leader-{leader.leader_id}"' in html
+
+
+def test_a_hand_typed_charm_target_saves_even_for_a_hero_elsewhere(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    form, king = _bad_charm_form(tmp_path, client, meta)
+    _, state = open_game(tmp_path, meta.slug)
+    elsewhere = next(
+        leader.leader_id for leader in state.leaders.values() if leader.location != king.location and not leader.is_king
+    )
+    form[f"cast_charm_target_number_{king.leader_id}_0"] = str(elsewhere)
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, headers={"X-Requested-With": "fetch"})
+
+    assert response.status_code == 200 and response.get_json()["ok"] is True
