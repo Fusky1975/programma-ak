@@ -33,7 +33,7 @@ from __future__ import annotations
 from ak_engine.models.game_state import GameState
 from ak_engine.models.office import Office
 from ak_engine.turn.movement import MapBounds, neighbors
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import emperor_best_hope, resolve_office_holder
 from ak_engine.turn.tax_base import compute_tax_base
 
 
@@ -64,7 +64,8 @@ def bordering_kingdoms(state: GameState, bounds: MapBounds, kingdom_id: int) -> 
 
 
 def _known_bordering_kingdoms(state: GameState, bounds: MapBounds, office: Office, leader_id: int) -> set[int] | None:
-    holder = resolve_office_holder(state, office)
+    # The Crown is worn by the World Emperor "best hope" (the elected Emperor once there is one), not only by the elected.
+    holder = emperor_best_hope(state) if office is Office.EMPEROR else resolve_office_holder(state, office)
     if holder is None or holder.leader_id != leader_id:
         return None
     kingdom_id = state.leaders[leader_id].kingdom_id

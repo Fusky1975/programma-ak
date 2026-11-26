@@ -292,6 +292,7 @@ def maybe_repopulate_dead_feature(feature: Feature, rng: random.Random) -> bool:
     feature.treasure = None  # a new tenant, an empty place
     feature.guardian_talk_reply_id = None
     feature.pending_deal_leader_id = None
+    feature.pending_deal_ready_turn = None
     feature.psychic_mage_sensed_fulfill_honor = None
     return True
 

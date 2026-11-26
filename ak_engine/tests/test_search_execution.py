@@ -7510,3 +7510,114 @@ def test_an_unhurt_guardian_keeps_fighting_instead_of_fleeing():
 
     assert result.monster_fled is False
     assert calls["n"] == 8  # fought on until the safety net ended it
+
+
+# ---- The old monster who wants someone to look after it (R_SLAVE): fulfilled in the year of its death ----------------
+
+
+def _slave_feature(**overrides) -> Feature:
+    defaults = dict(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER,
+        treasure=Treasure.GOLD_HOARD_LARGE,
+    )
+    defaults.update(overrides)
+    return Feature(**defaults)
+
+
+def _talk_to_the_old_monster(state, feature) -> None:
+    request = _talk_request(1, Maneuver.MELEE)
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_SLAVE
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel"):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+
+def test_the_old_monsters_deal_is_dated_two_turns_after_the_talk():
+    state = _state_with_leader()
+    state.turn_number = 3
+    feature = _slave_feature()
+    state.add_feature(feature)
+
+    _talk_to_the_old_monster(state, feature)
+
+    assert feature.pending_deal_leader_id == LEADER_ID
+    assert feature.pending_deal_ready_turn == 5  # "perhaps 2 years left to live"
+
+
+def test_a_second_talk_does_not_push_the_death_year_back():
+    state = _state_with_leader()
+    state.turn_number = 3
+    feature = _slave_feature()
+    state.add_feature(feature)
+    _talk_to_the_old_monster(state, feature)
+    state.turn_number = 4
+
+    _talk_to_the_old_monster(state, feature)
+
+    assert feature.pending_deal_ready_turn == 5
+
+
+def test_fulfilling_in_the_year_of_the_death_gives_the_treasure_and_the_monster_dies():
+    state = _state_with_leader()
+    state.turn_number = 3
+    feature = _slave_feature()
+    state.add_feature(feature)
+    _talk_to_the_old_monster(state, feature)
+    state.turn_number = 5
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.accepted and result.winner == "leader" and result.combat_resolved is False
+    assert result.quest_fulfilled is MonsterTalkReply.R_SLAVE and result.quest_treasure is Treasure.GOLD_HOARD_LARGE
+    assert result.feature_looted is True and feature.looted is True
+    # The Hoard paid into the Kingdom's treasury, or stays with a Kingdom-less hero as an item.
+    assert result.gold_found > 0 or any(item.owner_leader_id == LEADER_ID for item in state.items.values())
+    assert feature.pending_deal_leader_id is None and feature.pending_deal_ready_turn is None
+
+
+def test_fulfilling_before_the_death_year_changes_nothing_and_the_deal_stays():
+    state = _state_with_leader()
+    state.turn_number = 3
+    feature = _slave_feature()
+    state.add_feature(feature)
+    _talk_to_the_old_monster(state, feature)
+    state.turn_number = 4
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as melee:
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_fulfilled is None and feature.looted is False
+    assert feature.pending_deal_leader_id == LEADER_ID and feature.pending_deal_ready_turn == 5
+    assert melee.called  # the plan went on with its next tactic
+
+
+def test_fulfilling_after_the_death_year_finds_the_agreement_lapsed():
+    state = _state_with_leader()
+    state.turn_number = 3
+    feature = _slave_feature()
+    state.add_feature(feature)
+    _talk_to_the_old_monster(state, feature)
+    state.turn_number = 6
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_fulfilled is None
+    assert feature.pending_deal_leader_id is None and feature.pending_deal_ready_turn is None
+
+
+def test_the_old_monsters_death_earns_half_hit_points_of_merit_only_if_it_was_raiding():
+    # Rulebook, Carica di Difensore, nota 2: no points for fulfilling an agreement, half the monster's Hit Points when
+    # it is thereby persuaded to stop raiding. The raw HP is credited here; defender_merit_points() halves it.
+    for engagement, credited in ((MonsterEngagementState.BOLD, True), (MonsterEngagementState.MERCENARY, False)):
+        state = _state_with_leader()
+        state.turn_number = 3
+        feature = _slave_feature(guardian_state=engagement)
+        state.add_feature(feature)
+        _talk_to_the_old_monster(state, feature)
+        state.turn_number = 5
+
+        execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+        tally = state.leaders[LEADER_ID].merit_tally
+        assert (tally.monster_hp_neutralized > 0) is credited
+        assert tally.monster_hp_defeated == 0

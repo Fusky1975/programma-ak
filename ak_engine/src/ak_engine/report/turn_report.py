@@ -1437,7 +1437,14 @@ from ak_engine.turn.emperor_election import (
 )
 from ak_engine.turn.final_standings import compose_final_standings_report
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
-from ak_engine.turn.encounter import MONSTER_TALK_OFFER_TEXT, CombatRange, FireArrowShot, MonsterTalkReply
+from ak_engine.turn.encounter import (
+    MONSTER_TALK_ACCEPT_TEXT,
+    MONSTER_TALK_FULFILL_TEXT,
+    MONSTER_TALK_OFFER_TEXT,
+    CombatRange,
+    FireArrowShot,
+    MonsterTalkReply,
+)
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
@@ -13542,6 +13549,46 @@ _TALK_OFFER_PLACEHOLDERS: dict[str, str] = {
 }
 
 
+def render_guardian_quest_fulfilled(
+    character_name: str,
+    monster_name: str,
+    reply: MonsterTalkReply,
+    *,
+    treasure_name: str,
+    feature_name: str,
+    king_name: str,
+    possessive: str,
+    rng: random.Random,
+) -> list[str]:
+    """The story of a fulfilled agreement: what the character did (``FULFILL.X2``, SAY.PAS ``_LSpake``) and then the
+    monster's reply that hands over the reward (``MACCEPT.X2``, ``_MFulf``) -- for the old monster of ``R_SLAVE`` it
+    falls ill, leaves the hero everything it owns and dies. ``>`` is the character's possessive, ``]`` the monster's,
+    ``⟦CTRL-K⟧`` the character's own King ("And long live great Fusky!")."""
+
+    values = {
+        "[1": monster_name,
+        "[": monster_name,
+        "<2": character_name,
+        "<": character_name,
+        ">": possessive,
+        "]": "its",
+        "\\": treasure_name,
+        "&": feature_name,
+    }
+    lines: list[str] = []
+    for source in (MONSTER_TALK_FULFILL_TEXT[reply], MONSTER_TALK_ACCEPT_TEXT[reply]):
+        if not source:
+            continue
+        text = _resolve_ctrl_a_markers(source).replace("⟦CTRL-K:king-title⟧", king_name)
+        for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
+            text = text.replace(marker, placeholder)
+        rendered = render(text, values, rng=rng).strip()
+        rendered = re.sub(r'([.!?]"?)(?=[A-Za-z(])', r"\1 ", rendered)
+        rendered = _tidy_sentences(rendered)
+        lines.append(rendered[0].upper() + rendered[1:])
+    return lines
+
+
 def render_guardian_talk_offer(
     character_name: str,
     monster_name: str,
@@ -13615,8 +13662,21 @@ def describe_search(
     monster_name = MONSTER_NAMES.get(monster, "guardian") if monster is not None else "guardian"
     with combat_pronouns(_combat_possessives(state, leader_id, character_name, monster, f"the {monster_name}", rng)):
         return _describe_search_lines(
-            result, state=state, character_name=character_name, feature_name=feature_name, rng=rng, is_sea=is_sea
+            result, state=state, character_name=character_name, feature_name=feature_name, rng=rng, is_sea=is_sea,
+            leader_id=leader_id,
         )
+
+
+def _quest_king_name(state: GameState | None, leader_id: int | None) -> str:
+    """The King of the character's Kingdom, as a monster would hail him ("And long live great Fusky!")."""
+
+    leader = state.leaders.get(leader_id) if state is not None and leader_id is not None else None
+    if state is not None and leader is not None and leader.kingdom_id is not None:
+        king_id = _king_leader_id(state, leader.kingdom_id)
+        name = _leader_name(state, king_id) if king_id is not None else None
+        if name is not None:
+            return name
+    return "the King"
 
 
 def _describe_search_lines(
@@ -13627,6 +13687,7 @@ def _describe_search_lines(
     feature_name: str,
     rng: random.Random,
     is_sea: bool = False,
+    leader_id: int | None = None,
 ) -> list[str]:
     """Assembles Search's own turn-report lines from an already-computed
     ``SearchExecutionResult`` (``turn/search_execution.py
@@ -13750,6 +13811,19 @@ def _describe_search_lines(
     else:
         opening = render_search_attempt(character_name, feature_name, rng, is_sea=is_sea)
     lines = [opening]
+    if result.quest_fulfilled is not None:
+        lines.extend(
+            render_guardian_quest_fulfilled(
+                character_name,
+                f"the {MONSTER_NAMES.get(result.guardian_monster, 'guardian')}" if result.guardian_monster is not None else "the guardian",
+                result.quest_fulfilled,
+                treasure_name=TREASURE_NAME[result.quest_treasure] if result.quest_treasure is not None else "treasure",
+                feature_name=feature_name,
+                king_name=_quest_king_name(state, leader_id),
+                possessive=_COMBAT_POSSESSIVES.get().get(character_name, "his"),
+                rng=rng,
+            )
+        )
 
     monster_name = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
     # The original writes a monster as "the Succubus" wherever the sentence does not carry its own article.

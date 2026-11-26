@@ -19749,3 +19749,51 @@ def test_the_emperor_best_hope_gets_the_emerald_crown_paragraph_in_the_imperial_
 
     assert "World Emperor" in text and "Emerald Crown" in text and "Aldric's head" in text
     assert "Emerald Crown" not in " ".join(describe_imperial_office_report(state, 2))  # Borin is not the best hope
+
+
+# ---- The old monster's agreement told as the original tells it (FULFILL.X2 then MACCEPT.X2) --------------------------
+
+
+def test_the_fulfilled_slave_quest_is_told_in_two_parts_ending_with_the_monsters_will():
+    from ak_engine.report.turn_report import render_guardian_quest_fulfilled
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    for seed in range(10):
+        first, second = render_guardian_quest_fulfilled(
+            "Pascal", "the Renegade Illusionist", MonsterTalkReply.R_SLAVE,
+            treasure_name="Large Hoard of Gold", feature_name="Sacred Rock", king_name="Fusky", possessive="his",
+            rng=random.Random(seed),
+        )
+        assert re.fullmatch(
+            r"Pascal visited the Renegade Illusionist, (bringing|offering) (food|provisions), and (for a time )?cared after "
+            r"the Renegade Illusionist(, a (fierce|strong) but (waning|aged) (creature|being))?\.",
+            first,
+        ), first
+        assert second.startswith("The Renegade Illusionist fell tragically ill that season. Breathing its last gasps of air, ")
+        assert "offering its thanks for his kind assistance. Its final strained words were," in second
+        assert "including the Large Hoard of Gold. Take good care of it! And long live great Fusky!" in second
+        assert "Pascal buried the Renegade Illusionist with deep sadness in his heart" in second
+        assert second.endswith("treasure room to find the Large Hoard of Gold.")
+        assert not any(mark in first + second for mark in ("\\", "\u27e6", "{", "}"))
+
+
+def test_describe_search_tells_the_fulfilled_slave_quest_and_then_the_gold():
+    from ak_engine.models.treasure import Treasure
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Fusky", Race.ORCISH, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Fusky", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(78, 1, "Pascal", HexCoord(0, 0), sex=Sex.MALE))
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=False, winner="leader", feature_looted=True, gold_found=17,
+        guardian_monster=Monster.ILL_MAGE, quest_fulfilled=MonsterTalkReply.R_SLAVE, quest_treasure=Treasure.GOLD_HOARD_LARGE,
+    )
+
+    lines = describe_search(result, state=state, character_name="Pascal", feature_name="Sacred Rock", rng=random.Random(3), leader_id=78)
+    text = " ".join(lines)
+
+    assert "Pascal visited the Renegade Illusionist" in text
+    assert "fell tragically ill that season" in text and "And long live great Fusky!" in text
+    assert "including the Hoard." in text  # the original names a Hoard just so (TREASURE.X2)
+    assert text.index("fell tragically ill") < text.index("17 gold")  # the story first, then what it paid

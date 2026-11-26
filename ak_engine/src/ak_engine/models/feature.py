@@ -269,6 +269,11 @@ class Feature:
     # encounter.py resolve_fulfill_honored()`'s own module comment for
     # the honor-roll formula. `None` means no deal is currently pending.
     pending_deal_leader_id: int | None = None
+    # The turn from which the pending deal can be fulfilled, for the one agreement that is tied to a date: the old
+    # monster who asks for someone to look after it "for the rest of my life ... I have, perhaps, 2 years left to live"
+    # (``MonsterTalkReply.R_SLAVE``) and agrees to be fulfilled "in one phase of the year of the death" -- the turn of
+    # Talk plus two. ``None``: no such date (every other agreement, or one set by hand).
+    pending_deal_ready_turn: int | None = None
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
     # PSYCHIC_MAGE's own "will sense whether the monster intends to keep
     # its end of the bargain" perk (`models/office.py OFFICE_TITLE_
