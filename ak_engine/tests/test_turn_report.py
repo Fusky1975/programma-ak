@@ -19684,3 +19684,33 @@ def test_a_wandering_monster_is_met_as_a_or_an_and_then_is_the_one():
     from ak_engine.report.turn_report import _indefinite
 
     assert _indefinite("Ice Devil") == "an Ice Devil" and _indefinite("Minotaur") == "a Minotaur"
+
+
+# ---- Non-binary leaders in the reports ------------------------------------------------------------------------------
+
+
+def test_the_possessive_of_a_leader_follows_the_sex_with_their_for_non_binary():
+    from ak_engine.models.sex import Sex
+    from ak_engine.report.turn_report import _possessive_for
+
+    state = GameState()
+    for leader_id, sex in ((1, Sex.MALE), (2, Sex.FEMALE), (3, Sex.NON_BINARY), (4, None)):
+        state.leaders[leader_id] = LeaderState(leader_id=leader_id, kingdom_id=1, name=f"L{leader_id}", location=HexCoord(0, 0), sex=sex)
+
+    assert [_possessive_for(state, i) for i in (1, 2, 3, 4)] == ["his", "her", "their", "his"]
+
+
+def test_the_commanders_letter_tells_the_druidic_shortfall_in_first_person():
+    # Real letters: "The Dragons commanded by me were not impressed by my strange appearance."
+    from ak_engine.report.turn_report import _first_person_battle
+
+    lines = _first_person_battle(
+        ["The Elves commanded by Giovanna were not impressed by their lack of leadership ability.",
+         "Giovanna was frustrated by the Dragons, who virtually ignored her commands."],
+        "Giovanna", [],
+    )
+
+    assert lines == [
+        "The Elves commanded by me were not impressed by my lack of leadership ability.",
+        "I was frustrated by the Dragons, who virtually ignored my commands.",
+    ]

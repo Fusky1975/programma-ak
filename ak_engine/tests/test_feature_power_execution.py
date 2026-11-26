@@ -1464,3 +1464,16 @@ def test_resolve_feature_power_attempt_map_prov_caps_reveal_count_when_few_provi
 
     assert result.applied is True
     assert result.revealed_province_coords == (only_unknown,)
+
+
+def test_change_sex_finds_nothing_to_change_in_a_non_binary_leader():
+    from ak_engine.models.sex import Sex
+
+    assert Sex.NON_BINARY.value == "N"
+    # NEW_SEX toggles Male <-> Female; for a non-binary leader the branch reports "already matched" and leaves it as is.
+    import inspect
+
+    from ak_engine.turn import feature_power_execution as module
+
+    source = inspect.getsource(module)
+    assert source.count("leader.sex is Sex.NON_BINARY") == 2

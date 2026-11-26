@@ -9686,3 +9686,80 @@ def test_heroes_table_shows_each_leaders_number_next_to_the_name(tmp_path):
 
     for leader in state.leaders.values():
         assert f'{leader.name} <span class="leader-number">(#{leader.leader_id})</span>' in html
+
+
+# ---- Sex (M / F / N) at King creation ------------------------------------------------------------------------------
+
+
+def test_the_king_forms_offer_male_female_and_non_binary(tmp_path):
+    client = _client(tmp_path)
+    meta = create_game(tmp_path, "Sexes")
+
+    html = client.get(f"/games/{meta.slug}/players").get_data(as_text=True)
+
+    assert '<select id="sex" name="sex" required>' in html
+    assert 'value="MALE">M &mdash; Male' in html
+    assert 'value="FEMALE">F &mdash; Female' in html
+    assert 'value="NON_BINARY">N &mdash; Non-binary' in html
+
+
+def test_a_kings_sex_chosen_at_signup_reaches_the_king_of_the_created_world(tmp_path):
+    from ak_engine.models.sex import Sex
+
+    client = _client(tmp_path)
+    meta = create_game(tmp_path, "Sexes")
+    for name, sex in (("Aldric", "MALE"), ("Elara", "FEMALE"), ("Sam", "NON_BINARY")):
+        data = _king_form_data(name)
+        data["sex"] = sex
+        client.post(f"/games/{meta.slug}/players", data=data)
+    client.post(f"/games/{meta.slug}/world", data={"seed": "1"})
+
+    _, state = open_game(tmp_path, meta.slug)
+
+    kings = {leader.name: leader.sex for leader in state.leaders.values() if leader.is_king}
+    assert kings == {"Aldric": Sex.MALE, "Elara": Sex.FEMALE, "Sam": Sex.NON_BINARY}
+    assert "M" in client.get(f"/games/{meta.slug}/players").get_data(as_text=True)
+
+
+def test_an_invalid_sex_at_signup_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = create_game(tmp_path, "Sexes")
+    data = _king_form_data("Aldric")
+    data["sex"] = "ROBOT"
+
+    response = client.post(f"/games/{meta.slug}/players", data=data, follow_redirects=True)
+
+    assert "Please choose a valid Sex." in response.get_data(as_text=True)
+
+
+def test_a_kingdom_created_later_takes_the_chosen_sex(tmp_path):
+    from ak_engine.models.sex import Sex
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    data = _king_form_data("Sir Newling", race="DWARVEN", alignment="EVIL")
+    data["home_x"], data["home_y"], data["sex"] = str(coord.x), str(coord.y), "NON_BINARY"
+
+    client.post(f"/games/{meta.slug}/kingdoms/new", data=data)
+
+    _, state = open_game(tmp_path, meta.slug)
+    (king,) = [leader for leader in state.leaders.values() if leader.name == "Sir Newling"]
+    assert king.sex is Sex.NON_BINARY
+
+
+def test_generated_heroes_get_their_default_sex(tmp_path):
+    from ak_engine.models.hero_roster import default_hero_sex
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+
+    heroes = [leader for leader in state.leaders.values() if not leader.is_king]
+    assert heroes and all(leader.sex is default_hero_sex(leader.leader_id) for leader in heroes)
+    html = client.get(f"/games/{meta.slug}/leaders").get_data(as_text=True)
+    import re
+
+    sex_cells = re.findall(r"<td>([^<]*)</td>\s*<td><a class=\"button\"", html)
+    assert {"Male", "Female"} <= set(sex_cells) <= {"Male", "Female", "--"}  # "--": the Kings of this fixture chose none

@@ -72,6 +72,7 @@ def create_world(
                 race=player.race_enum,
                 alignment=player.alignment_enum,
                 temper=player.temper_enum,
+                sex=player.sex_enum,
                 # Rulebook [2.1]'s own automatic +1 Melee/Archery/Sage and
                 # Divine/Undead White<->Necromancy overrides apply
                 # regardless of the player's own talent_allocation choice

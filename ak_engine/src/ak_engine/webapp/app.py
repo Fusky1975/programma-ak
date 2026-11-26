@@ -251,6 +251,19 @@ def _optional_enum(cls, raw: str):
     return cls[raw] if raw else None
 
 
+def _parse_sex_field(form) -> Sex | None:
+    """The King-creation forms' Sex select (M / F / N): ``None`` when the field is absent or empty (a client that
+    predates it); ``ValueError`` with a user-facing message for anything else that is not a ``Sex``."""
+
+    raw = form.get("sex", "").strip()
+    if not raw:
+        return None
+    try:
+        return Sex[raw]
+    except KeyError:
+        raise ValueError("Please choose a valid Sex.") from None
+
+
 def _parse_king_form_fields(form) -> tuple[str, Race, Alignment, Temper, dict[Ability, int]]:
     """The "name/race/alignment/temper/4-point talent allocation" fields
     every post-world King-creation form submits (rulebook [2.1]) --
@@ -353,6 +366,7 @@ ACTION_UI_HIDDEN_VALUES: frozenset[ActionCode] = frozenset({ActionCode.WAIT, Act
 # "Anti-Holy"`), so a one-off dict built from that is just as real.
 _ENUM_DISPLAY_NAMES: dict[type, dict] = {
     Terrain: TERRAIN_NAME,
+    Sex: {Sex.NON_BINARY: "Non-binary"},
     # RACE_NAME's own Race.NO_RACE entry is lowercase ("no race") -- real,
     # sourced prose-fragment text (TREASURE.X2 et al.), correct mid-
     # sentence but not as a standalone dropdown label, so this interface
@@ -482,6 +496,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             playable_races=PLAYABLE_RACES,
             alignments=PLAYABLE_ALIGNMENTS,
             tempers=list(Temper),
+            sexes=list(Sex),
             abilities=list(Ability),
             min_players=MIN_PLAYERS,
             max_players=MAX_PLAYERS,
@@ -527,6 +542,10 @@ def create_app(games_root: Path | None = None) -> Flask:
             temper = Temper[request.form.get("temper", "")]
         except KeyError:
             return redirect(url_for("players_setup", slug=slug, error="Please choose a valid Temper."))
+        try:
+            sex = _parse_sex_field(request.form)
+        except ValueError as exc:
+            return redirect(url_for("players_setup", slug=slug, error=str(exc)))
 
         talent_allocation: dict[Ability, int] = {}
         for ability in Ability:
@@ -555,7 +574,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             )
 
         try:
-            add_player(game_dir(root, slug), name, race, alignment, temper, talent_allocation)
+            add_player(game_dir(root, slug), name, race, alignment, temper, talent_allocation, sex)
         except RosterFullError:
             return redirect(
                 url_for("players_setup", slug=slug, error=f"A game can have at most {MAX_PLAYERS} Kings.")
@@ -645,6 +664,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             races=PLAYABLE_RACES,
             alignments=PLAYABLE_ALIGNMENTS,
             tempers=list(Temper),
+            sexes=list(Sex),
             abilities=list(Ability),
             max_talent_points=MAX_TALENT_POINTS,
             max_points_per_ability=MAX_POINTS_PER_ABILITY,
@@ -667,6 +687,7 @@ def create_app(games_root: Path | None = None) -> Flask:
 
         try:
             name, race, alignment, temper, talent_allocation = _parse_king_form_fields(request.form)
+            sex = _parse_sex_field(request.form)
         except ValueError as exc:
             return redirect(url_for("world_setup", slug=slug, error=str(exc)))
 
@@ -685,6 +706,7 @@ def create_app(games_root: Path | None = None) -> Flask:
                 temper=temper,
                 talent_allocation=talent_allocation,
                 coord=HexCoord(x, y),
+                sex=sex,
             )
         except NoProvinceAtCoordError:
             return redirect(
@@ -739,6 +761,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             races=PLAYABLE_RACES,
             alignments=PLAYABLE_ALIGNMENTS,
             tempers=list(Temper),
+            sexes=list(Sex),
             abilities=list(Ability),
             max_talent_points=MAX_TALENT_POINTS,
             max_points_per_ability=MAX_POINTS_PER_ABILITY,
@@ -758,6 +781,7 @@ def create_app(games_root: Path | None = None) -> Flask:
 
         try:
             name, race, alignment, temper, talent_allocation = _parse_king_form_fields(request.form)
+            sex = _parse_sex_field(request.form)
         except ValueError as exc:
             return _create_error(str(exc))
 
@@ -770,6 +794,7 @@ def create_app(games_root: Path | None = None) -> Flask:
                 temper=temper,
                 talent_allocation=talent_allocation,
                 coord=HexCoord(x, y),
+                sex=sex,
             )
         except NoProvinceAtCoordError:
             return redirect(url_for("provinces_list", slug=slug, error="Province not found."))

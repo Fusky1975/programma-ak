@@ -370,7 +370,12 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, ArmyType
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState, record_newly_known_column
-from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, RESERVED_ROSTER_HERO_NAME, STANDARD_HERO_ROSTER
+from ak_engine.models.hero_roster import (
+    LEADER_COUNT_BY_GAME_VERSION,
+    RESERVED_ROSTER_HERO_NAME,
+    STANDARD_HERO_ROSTER,
+    default_hero_sex,
+)
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import roll_monster_alignment
@@ -776,6 +781,7 @@ def generate_new_game(
                 leader_id=hero_id,
                 kingdom_id=None,
                 name=STANDARD_HERO_ROSTER[hero_id],
+                sex=default_hero_sex(hero_id),
                 location=lord_effects.leader_current_coord,
                 skills=skills,
                 birth_x=lord_effects.leader_born_coord.x,
@@ -823,6 +829,7 @@ def generate_new_game(
                     leader_id=hero_id,
                     kingdom_id=king_kingdom_id,
                     name=STANDARD_HERO_ROSTER[hero_id],
+                    sex=default_hero_sex(hero_id),
                     location=home_coord,
                     skills=skills,
                     birth_x=home_coord.x,
@@ -864,6 +871,7 @@ def generate_new_game(
                 leader_id=hero_id,
                 kingdom_id=None,
                 name=STANDARD_HERO_ROSTER[hero_id],
+                sex=default_hero_sex(hero_id),
                 location=coord,
                 skills=skills,
                 birth_x=coord.x,
@@ -895,6 +903,7 @@ def generate_new_game(
                 leader_id=reserved_roster_id,
                 kingdom_id=None,
                 name=valhalla_hero.name,
+                sex=default_hero_sex(reserved_roster_id),
                 location=coord,
                 skills=valhalla_hero.skills,
                 birth_x=coord.x,

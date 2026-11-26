@@ -47,6 +47,7 @@ from __future__ import annotations
 import struct
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL
+from ak_engine.models.sex import Sex
 from ak_engine.parser.gw_world_writer import ARMY_TYPE_TO_MOD_PAT_ORDINAL, _NO_ARMY_TYPE_ORDINAL
 from ak_engine.parser.xk_world import (
     XK_GLOBAL_FIELD_NAMES,
@@ -308,7 +309,8 @@ def write_xk_world(world: XKWorld) -> bytes:
     if len(world.king_sex) != 12:
         raise ValueError("king_sex must have exactly 12 entries")
     for sex in world.king_sex:
-        w.u8(0 if sex is None else ord(sex.value))
+        # The original game's file knows only M and F: anything else (not recorded, non-binary) is the 0 byte.
+        w.u8(ord(sex.value) if sex in (Sex.MALE, Sex.FEMALE) else 0)
 
     w.s16(world.treasury)
 

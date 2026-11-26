@@ -45,3 +45,6 @@ from enum import Enum
 class Sex(Enum):
     MALE = "M"
     FEMALE = "F"
+    # Added by the project (GM request, 2026-11): "N" = non-binary. The original game only knows M and F (its
+    # `Gender()` also has a neutral value, but only monsters use it), so XK export writes it like "not recorded".
+    NON_BINARY = "N"
