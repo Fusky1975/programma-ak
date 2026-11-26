@@ -1342,6 +1342,7 @@ from ak_engine.models.army_type import (
     is_overflight_unit,
     overflight_group,
 )
+from ak_engine.models.item import ItemInstance
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
 from ak_engine.models.game_state import ArmyState, BattleBlock, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature, magic_feature_display_name
@@ -16175,7 +16176,7 @@ def describe_characters_report(state: GameState, kingdom_id: int, *, pascal_layo
 
         held_items = state.items_held_by(leader.leader_id)
         if held_items:
-            item_names = ", ".join(TREASURE_NAME[item.treasure] for item in held_items)
+            item_names = ", ".join(_character_item_label(state, item) for item in held_items)
             lines.append(f"Items: {item_names}")
 
     for leader in impulse2:
@@ -16194,6 +16195,35 @@ def describe_characters_report(state: GameState, kingdom_id: int, *, pascal_layo
         )
 
     return lines
+
+
+_QUEST_ITEMS = frozenset(
+    treasure for treasure in Treasure if Treasure.QUEST_SNOW_QUEST.value <= treasure.value <= Treasure.QUEST_CONTRACT_FULFILL.value
+)
+# The quest items that die with their monster (REPORTS.PAS ``Snow_Quest..Contract``): the later "fulfilled"
+# markers are not tied to a living monster.
+_QUEST_ITEMS_TIED_TO_MONSTER = frozenset(
+    treasure for treasure in Treasure if Treasure.QUEST_SNOW_QUEST.value <= treasure.value <= Treasure.QUEST_CONTRACT.value
+)
+
+
+def _character_item_label(state: GameState, item: ItemInstance) -> str:
+    """An item's name in the CHARACTERS list. A quest item says where it came from -- ``Snowball Quest (from
+    the Dragon in the Cave (#12))`` (``REPORTS.PAS`` 567-585, the feature number being its ``trcharges``) --
+    and, when that monster is dead, tells the King to ignore the quest and is struck from the character's
+    inventory, as the original does."""
+
+    name = TREASURE_NAME[item.treasure]
+    if item.treasure not in _QUEST_ITEMS:
+        return name
+    origin = state.features.get(item.charges)
+    if origin is None or origin.guardian_monster is None:
+        return name
+    label = f"{name} (from the {MONSTER_NAMES[origin.guardian_monster]} in the {FEATURE_TYPE_NAMES[origin.kind]} (#{origin.feature_id}))"
+    if item.treasure in _QUEST_ITEMS_TIED_TO_MONSTER and origin.looted:
+        state.transfer_item(item.item_id, None)
+        label += " (Sire, ignore this quest.  The monster no longer lives in this world.)"
+    return label
 
 
 # HostAK/TP/REPORTS.PAS Rep_Armies (~lines 888-1091) and its own

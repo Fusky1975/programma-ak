@@ -530,6 +530,7 @@ from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.feature import Feature
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import (
@@ -1780,6 +1781,40 @@ def _select_guardian_quest_location(monster: Monster, feature_id: int) -> Treasu
     """
 
     return _select_guardian_item(monster, feature_id, _GUARDIAN_QUEST_LOCATIONS)
+
+
+def quest_item_for_reply(reply: MonsterTalkReply, monster: Monster, feature_id: int) -> Treasure | None:
+    """The quest item a monster hands the hero at Talk for the replies that come with one: a travel quest (the
+    Snowball, the Sapphire Ring, the Lucky Penny, the strange Gods, the Mermaid Amulet), a riddle (one of the
+    seven), a vengeance (the Kill Quest, both vengeances) and the soul Contract. Every other quest is told but
+    gives the hero nothing to carry (``None``)."""
+
+    if reply is MonsterTalkReply.R_VISIT:
+        return _select_guardian_quest_location(monster, feature_id)
+    if reply is MonsterTalkReply.R_RIDDLE:
+        return _select_guardian_riddle(monster, feature_id)
+    if reply in (MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE):
+        return Treasure.QUEST_KILL_QUEST
+    if reply is MonsterTalkReply.R_SOUL:
+        return Treasure.QUEST_CONTRACT
+    return None
+
+
+def give_quest_item(state: GameState, leader_id: int, feature: Feature) -> Treasure | None:
+    """The hero leaves the monster with its quest item in his inventory, tagged with the feature it came from
+    (Pascal ``trcharges`` = the feature number, which the CHARACTERS report reads back as "(from the Dragon in
+    the Cave (#12))"). A hero who already carries this feature's quest item is not given a second."""
+
+    if feature.guardian_monster is None or feature.guardian_talk_reply_id is None:
+        return None
+    treasure = quest_item_for_reply(MonsterTalkReply(feature.guardian_talk_reply_id), feature.guardian_monster, feature.feature_id)
+    if treasure is None:
+        return None
+    for item in state.items_held_by(leader_id):
+        if item.treasure is treasure and item.charges == feature.feature_id:
+            return treasure
+    state.add_item(treasure, leader_id, feature.feature_id)
+    return treasure
 
 
 def _select_guardian_item(monster: Monster, feature_id: int, items: tuple[Treasure, ...]) -> Treasure:
@@ -3850,6 +3885,7 @@ def _resolve_search_encounter_body(
                 feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
             )
             feature.psychic_mage_sensed_fulfill_honor = sensed_fulfill_honor
+        give_quest_item(state, leader_id, feature)
         intimidated, undeterred = _resolve_guardian_pacification()
         guardian_riddle = (
             _select_guardian_riddle(feature.guardian_monster, feature.feature_id) if reply is MonsterTalkReply.R_RIDDLE else None

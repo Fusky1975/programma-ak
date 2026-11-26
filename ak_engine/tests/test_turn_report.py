@@ -14119,6 +14119,39 @@ def test_describe_characters_report_lists_held_items():
     assert lines[9] == f"Items: {TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]}, {TREASURE_NAME[Treasure.WAND_FIREBALL]}"
 
 
+def _state_with_quest_item(treasure=Treasure.QUEST_SNOW_QUEST, *, looted=False):
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0)))
+    state.add_feature(Feature(feature_id=12, coord=HexCoord(1, 0), kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX, looted=looted))
+    state.add_item(treasure, owner_leader_id=1, charges=12)
+    return state
+
+
+def test_characters_report_quest_item_says_which_monster_gave_it():
+    # REPORTS.PAS: "(from the <monster> in the <feature> (#fn))", the feature number being trcharges.
+    state = _state_with_quest_item()
+
+    lines = describe_characters_report(state, 1)
+
+    assert f"Items: {TREASURE_NAME[Treasure.QUEST_SNOW_QUEST]} (from the Sphinx in the Dungeon (#12))" in lines
+    assert len(state.items_held_by(1)) == 1
+
+
+def test_characters_report_quest_of_a_dead_monster_is_ignored_and_dropped():
+    state = _state_with_quest_item(looted=True)
+
+    lines = describe_characters_report(state, 1)
+
+    expected = (
+        f"Items: {TREASURE_NAME[Treasure.QUEST_SNOW_QUEST]} (from the Sphinx in the Dungeon (#12))"
+        " (Sire, ignore this quest.  The monster no longer lives in this world.)"
+    )
+    assert expected in lines
+    assert state.items_held_by(1) == []
+    assert not any(line.startswith("Items:") for line in describe_characters_report(state, 1))
+
+
 def test_describe_characters_report_skill_row_shows_magic_item_ownership_tick_marks():
     # Phase 437: REPORTS.PAS ~lines 862-870 -- ' for exactly one owned
     # ability-boosting item, " for two or more, eating one character off
