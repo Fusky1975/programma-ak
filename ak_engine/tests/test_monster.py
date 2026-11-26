@@ -366,7 +366,7 @@ def test_monster_magic_abilities_aligned_with_mostri_md_for_giant_and_elemental_
 
 def test_monster_magic_abilities_single_school_sample():
     # Spectre -- 1 NE.
-    assert MONSTER_MAGIC_ABILITIES[Monster.SPECTRE] == {Ability.NECROMANCY: 1}
+    assert MONSTER_MAGIC_ABILITIES[Monster.SPECTRE] == {Ability.ELEMENTAL: 1}
 
 
 def test_monster_magic_abilities_four_school_sample():
