@@ -177,6 +177,10 @@ class BattleUnit:
     # League of Pagan Clerics"). Report-only: the strength already carries both bonuses.
     fanatic_alignment: Alignment | None = None
     alignment_king_selected: bool = False
+    # Report-only: the unit fought in a desert with no Camel Corps and no water-finder ("suffered from thirst"), and its
+    # commander had cast Phantasmal Armies ("Magical phantasmal armies fought with his soldiers").
+    desert_thirst: bool = False
+    phantasmal_armies: bool = False
     kingdom_id: int | None = None
     commanded_by: int | None = None
 

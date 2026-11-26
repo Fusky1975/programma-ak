@@ -296,6 +296,9 @@ class BattleReport:
     disbanded_army_ids: list[int] = field(default_factory=list)
     mercenary_army_ids: list[int] = field(default_factory=list)
     pursuit_destroyed_army_ids: list[int] = field(default_factory=list)
+    # Every pursuit that caught its target, in order: (pursuer army id, pursued army id, whether it was destroyed). The
+    # others "were beaten off by" the rearguard (SAY.PAS `_BPFail`).
+    pursuit_outcomes: list[tuple[int, int, bool]] = field(default_factory=list)
     quality_changes: dict[int, QualityChange] = field(default_factory=dict)
     attacker_commander_leader_id: int | None = None
     defender_commander_leader_id: int | None = None
@@ -1027,6 +1030,8 @@ def _build_battle_units(
                 quality=army.quality,
                 is_skeletal=army.is_skeletal,
                 fanatic_alignment=fanatic_alignment,
+                desert_thirst=desert_without_camels,
+                phantasmal_armies=phantasmal_armies_level > 0,
                 kingdom_id=army.kingdom_id,
                 commanded_by=army.commanded_by,
             )
@@ -2376,6 +2381,9 @@ def _apply_pursuit(
     outcomes = resolve_pursuit(winner_columns, retreating_units, terrain, rng)
 
     destroyed_ids = {o.target.source_id for o in outcomes if o.target_destroyed}
+    for outcome in outcomes:
+        if outcome.pursuer.source_id is not None and outcome.target.source_id is not None:
+            report.pursuit_outcomes.append((outcome.pursuer.source_id, outcome.target.source_id, outcome.target_destroyed))
     for army_id in destroyed_ids:
         report.pursuit_destroyed_army_ids.append(army_id)
         destroyed_army = state.armies[army_id]
