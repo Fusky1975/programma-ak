@@ -3535,7 +3535,13 @@ def create_app(games_root: Path | None = None) -> Flask:
         if kingdom_id not in state.kingdoms:
             return redirect(url_for("turns_hub", slug=slug, error="Kingdom not found."))
 
-        def _compose_error(message: str):
+        # The compose page saves through ``fetch`` (header below) so that a rejected order leaves every other order
+        # on the page exactly as typed; a plain form post (no JavaScript, scripts) keeps the redirect behaviour.
+        wants_json = request.headers.get("X-Requested-With") == "fetch"
+
+        def _compose_error(message: str, leader_id: int | None = None):
+            if wants_json:
+                return jsonify(ok=False, error=message, leader_id=leader_id), 400
             return redirect(url_for("turns_compose", slug=slug, kingdom_id=kingdom_id, error=message))
 
         game_label = meta.name.replace(" ", "_")
@@ -3545,7 +3551,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             )
             content = write_k1_moves_file(kingdom)
         except (InvalidComposedMovesError, K1WriteError) as exc:
-            return _compose_error(str(exc))
+            return _compose_error(str(exc), getattr(exc, "leader_id", None))
 
         try:
             save_uploaded_move_file(
@@ -3556,6 +3562,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             # writer itself producing an unparseable file -- every
             # genuinely invalid *input* is already caught above.
             return _compose_error(f"Couldn't save the composed moves: {exc}")
+        if wants_json:
+            return jsonify(ok=True, redirect=url_for("turns_hub", slug=slug))
         return redirect(url_for("turns_hub", slug=slug))
 
     @app.post("/games/<slug>/turns/process")

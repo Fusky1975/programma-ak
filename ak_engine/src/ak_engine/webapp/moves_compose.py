@@ -1481,7 +1481,15 @@ DEFAULT_HEADER_RAW_FIELDS: list[int] = [27, 1, 0, 101, 1, 15, 1]
 
 
 class InvalidComposedMovesError(ValueError):
-    """Raised when the GM's own composed-moves form can't be turned into a valid ``Kingdom``."""
+    """Raised when the GM's own composed-moves form can't be turned into a valid ``Kingdom``.
+
+    ``leader_id`` (set by ``build_composed_kingdom()`` once it knows whose orders were being read) lets the page
+    point at the hero whose order is wrong: the per-phase messages only say "P1: ...".
+    """
+
+    def __init__(self, message: str, leader_id: int | None = None) -> None:
+        super().__init__(message)
+        self.leader_id = leader_id
 
 
 def kingdom_leaders_for_compose(state: GameState, kingdom_id: int) -> list[LeaderState]:
@@ -4042,10 +4050,9 @@ def _parse_resurrection_target(
     Every precondition above still applies identically either way.
     """
 
+    primary_field = f"{field_prefix}_resurrection_target_{leader_id}_{n}"
     raw = _resolve_target_raw(
-        form,
-        primary_field=f"{field_prefix}_resurrection_target_{leader_id}_{n}",
-        number_field=f"{field_prefix}_resurrection_target_number_{leader_id}_{n}",
+        form, primary_field=primary_field, number_field=f"{field_prefix}_resurrection_target_number_{leader_id}_{n}"
     )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Resurrection target.")
@@ -4053,6 +4060,12 @@ def _parse_resurrection_target(
     leader = state.leaders.get(leader_id)
     if leader is None:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Resurrection target.")
+    if not form.get(primary_field):
+        # Hand-typed: same reasoning as ``_parse_charm_target()`` -- a hero (living or dead) that exists is enough now;
+        # being comatose / dead and in this province is checked when the cast is resolved.
+        if target_id not in state.leaders and target_id not in state.dead_leaders:
+            raise InvalidComposedMovesError(f"{phase_label}: Resurrection target #{target_id} is not a hero in this game.")
+        return target_id
     living = state.leaders.get(target_id)
     eligible = False
     if living is not None and living.location == leader.location:
@@ -4093,28 +4106,29 @@ def _parse_charm_target(
     that function's own.
     """
 
+    primary_field = f"{field_prefix}_charm_target_{leader_id}_{n}"
     raw = _resolve_target_raw(
-        form,
-        primary_field=f"{field_prefix}_charm_target_{leader_id}_{n}",
-        number_field=f"{field_prefix}_charm_target_number_{leader_id}_{n}",
+        form, primary_field=primary_field, number_field=f"{field_prefix}_charm_target_number_{leader_id}_{n}"
     )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Charm target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Charm target")
     leader = state.leaders.get(leader_id)
     target = state.leaders.get(target_id)
-    if (
-        leader is None
-        or target is None
-        or target.leader_id == leader_id
-        or target.location != leader.location
-        or target.is_king
-        or state.armies_commanded_by(target.leader_id)
-        or (target.leader_id == VALHALLA_VISITOR_LEADER_ID and target.valhalla_active_turn is not None)
-    ):
-        # Defense in depth: every dropdown-offered id is a real,
-        # co-located, army-less, non-King leader, but a direct,
-        # tampered POST could still name anything else.
+    if leader is None or target is None:
+        raise InvalidComposedMovesError(f"{phase_label}: Charm target #{target_id} is not a hero in this game.")
+    if target.leader_id == leader_id:
+        raise InvalidComposedMovesError(f"{phase_label}: a hero can't Charm himself (target #{target_id}).")
+    if target.leader_id == VALHALLA_VISITOR_LEADER_ID and target.valhalla_active_turn is not None:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Charm target (#{target_id} is the Valhalla visitor, who can't be charmed this turn).")
+    if not form.get(primary_field):
+        # A hand-typed number is for a hero the dropdown does not offer *yet*: one who will be in this province only
+        # when this phase comes (an earlier Move, or the target's own), so where he stands at the start of the turn
+        # says nothing. The cast itself re-checks co-location, King, army and the rest when it is resolved.
+        return target_id
+    if target.location != leader.location or target.is_king or state.armies_commanded_by(target.leader_id):
+        # Defense in depth: every dropdown-offered id is a real, co-located, army-less, non-King leader, but a
+        # direct, tampered POST could still name anything else.
         raise InvalidComposedMovesError(f"{phase_label}: choose a Charm target.")
     return target_id
 
@@ -4142,16 +4156,20 @@ def _parse_kill_enemy_target(
     same shape as that function's own.
     """
 
+    primary_field = f"{field_prefix}_kill_enemy_target_{leader_id}_{n}"
     raw = _resolve_target_raw(
-        form,
-        primary_field=f"{field_prefix}_kill_enemy_target_{leader_id}_{n}",
-        number_field=f"{field_prefix}_kill_enemy_target_number_{leader_id}_{n}",
+        form, primary_field=primary_field, number_field=f"{field_prefix}_kill_enemy_target_number_{leader_id}_{n}"
     )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Kill Enemy target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Kill Enemy target")
     leader = state.leaders.get(leader_id)
     target = state.leaders.get(target_id)
+    if not form.get(primary_field):
+        # Hand-typed: same reasoning as ``_parse_charm_target()`` -- only "a real hero, not himself" is checked now.
+        if leader is None or target is None or target.leader_id == leader_id:
+            raise InvalidComposedMovesError(f"{phase_label}: Kill Enemy target #{target_id} is not another hero in this game.")
+        return target_id
     if (
         leader is None
         or target is None
@@ -5062,7 +5080,14 @@ def build_composed_kingdom(
 
     leaders: list[Leader] = []
     for leader_state in roster:
-        phase_inputs = parse_phase_inputs(form, leader_state.leader_id, board_width=state.board_width, state=state)
+        try:
+            phase_inputs = parse_phase_inputs(form, leader_state.leader_id, board_width=state.board_width, state=state)
+        except InvalidComposedMovesError as exc:
+            if exc.leader_id is not None:
+                raise
+            raise InvalidComposedMovesError(
+                f"{leader_state.name} (#{leader_state.leader_id}) {exc}", leader_id=leader_state.leader_id
+            ) from exc
         phases = {
             f"P{n}": PlanPhase(
                 label=f"P{n}",
@@ -5073,7 +5098,14 @@ def build_composed_kingdom(
             )
             for n, phase_input in enumerate(phase_inputs)
         }
-        sp = _parse_special_encounter_plan(form, leader_state.leader_id, state=state)
+        try:
+            sp = _parse_special_encounter_plan(form, leader_state.leader_id, state=state)
+        except InvalidComposedMovesError as exc:
+            if exc.leader_id is not None:
+                raise
+            raise InvalidComposedMovesError(
+                f"{leader_state.name} (#{leader_state.leader_id}) {exc}", leader_id=leader_state.leader_id
+            ) from exc
         segment = PlanSegment(plan_start=0, plan_end=PHASE_COUNT - 1, sp=sp, phases=phases)
         plan = ActionPlan(leader_id=leader_state.leader_id, segments=[segment])
         leaders.append(Leader(leader_id=leader_state.leader_id, name=leader_state.name, plan=plan))

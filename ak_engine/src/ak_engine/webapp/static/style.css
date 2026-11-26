@@ -328,3 +328,7 @@ details.add-here { margin-top: 0.3rem; }
 details.add-here > summary { cursor: pointer; font-size: 0.85em; color: var(--link, #4a6fa5); }
 details.add-here form { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
 details.add-here select { max-width: 11em; }
+
+/* Compose Moves: the hero whose order the last save rejected. */
+h3.compose-leader-error { background: #f5d6d6; border-left: 6px solid #7a1f1f; padding: 0.2rem 0.5rem; }
+[hidden] { display: none !important; }

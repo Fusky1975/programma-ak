@@ -477,9 +477,10 @@
     </tr>
   {% endmacro %}
 
-  <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
+  <form method="post" id="compose-form" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
+    <div id="compose-error" class="error-banner" role="alert" hidden></div>
     {% for leader in roster %}
-      <h3>{{ leader.name }}{% if leader.is_king %} (King){% endif %}</h3>
+      <h3 id="compose-leader-{{ leader.leader_id }}">{{ leader.name }}{% if leader.is_king %} (King){% endif %}</h3>
       <p class="hex-map-legend-note">
         Special Encounter Plan [5.10] -- this leader's own standing posture, used whenever he's drawn into an
         Encounter he didn't himself order this turn (an enemy's Challenge/Pursue, or -- if he leads no army at
@@ -1127,6 +1128,40 @@
     <button type="submit">Save Composed Moves for Turn {{ state.turn_number }}</button>
   </form>
 </div>
+
+<script>
+  // Saving through fetch: when an order is rejected, the server's message is shown above the form and the hero it
+  // belongs to is highlighted -- the page itself is not reloaded, so nothing already typed is lost. Without
+  // JavaScript (or if the request itself fails) the form posts normally, as before.
+  (function () {
+    var form = document.getElementById("compose-form");
+    var banner = document.getElementById("compose-error");
+    if (!form || !window.fetch || !window.FormData) return;
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      document.querySelectorAll(".compose-leader-error").forEach(function (el) {
+        el.classList.remove("compose-leader-error");
+      });
+      banner.hidden = true;
+      // URL-encoded, not multipart: this form has well over a thousand fields, and the server refuses a multipart
+      // body with that many parts (413) while it accepts the same fields URL-encoded, as a plain form post sends them.
+      fetch(form.action, { method: "POST", body: new URLSearchParams(new FormData(form)), headers: { "X-Requested-With": "fetch" } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            window.location.href = data.redirect;
+            return;
+          }
+          banner.textContent = data.error;
+          banner.hidden = false;
+          var heading = data.leader_id !== null ? document.getElementById("compose-leader-" + data.leader_id) : null;
+          if (heading) heading.classList.add("compose-leader-error");
+          (heading || banner).scrollIntoView({ behavior: "smooth", block: "start" });
+        })
+        .catch(function () { HTMLFormElement.prototype.submit.call(form); });
+    });
+  })();
+</script>
 
 <script>
   // Progressive enhancement only: every row works with plain HTML/CSS
