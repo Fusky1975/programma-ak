@@ -266,7 +266,7 @@ def test_describe_turn_results_narrates_kill_enemy_berserk_retaliation_even_when
         "Borin went berserk over the Kill-Enemy attempt.Guided by eerily accurate psychotic visions, "
         "Borin assailed Aldric and missed.",
         "Aldric was mortally wounded.",
-        "and so it was that Aldric met Aldric's unseemly end.",
+        "and so it was that Aldric met his unseemly end.",
         "Borin crept up on Aldric's treasure, hoping to steal a great treasure.",
         "but after searching for an hour, Borin failed to find any treasure.",
     ]
@@ -762,7 +762,7 @@ def test_describe_turn_results_narrates_challenge_even_when_the_challenger_dies_
         "Aldric searched throughout (0, 0) for Borin.",
         "Borin assailed Aldric and inflicted 6 damage points.",
         "Aldric was mortally wounded.",
-        "and so it was that Aldric met Aldric's unseemly end.",
+        "and so it was that Aldric met his unseemly end.",
         "Borin crept up on Aldric's treasure, hoping to steal a great treasure.",
         "but after searching for an hour, Borin failed to find any treasure.",
     ]

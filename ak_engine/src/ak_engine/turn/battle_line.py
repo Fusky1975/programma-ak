@@ -99,6 +99,12 @@ class BattleUnit:
     # The quality the unit actually fought as when led with a Druidic
     # shortfall (all modifiers applied); None when there was no shortfall.
     druid_fought_as: Quality | None = None
+    # The size of that shortfall (rulebook [4.32] Druid Table level minus the commander's Druidic skill), the race
+    # the army belongs to and the leader who commanded it -- what NODRU.X's report sentence ("The Elves commanded by X
+    # were not impressed by his lack of leadership ability") is written from: the variant is the shortfall itself.
+    druidic_shortfall: int = 0
+    army_race: Race | None = None
+    commander_leader_id: int | None = None
     # Phase 392: this unit's own owning Kingdom's race is one of the four
     # rulebook-defined humanoids (Human/Elven/Dwarven/Orcish, ``models/
     # race.py HUMANOID_RACES``) -- set once at ``turn/battle_orchestrator.py
