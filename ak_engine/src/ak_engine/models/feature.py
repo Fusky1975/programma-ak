@@ -277,6 +277,12 @@ class Feature:
     # The hero the monster wants dead, for the two quests of vengeance (``MonsterTalkReply.R_FREVENGE`` /
     # ``R_PREVENGE``): chosen when the monster asks (the "quest-character" of ``MTALK.X2``), kept for the Fulfill.
     quest_target_leader_id: int | None = None
+    # For the travel quest (``MonsterTalkReply.R_VISIT``): the land province the hero must go to ("The Gods will deem this
+    # quest completed if he will simply undertake the journey and return to Fulfill"), chosen when the monster asks,
+    # and whether the hero has been there since. ``None``: no destination (a map without a province that far), the
+    # quest asks nothing of the journey.
+    quest_visit_coord: HexCoord | None = None
+    quest_visit_done: bool = False
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
     # PSYCHIC_MAGE's own "will sense whether the monster intends to keep
     # its end of the bargain" perk (`models/office.py OFFICE_TITLE_

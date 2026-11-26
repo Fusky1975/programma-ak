@@ -12959,7 +12959,7 @@ _CTRL_X_MARKER = "⟦CTRL-X:province-3⟧"
 _CTRL_X_PLACEHOLDER = "a distant province"
 
 
-def render_guardian_proposes_quest_location(monster_name: str, quest_location: Treasure) -> str:
+def render_guardian_proposes_quest_location(monster_name: str, quest_location: Treasure, province_name: str | None = None) -> str:
     """Surfaces ``VISIT.X2``'s own already-transcribed quest-offer text
     (``QUEST_VISIT_TEXT``) in the ACTION REPORT once a Talk resolves to
     ``MonsterTalkReply.R_VISIT`` -- Phase 1028, the direct sibling of
@@ -12996,7 +12996,7 @@ def render_guardian_proposes_quest_location(monster_name: str, quest_location: T
     described.
     """
 
-    text = QUEST_VISIT_TEXT[quest_location].replace(_CTRL_X_MARKER, _CTRL_X_PLACEHOLDER)
+    text = QUEST_VISIT_TEXT[quest_location].replace(_CTRL_X_MARKER, province_name if province_name is not None else _CTRL_X_PLACEHOLDER)
     text = _resolve_ctrl_a_markers(text)
     return f"{monster_name} proposes a quest: {text}"
 
@@ -13886,7 +13886,10 @@ def _describe_search_lines(
     if result.guardian_riddle is not None:
         lines.append(render_guardian_poses_riddle(foe, result.guardian_riddle))
     if result.guardian_quest_location is not None:
-        lines.append(render_guardian_proposes_quest_location(foe, result.guardian_quest_location))
+        visit_province = (
+            _province_label(state, result.quest_visit_coord) if state is not None and result.quest_visit_coord is not None else None
+        )
+        lines.append(render_guardian_proposes_quest_location(foe, result.guardian_quest_location, visit_province))
     if (
         result.guardian_talk_reply is not None
         and result.guardian_riddle is None

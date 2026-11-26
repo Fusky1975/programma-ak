@@ -534,7 +534,7 @@ from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.feature import Feature
 from ak_engine.models.magic_feature import MagicFeature
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import (
     MonsterEngagementState,
     DUEL_MERIT_MONSTERS,
@@ -574,7 +574,9 @@ from ak_engine.turn.discovery_effects import (
     holds_bow_of_elven_kings,
     holds_monster_command_item_for,
 )
+from ak_engine.turn.movement import hex_distance_wrapped
 from ak_engine.turn.encounter import (
+    FULFILL_VISIT_BONUS,
     resolve_refusal_to_meet,
     SUMMON_SPELLS,
     CHARACTER_HIT_POINTS,
@@ -1184,6 +1186,7 @@ class SearchExecutionResult:
     quest_notes: tuple[QuestNote, ...] = ()
     # The hero a monster of vengeance asks the character to kill (the target of the Talk that proposed it).
     quest_target_leader_id: int | None = None
+    quest_visit_coord: HexCoord | None = None  # the province a travel quest sends the hero to
     quest_reply: MonsterTalkReply | None = None  # the quest the notes above are about
     guardian_talk_treasure: Treasure | None = None
     guardian_talk_coord: HexCoord | None = None
@@ -1800,6 +1803,12 @@ def _select_guardian_quest_location(monster: Monster, feature_id: int) -> Treasu
     return _select_guardian_item(monster, feature_id, _GUARDIAN_QUEST_LOCATIONS)
 
 
+def _honor_bonus_kwargs(reply: MonsterTalkReply) -> dict[str, int]:
+    """The ``WillHonor`` bonus of a quest where it is not the common 100: the travel quest's 125."""
+
+    return {"bonus": FULFILL_VISIT_BONUS} if reply is MonsterTalkReply.R_VISIT else {}
+
+
 def quest_item_for_reply(reply: MonsterTalkReply, monster: Monster, feature_id: int) -> Treasure | None:
     """The quest item a monster hands the hero at Talk for the replies that come with one: a travel quest (the
     Snowball, the Sapphire Ring, the Lucky Penny, the strange Gods, the Mermaid Amulet), a riddle (one of the
@@ -1862,6 +1871,7 @@ _MODELLED_QUESTS = frozenset(
         MonsterTalkReply.R_FREVENGE,
         MonsterTalkReply.R_PREVENGE,
         MonsterTalkReply.R_SOUL,
+        MonsterTalkReply.R_VISIT,
     }
 )
 
@@ -1873,13 +1883,73 @@ def _close_quest_item(state: GameState, leader_id: int, feature: Feature, reply:
     if feature.guardian_monster is None:
         return
     quest_item = quest_item_for_reply(reply, feature.guardian_monster, feature.feature_id)
+    ours = {quest_item, _VISIT_DONE_ITEM.get(quest_item)}
     for item in list(state.items_held_by(leader_id)):
-        if item.treasure is quest_item and item.charges == feature.feature_id:
+        if item.treasure in ours and item.charges == feature.feature_id:
             if reply is MonsterTalkReply.R_SOUL:
                 item.treasure = Treasure.QUEST_CONTRACT_FULFILL
             else:
                 state.remove_item(item.item_id)
             return
+
+
+QUEST_VISIT_MIN_DISTANCE = 5
+QUEST_VISIT_MAX_DISTANCE = 7
+
+# The marker a travel quest's item turns into once the journey is done ("May Fulfill quest now").
+_VISIT_DONE_ITEM: dict[Treasure, Treasure] = {
+    Treasure.QUEST_SNOW_QUEST: Treasure.QUEST_SNOW_FULFILL,
+    Treasure.QUEST_SAPPH_RING: Treasure.QUEST_SAPPH_FULFILL,
+    Treasure.QUEST_LUCKY_PENNY: Treasure.QUEST_LUCK_FULFILL,
+    Treasure.QUEST_GODS_QUEST: Treasure.QUEST_GODS_FULFILL,
+    Treasure.QUEST_MERMAID_AMULET: Treasure.QUEST_MERMAID_FULFILL,
+}
+
+
+def select_visit_province(state: GameState, feature: Feature) -> HexCoord | None:
+    """The land province a travel quest sends the hero to: one at random, 5 to 7 moves from the feature of the monster
+    that asks (user ruling 2026-11-26; the original's choice is not recoverable). "At random" but stable: the same
+    monster at the same feature always asks for the same journey. ``None`` if the map has no land province that far."""
+
+    if feature.guardian_monster is None:
+        return None
+    land = [
+        coord
+        for coord, province in state.provinces.items()
+        if province.terrain is not Terrain.SEA and coord != feature.coord
+    ]
+    by_distance: dict[int, list[HexCoord]] = {}
+    for coord in land:
+        distance = hex_distance_wrapped(feature.coord, coord, state.board_width)
+        if QUEST_VISIT_MIN_DISTANCE <= distance <= QUEST_VISIT_MAX_DISTANCE:
+            by_distance.setdefault(distance, []).append(coord)
+    if not by_distance:
+        return None
+    chooser = random.Random(feature.feature_id * 1000 + feature.guardian_monster.value)
+    distance = chooser.choice(sorted(by_distance))
+    candidates = sorted(by_distance[distance], key=lambda coord: (coord.x, coord.y))
+    return chooser.choice(candidates)
+
+
+def note_quest_visits(state: GameState, leader_id: int | None = None) -> None:
+    """A hero with a travel quest who is in its province has made the journey: the quest item turns into its "May
+    Fulfill quest now" marker. Called after every phase of a plan and at the end of the turn, so a journey there and
+    back inside one turn still counts. ``leader_id`` limits the check to one hero."""
+
+    for feature in state.features.values():
+        if feature.quest_visit_done or feature.quest_visit_coord is None or feature.pending_deal_leader_id is None:
+            continue
+        if leader_id is not None and feature.pending_deal_leader_id != leader_id:
+            continue
+        if feature.guardian_talk_reply_id != MonsterTalkReply.R_VISIT.value:
+            continue
+        hero = state.leaders.get(feature.pending_deal_leader_id)
+        if hero is None or hero.location != feature.quest_visit_coord:
+            continue
+        feature.quest_visit_done = True
+        for item in state.items_held_by(hero.leader_id):
+            if item.charges == feature.feature_id and item.treasure in _VISIT_DONE_ITEM:
+                item.treasure = _VISIT_DONE_ITEM[item.treasure]
 
 
 def give_quest_item(state: GameState, leader_id: int, feature: Feature) -> Treasure | None:
@@ -3972,10 +4042,16 @@ def _resolve_search_encounter_body(
             silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
             caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
             sensed_fulfill_honor = resolve_fulfill_honored(
-                feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
+                feature.guardian_alignment,
+                leader.alignment,
+                rng,
+                caster_is_silver_tongue=caster_is_silver_tongue,
+                **_honor_bonus_kwargs(reply),
             )
             feature.psychic_mage_sensed_fulfill_honor = sensed_fulfill_honor
         give_quest_item(state, leader_id, feature)
+        if reply is MonsterTalkReply.R_VISIT and feature.quest_visit_coord is None:
+            feature.quest_visit_coord = select_visit_province(state, feature)
         if reply in (MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE) and feature.quest_target_leader_id is None:
             feature.quest_target_leader_id = select_revenge_target(state, leader_id, feature)
         intimidated, undeterred = _resolve_guardian_pacification()
@@ -4001,6 +4077,7 @@ def _resolve_search_encounter_body(
             guardian_talk_treasure=feature.treasure,
             guardian_talk_coord=feature.coord,
             quest_target_leader_id=feature.quest_target_leader_id,
+            quest_visit_coord=feature.quest_visit_coord,
         )
 
     def _resolve_slave_fulfill() -> SearchExecutionResult | None:
@@ -4057,6 +4134,10 @@ def _resolve_search_encounter_body(
             target_id = feature.quest_target_leader_id
             if target_id is None or target_id in state.leaders:
                 return _quest_requirement_unmet(QuestNote.SERVICE_NOT_PERFORMED, reply)
+        elif reply is MonsterTalkReply.R_VISIT:
+            note_quest_visits(state, leader_id)
+            if feature.quest_visit_coord is not None and not feature.quest_visit_done:
+                return _quest_requirement_unmet(QuestNote.SERVICE_NOT_PERFORMED, reply)
         elif reply is MonsterTalkReply.R_SOUL and not leader.is_king:
             return _quest_requirement_unmet(QuestNote.KING_ONLY, reply)
 
@@ -4071,7 +4152,11 @@ def _resolve_search_encounter_body(
             honored = sensed_fulfill_honor
         else:
             honored = resolve_fulfill_honored(
-                feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
+                feature.guardian_alignment,
+                leader.alignment,
+                rng,
+                caster_is_silver_tongue=caster_is_silver_tongue,
+                **_honor_bonus_kwargs(reply),
             )
         if not honored:
             quest_log.append((QuestNote.BETRAYED, reply))
