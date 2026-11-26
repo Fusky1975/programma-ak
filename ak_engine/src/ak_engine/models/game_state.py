@@ -1161,6 +1161,9 @@ class LeaderState:
     # _execute_resurrection()'s own Royal-Heir branch (Resurrection
     # consumed).
     is_royal_heir: bool = False
+    # True once a King has signed the contract of the soul (``MonsterTalkReply.R_SOUL``): "Never again can the King
+    # practice White Magic".
+    soul_sold: bool = False
     # Phase 260: models/sex.py's own Sex -- "confirmed absent" since
     # Phases 195/217/230, now given its first real writer
     # (turn/succession.py create_king()). None = not recorded, the same

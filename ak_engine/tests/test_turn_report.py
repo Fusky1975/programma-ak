@@ -19830,3 +19830,90 @@ def test_describe_search_tells_the_fulfilled_slave_quest_and_then_the_gold():
     assert "fell tragically ill that season" in text and "And long live great Fusky!" in text
     assert "including the Hoard." in text  # the original names a Hoard just so (TREASURE.X2)
     assert text.index("fell tragically ill") < text.index("17 gold")  # the story first, then what it paid
+
+
+# -- Stage 2 of the monster quests: what the monsters say -----------------------------------------------------------
+
+
+def _quest_note_state():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Fusky", Race.ORCISH, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(78, 1, "Pascal", HexCoord(0, 0), sex=Sex.MALE))
+    state.add_leader(LeaderState(40, 2, "Gorbash", HexCoord(3, 3)))
+    return state
+
+
+def test_a_riddle_wrongly_answered_gets_the_monsters_scorn():
+    from ak_engine.turn.encounter import MonsterTalkReply
+    from ak_engine.turn.search_execution import QuestNote
+
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX,
+        quest_notes=(QuestNote.WRONG_ANSWER,), quest_reply=MonsterTalkReply.R_RIDDLE,
+    )
+
+    text = " ".join(describe_search(result, state=_quest_note_state(), character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+
+    assert "That is not the answer" in text and "the Sphinx" in text
+
+
+def test_vengeance_not_done_and_a_soul_only_a_king_can_sell():
+    from ak_engine.turn.encounter import MonsterTalkReply
+    from ak_engine.turn.search_execution import QuestNote
+
+    state = _quest_note_state()
+    undone = SearchExecutionResult(
+        accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX,
+        quest_notes=(QuestNote.SERVICE_NOT_PERFORMED,), quest_reply=MonsterTalkReply.R_FREVENGE,
+    )
+    not_king = SearchExecutionResult(
+        accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX,
+        quest_notes=(QuestNote.KING_ONLY,), quest_reply=MonsterTalkReply.R_SOUL,
+    )
+
+    first = " ".join(describe_search(undone, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+    second = " ".join(describe_search(not_king, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+
+    assert "You have not" in first and "service" in first and first.rstrip().endswith("Go away!\"")
+    assert "ran away from the Sphinx" in second and "lost his courage" in second
+
+
+def test_a_broken_word_is_a_taunt_and_a_threat():
+    from ak_engine.turn.encounter import MonsterTalkReply
+    from ak_engine.turn.search_execution import QuestNote
+
+    state = _quest_note_state()
+    for reply, marker in (
+        (MonsterTalkReply.R_RIDDLE, "impudent fool"),
+        (MonsterTalkReply.R_FREVENGE, "impudent fool"),
+        (MonsterTalkReply.R_SOUL, "Ha!"),
+    ):
+        result = SearchExecutionResult(
+            accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX,
+            quest_notes=(QuestNote.BETRAYED,), quest_reply=reply,
+        )
+        text = " ".join(describe_search(result, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+        assert marker in text and "die!" in text, text
+        if reply is MonsterTalkReply.R_SOUL:
+            assert "tricked" in text or "deceived" in text, text
+
+
+def test_the_vengeance_quest_names_the_hero_to_kill_in_the_offer_and_in_the_payment():
+    from ak_engine.report.turn_report import render_guardian_quest_fulfilled, render_guardian_talk_offer
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    offer = " ".join(
+        render_guardian_talk_offer(
+            "Pascal", "the Sphinx", MonsterTalkReply.R_FREVENGE, province_name="Plains", treasure_name="Wand of Fireball",
+            feature_name="Pyramid", rng=random.Random(4), target_name="Gorbash",
+        )
+    )
+    paid = " ".join(
+        render_guardian_quest_fulfilled(
+            "Pascal", "the Sphinx", MonsterTalkReply.R_FREVENGE, treasure_name="Wand of Fireball", feature_name="Pyramid",
+            king_name="Fusky", possessive="his", rng=random.Random(4), target_name="Gorbash",
+        )
+    )
+
+    assert "Gorbash" in offer and "a hated rival" not in offer
+    assert "Gorbash" in paid and "a hated rival" not in paid

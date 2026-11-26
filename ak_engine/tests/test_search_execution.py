@@ -7681,3 +7681,175 @@ def test_the_old_monsters_death_earns_half_hit_points_of_merit_only_if_it_was_ra
         tally = state.leaders[LEADER_ID].merit_tally
         assert (tally.monster_hp_neutralized > 0) is credited
         assert tally.monster_hp_defeated == 0
+
+
+# -- Stage 2 of the monster quests: riddle, the two vengeances, the contract of the soul ------------------------------
+
+from ak_engine.turn.search_execution import QuestNote, riddle_answer_is_right, select_revenge_target  # noqa: E402
+
+
+def _quest_state(reply, *, king=False, with_rivals=True):
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].is_king = king
+    if with_rivals:
+        state.add_leader(LeaderState(30, 2, "Rival", HexCoord(5, 5)))
+        state.add_leader(LeaderState(31, 2, "Other Rival", HexCoord(5, 5)))
+    feature = _slave_feature(treasure=Treasure.WAND_FIREBALL)
+    state.add_feature(feature)
+    request = _talk_request(1, Maneuver.MELEE)
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=reply
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel"):
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+    return state, feature
+
+
+def _say_then_fulfill(answer):
+    return SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.SAY, say_text=answer),
+            SearchTactic(maneuver=Maneuver.FULFILL),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        ],
+    )
+
+
+def test_riddle_answers_are_matched_by_word():
+    assert riddle_answer_is_right(Treasure.QUEST_RA_COFFIN, "A coffin?")
+    assert riddle_answer_is_right(Treasure.QUEST_RA_OWNER, "I say: onion")
+    assert riddle_answer_is_right(Treasure.QUEST_RA_MAN, "MAN")
+    assert not riddle_answer_is_right(Treasure.QUEST_RA_MAN, "mandrake")
+    assert not riddle_answer_is_right(Treasure.QUEST_RA_BRIDGE, "a coffin")
+    assert not riddle_answer_is_right(Treasure.QUEST_RA_BRIDGE, None)
+
+
+def _answer_to(feature):
+    from ak_engine.turn.search_execution import _RIDDLE_ANSWERS, _select_guardian_riddle
+
+    return _RIDDLE_ANSWERS[_select_guardian_riddle(feature.guardian_monster, feature.feature_id)][0]
+
+
+def test_the_right_riddle_answer_wins_the_treasure_and_frees_the_riddle():
+    state, feature = _quest_state(MonsterTalkReply.R_RIDDLE)
+    assert [item.treasure for item in state.items_held_by(LEADER_ID)] == [_select_guardian_riddle(Monster.ARCHER, 1)]
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True):
+        result = execute_search(state, LEADER_ID, _say_then_fulfill(_answer_to(feature)), random.Random(0))
+
+    assert result.quest_fulfilled is MonsterTalkReply.R_RIDDLE and result.quest_treasure is Treasure.WAND_FIREBALL
+    assert [item.treasure for item in state.items_held_by(LEADER_ID)] == [Treasure.WAND_FIREBALL]
+    assert feature.treasure is None and feature.pending_deal_leader_id is None
+    assert feature.looted is False  # the monster lives on, only the treasure is gone
+
+
+def test_a_wrong_riddle_answer_changes_nothing_and_the_deal_stays():
+    state, feature = _quest_state(MonsterTalkReply.R_RIDDLE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored") as roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as melee:
+        result = execute_search(state, LEADER_ID, _say_then_fulfill("a spoon"), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.WRONG_ANSWER,) and result.quest_fulfilled is None
+    assert not roll.called and not melee.called  # no honor roll and no fight: the deal simply stays
+    assert feature.pending_deal_leader_id == LEADER_ID and feature.treasure is Treasure.WAND_FIREBALL
+
+
+def test_a_riddle_with_no_answer_given_is_wrong():
+    state, feature = _quest_state(MonsterTalkReply.R_RIDDLE)
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.WRONG_ANSWER,)
+
+
+def test_a_monster_that_breaks_its_word_gets_no_treasure_given_and_attacks():
+    state, feature = _quest_state(MonsterTalkReply.R_RIDDLE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=False):
+        result = execute_search(state, LEADER_ID, _say_then_fulfill(_answer_to(feature)), random.Random(1))
+
+    assert QuestNote.BETRAYED in result.quest_notes and result.quest_reply is MonsterTalkReply.R_RIDDLE
+    assert result.quest_fulfilled is None
+    assert result.combat_resolved is True  # the fight the monster starts
+    assert feature.pending_deal_leader_id is None  # the attempt is spent
+
+
+def test_the_honor_roll_uses_the_guardians_alignment_with_the_common_bonus():
+    state, feature = _quest_state(MonsterTalkReply.R_RIDDLE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True) as roll:
+        execute_search(state, LEADER_ID, _say_then_fulfill(_answer_to(feature)), random.Random(0))
+
+    assert roll.call_args.args[0] == feature.guardian_alignment
+    assert "bonus" not in roll.call_args.kwargs  # the common bonus (100) is the default
+
+
+@pytest.mark.parametrize("reply", [MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE])
+def test_vengeance_target_is_a_hero_of_another_kingdom_chosen_at_the_talk(reply):
+    state, feature = _quest_state(reply)
+
+    assert feature.quest_target_leader_id in (30, 31)
+    assert feature.quest_target_leader_id == select_revenge_target(state, LEADER_ID, feature)
+
+
+@pytest.mark.parametrize("reply", [MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE])
+def test_vengeance_not_done_while_the_target_lives(reply):
+    state, feature = _quest_state(reply)
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.SERVICE_NOT_PERFORMED,)
+    assert feature.pending_deal_leader_id == LEADER_ID and feature.treasure is Treasure.WAND_FIREBALL
+
+
+@pytest.mark.parametrize("reply", [MonsterTalkReply.R_FREVENGE, MonsterTalkReply.R_PREVENGE])
+def test_vengeance_done_once_the_target_is_dead_pays_the_treasure(reply):
+    state, feature = _quest_state(reply)
+    state.remove_leader(feature.quest_target_leader_id)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True):
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_fulfilled is reply and result.quest_treasure is Treasure.WAND_FIREBALL
+    assert [item.treasure for item in state.items_held_by(LEADER_ID)] == [Treasure.WAND_FIREBALL]  # Kill Quest gone
+
+
+def test_only_a_king_can_sign_the_contract_of_the_soul():
+    state, feature = _quest_state(MonsterTalkReply.R_SOUL, king=False)
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.KING_ONLY,)
+    assert feature.pending_deal_leader_id == LEADER_ID and state.leaders[LEADER_ID].soul_sold is False
+
+
+def test_a_king_who_signs_gets_the_treasure_with_no_honor_roll_and_loses_white_magic():
+    state, feature = _quest_state(MonsterTalkReply.R_SOUL, king=True)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored") as roll:
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert not roll.called  # the compiled Fulfill makes no roll for the soul contract
+    assert result.quest_fulfilled is MonsterTalkReply.R_SOUL and result.quest_treasure is Treasure.WAND_FIREBALL
+    king = state.leaders[LEADER_ID]
+    assert king.soul_sold is True
+    held = {item.treasure for item in state.items_held_by(LEADER_ID)}
+    assert held == {Treasure.WAND_FIREBALL, Treasure.QUEST_CONTRACT_FULFILL}  # the signed contract stays
+
+
+def test_the_king_who_sold_his_soul_can_no_longer_practice_white_magic():
+    from ak_engine.turn.practice_execution import execute_practice
+
+    state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
+    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.WHITE, 1, 5)  # able to rise: the ban is what stops it
+    state.leaders[LEADER_ID].soul_sold = True
+    before = state.leaders[LEADER_ID].skills.pair_for_ability(Ability.WHITE)
+
+    for seed in range(40):
+        execute_practice(state, LEADER_ID, Ability.WHITE, random.Random(seed))
+
+    assert state.leaders[LEADER_ID].skills.pair_for_ability(Ability.WHITE) == before
+    assert state.leaders[LEADER_ID].pending_skill_advancement == {}

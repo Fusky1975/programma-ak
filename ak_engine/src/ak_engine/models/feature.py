@@ -274,6 +274,9 @@ class Feature:
     # (``MonsterTalkReply.R_SLAVE``) and agrees to be fulfilled "in one phase of the year of the death" -- the turn of
     # Talk plus two. ``None``: no such date (every other agreement, or one set by hand).
     pending_deal_ready_turn: int | None = None
+    # The hero the monster wants dead, for the two quests of vengeance (``MonsterTalkReply.R_FREVENGE`` /
+    # ``R_PREVENGE``): chosen when the monster asks (the "quest-character" of ``MTALK.X2``), kept for the Fulfill.
+    quest_target_leader_id: int | None = None
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
     # PSYCHIC_MAGE's own "will sense whether the monster intends to keep
     # its end of the bargain" perk (`models/office.py OFFICE_TITLE_

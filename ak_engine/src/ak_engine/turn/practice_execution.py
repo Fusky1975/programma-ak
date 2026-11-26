@@ -1348,6 +1348,10 @@ def execute_practice(
     if ability in _ARMY_TRAINING_ABILITIES:
         trained_army_ids = execute_practice_tactical(state, leader_id, rng)
 
+    if leader.soul_sold and ability is Ability.WHITE:
+        # The King who sold his soul: "Never again can the King practice White Magic".
+        return PracticeExecutionResult(ability=ability, trained_army_ids=trained_army_ids)
+
     if leader.is_comatose:
         # Phase 310: Kill_Enemy's own coma variant ([4.25.2]) -- "non
         # potrà aumentare i talenti con l'esperienza" (cannot raise
@@ -1576,6 +1580,9 @@ def execute_practice_group(
         zip(leader_ids, skills_tables, outcomes, pairs)
     ):
         leader = state.leaders[leader_id]
+        if leader.soul_sold and ability is Ability.WHITE:
+            results.append(PracticeExecutionResult(ability=ability, trained_army_ids=trained_by_leader.get(leader_id, ())))
+            continue
         if leader.is_comatose:
             # Phase 310: same comatose gate as execute_practice()'s own --
             # this leader's own real stored skill/aptitude (and, as of
