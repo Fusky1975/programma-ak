@@ -11,17 +11,16 @@ INTELLIGENCE REPORT...) come il gioco originale.
 
 COME SI AVVIA
 -------------
-1. Fai doppio clic su Avvia_GM_Interface.bat.
-   - La prima volta scarica il progetto e installa quello che serve
-     (puo' volerci qualche minuto; serve internet).
-   - Il progetto e' privato: devi aver accettato l'invito su GitHub e fare
-     il login quando si apre il browser.
+1. Estrai TUTTO lo zip in una cartella (per esempio Documenti) e fai doppio
+   clic su Avvia_GM_Interface.bat. Non serve un account GitHub.
+   - La prima volta installa Python 3.11 o piu' recente se manca e prepara
+     quello che serve (puo' volerci qualche minuto; serve internet).
 2. Si apre il browser su http://127.0.0.1:5055/ (la porta puo' cambiare,
    la vedi nella finestra).
 3. Per spegnere tutto chiudi la finestra "GM Interface - Adventurer-Kings".
 
-Le partite si salvano in  C:\Users\TUONOME\ak_games
-e restano anche se aggiorni il programma.
+Le partite si salvano in  C:\Users\TUONOME\ak_games  e restano anche se
+sostituisci il programma con una versione piu' nuova.
 
 COSA PROVARE
 ------------
@@ -45,15 +44,15 @@ Se qualcosa si rompe o ti sembra un errore del programma:
 
 AGGIORNAMENTI
 -------------
-Ogni volta che avvii il file, controlla se c'e' una versione nuova e la
-scarica (vedi "Versione in uso" nella finestra). Per NON aggiornare durante
-un playtest, crea un file vuoto BLOCCA_AGGIORNAMENTI.txt accanto al .bat;
-cancellalo per riprendere gli aggiornamenti.
+Quando c'e' una versione nuova ricevi un nuovo zip: estrailo (anche sopra
+la cartella vecchia) e riavvia il .bat. Il numero di versione e' nel file
+VERSION.txt e nella finestra all'avvio: citalo nelle segnalazioni.
 
 PROBLEMI COMUNI
 ---------------
-- "Python/Git non trovato": lo script prova a installarli da solo (winget);
-  se non ci riesce segui i link che mostra, poi rilancia.
+- "Python non trovato": lo script prova a installarlo da solo (winget);
+  se non ci riesce segui il link che mostra (spunta "Add python.exe to PATH"),
+  poi rilancia.
 - Il browser dice "impossibile connettersi": guarda la finestra
   "GM Interface" e ak_games\logs\server.log.
 - Antivirus/SmartScreen: e' uno script non firmato, scegli "Esegui comunque".
