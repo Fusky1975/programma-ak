@@ -3316,13 +3316,13 @@ def test_render_move_to_melee_range_resolves_sea_marker():
 def test_render_fire_arrow_attack_first_variant_has_no_trailing_punctuation():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
     result = render_fire_arrow_attack("Aldric", "Borin", rng)
-    assert result == "Aldric Fired an arrow at Borin"
+    assert result == "Aldric fired an arrow at Borin"
 
 
 def test_render_fire_arrow_attack_second_variant():
     rng = ScriptedRandom([0.9] * 10, choice_indices=[1])
     result = render_fire_arrow_attack("Aldric", "Borin", rng)
-    assert result == "Aldric Fired an angry arrow at Borin"
+    assert result == "Aldric shot an angry arrow at Borin"
 
 
 def test_render_attack_missed_first_variant():
@@ -3347,7 +3347,7 @@ def test_fire_arrow_attack_and_missed_concatenate_into_one_sentence():
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
     attack = render_fire_arrow_attack("Aldric", "Borin", rng)
     miss = render_attack_missed("Aldric", "Borin", "arrow", rng)
-    assert attack + miss == "Aldric Fired an arrow at Borin and missed."
+    assert attack + miss == "Aldric fired an arrow at Borin and missed."
 
 
 # -- Phase 413: Hand of Death's own per-round squeeze narration ------------
@@ -3477,7 +3477,7 @@ def test_fire_arrow_attack_and_hit_concatenate_into_one_sentence():
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
     attack = render_fire_arrow_attack("Aldric", "Borin", rng)
     hit = render_attack_hit("Borin", 5, rng)
-    assert attack + hit == "Aldric Fired an arrow at Borin and inflicted 5 damage points."
+    assert attack + hit == "Aldric fired an arrow at Borin and inflicted 5 damage points."
 
 
 # -- render_melee_attack (Phase 113) -----------------------------------------
@@ -4365,7 +4365,7 @@ def test_describe_encounter_combat_narrates_a_fizzled_cast_before_fire_arrow_and
     lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines[0] == "Aldric attempted to bolster Aldric's fortunes with a Fireball spell, but it fizzled at the last moment."
-    assert lines[1] == "Aldric Fired an arrow at Borin and inflicted 5 damage points."
+    assert lines[1] == "Aldric fired an arrow at Borin and inflicted 5 damage points."
 
 
 def test_describe_encounter_combat_omits_fizzled_spells_line_when_none_fizzled():
@@ -4378,7 +4378,7 @@ def test_describe_encounter_combat_omits_fizzled_spells_line_when_none_fizzled()
 
     lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
-    assert lines == ["Aldric Fired an arrow at Borin and inflicted 5 damage points."]
+    assert lines == ["Aldric fired an arrow at Borin and inflicted 5 damage points."]
 
 
 def test_describe_encounter_combat_narrates_fire_arrow_shots_and_melee_swings_in_order():
@@ -4393,8 +4393,8 @@ def test_describe_encounter_combat_narrates_fire_arrow_shots_and_melee_swings_in
     lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
-        "Aldric Fired an arrow at Borin and inflicted 5 damage points.",
-        "Borin Attacked Aldric and missed.",
+        "Aldric fired an arrow at Borin and inflicted 5 damage points.",
+        "Borin swang at Aldric and missed.",
     ]
 
 
@@ -4804,8 +4804,8 @@ def test_describe_random_encounter_combat_narrates_fire_arrow_shots_and_melee_sw
     lines = describe_random_encounter_combat(result, character_name="Arthur", opponent_name="Grendel", rng=rng)
 
     assert lines == [
-        "Arthur Fired an arrow at Grendel and inflicted 5 damage points.",
-        "Grendel Attacked Arthur and missed.",
+        "Arthur fired an arrow at Grendel and inflicted 5 damage points.",
+        "Grendel swang at Arthur and missed.",
     ]
 
 
@@ -6164,7 +6164,7 @@ def test_describe_challenge_delegates_to_describe_encounter_combat():
 
     assert lines == [
         "Aldric searched throughout Capital City for Borin.",
-        "Aldric Attacked Borin and inflicted 3 damage points.",
+        "Aldric swang at Borin and inflicted 3 damage points.",
     ]
 
 
@@ -10746,7 +10746,7 @@ def test_describe_search_leader_shot_always_uses_the_generic_renderer_even_vs_a_
 
     assert len(lines) == 2
     assert "breathes" not in lines[1]
-    assert lines[1] == "Aldric Fired an arrow at Red Dragon and inflicted 4 damage points."
+    assert lines[1] == "Aldric fired an arrow at Red Dragon and inflicted 4 damage points."
 
 
 def test_describe_search_titan_has_no_flavor_mapping_falls_back_to_generic():
@@ -10766,7 +10766,7 @@ def test_describe_search_titan_has_no_flavor_mapping_falls_back_to_generic():
 
     assert len(lines) == 2
     assert "hurls a huge boulder" not in lines[1]
-    assert lines[1] == "Titan Fired an arrow at Aldric and missed."
+    assert lines[1] == "Titan fired an arrow at Aldric and missed."
 
 
 def test_describe_search_shot_narration_appears_before_the_mortal_wound_line():
@@ -10854,8 +10854,8 @@ def test_describe_search_melee_swings_narrated_in_chronological_order_both_direc
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "Aldric Attacked guardian and inflicted 5 damage points.",
-        "guardian Attacked Aldric and missed.",
+        "Aldric swang at guardian and inflicted 5 damage points.",
+        "guardian swang at Aldric and missed.",
     ]
 
 
@@ -10874,7 +10874,7 @@ def test_describe_search_melee_swings_narrated_before_the_mortal_wound_line_for_
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "guardian Attacked Aldric and inflicted 6 damage points.",
+        "guardian swang at Aldric and inflicted 6 damage points.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
     ]
@@ -10896,7 +10896,7 @@ def test_describe_search_melee_swings_narrated_after_squeeze_hits():
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "Aldric curled Aldric's phantasmal hand around guardian's heart and squeezed it and inflicted 3 damage points.",
-        "Aldric Attacked guardian and inflicted 2 damage points.",
+        "Aldric swang at guardian and inflicted 2 damage points.",
     ]
 
 
@@ -18132,6 +18132,75 @@ def test_first_person_battle_keeps_the_commanders_name_in_the_winner_line_and_th
     assert "overrun by the forces of Teleko." in converted
     assert "The forces commanded by me were dismayed." in converted
     assert converted.startswith("\u00b6I stood ready at the head of my thousands.")
+
+
+# -- 2026-11-28: weapon verbs, Oratory, the leadership item, defections, numbering ---------------------------------------
+
+
+def test_a_character_swings_his_sword_and_a_monster_uses_its_own_weapon():
+    # SWANGAT.X's `$S` (RUMORS.PAS whit, CTME.PAS mtweap1): "Kurator swang at the Ice Devil", "slashed at Kurator"
+    from ak_engine.report.turn_report import melee_attack_method
+
+    assert melee_attack_method(ScriptedRandom([0.1])) == "swang at"
+    assert melee_attack_method(ScriptedRandom([0.9])) == "thrust at"
+    assert melee_attack_method(ScriptedRandom([0.1]), Monster.GO_DRAGON) == "lunged at"  # Jaws
+    assert melee_attack_method(ScriptedRandom([0.9]), Monster.GO_DRAGON) == "snapped at"
+    assert melee_attack_method(ScriptedRandom([0.1]), Monster.TITAN) == "swang at"  # Sword
+
+
+def test_melee_swings_no_longer_read_attacked_with_a_capital():
+    from ak_engine.report.turn_report import render_melee_attack, melee_attack_method
+
+    line = render_melee_attack("Kurator", "the Ice Devil", melee_attack_method(ScriptedRandom([0.1])), ScriptedRandom([0.9] * 6, choice_indices=[1]))
+
+    assert "Attacked" not in line and "swang at" in line
+
+
+def test_a_commander_who_cast_oratory_gives_his_troops_a_speech():
+    # SAY.PAS _BSpeech: "Using my magical powers of Oratory, I started with an inspiring harangue to my army, which
+    # bolstered their courage." (real SE3__T5.K1)
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10, oratory_boosted=True)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"(Using|Calling upon) Tlazolteotl's (magical|arcane) powers of Oratory, Tlazolteotl (gave|started with) an? (rousing|inspiring) (speech|harangue) to Tlazolteotl's (troops|army)", text)
+
+
+def test_a_leadership_item_hypnotizes_the_commanders_own_race():
+    # SAY.PAS _BRWeap: "Giovanna waved her Sword Excalibur and her Humans were virtually hypnotized!" (real)
+    from ak_engine.models.treasure import Treasure
+
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20, rallied_by_item=(Treasure.LEADERSHIP_HUMAN, Race.HUMAN))],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"Marlon (waved|held aloft) [^.]*\band (the|Marlon's) Humans (cheered wildly|were virtually hypnotized)", text)
+
+
+def test_monster_armies_asked_to_join_a_commander_defect_or_stay_loyal():
+    # SAY.PAS _BDefect/_BLoyal
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        monster_defections=[("attacker", 10, True), ("attacker", 10, False)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert "The 10th Garrison defected to Tlazolteotl." in text
+    assert "The 10th Garrison stayed loyal to their brethren." in text
+
+
+def test_a_character_is_named_with_his_number_once_in_a_paragraph():
+    from ak_engine.report.turn_report import _dedupe_numbers
+
+    assert _dedupe_numbers("Kahn (#6) used magic. Kahn (#6) bribed Marlon (#12) and Marlon (#12) fled.") == (
+        "Kahn (#6) used magic. Kahn bribed Marlon (#12) and Marlon fled."
+    )
 
 
 # -- 2026-11-27: encounters as GENERAL INTELLIGENCE news -------------------------------------------------------------

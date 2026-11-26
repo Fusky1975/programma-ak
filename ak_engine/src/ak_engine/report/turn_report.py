@@ -3247,10 +3247,26 @@ def _battle_retreat_sentences(
     return sentences
 
 
+def _dedupe_numbers(text: str) -> str:
+    """A character is named with his "(#n)" once in a paragraph; the later mentions are the bare name ("Giovanna (#7)
+    used magic ... Giovanna drew out her Sword", the real reports). Characters and Kings never share a number."""
+
+    seen: set[str] = set()
+
+    def keep_first(match: re.Match[str]) -> str:
+        number = match.group(1)
+        if number in seen:
+            return ""
+        seen.add(number)
+        return match.group(0)
+
+    return re.sub(r" \(#(\d+)\)", keep_first, text)
+
+
 def _battle_paragraph(sentences: list[str]) -> str:
     """The sentences of one paragraph of a battle block, spaced and capitalized the way ``Say()`` leaves them."""
 
-    text = _tidy_sentences(" ".join(sentences))
+    text = _dedupe_numbers(_tidy_sentences(" ".join(sentences)))
     return text[:1].upper() + text[1:]
 
 
@@ -3491,7 +3507,7 @@ def describe_battle(
             battle_report.battle_result, province_name, battle_report.province_coord
         )
         if diagram_lines:
-            lines.append(_tidy_sentences(" ".join([*intro, _BATTLE_LINE_INTRO_SENTENCE])))
+            lines.append(_dedupe_numbers(_tidy_sentences(" ".join([*intro, _BATTLE_LINE_INTRO_SENTENCE]))))
             lines.extend(diagram_lines)
             # Phase 1036 -- "in reserve" sentence(s), right after the diagram, before the roster.
             pre_column.extend(render_battle_reserve_sentences(battle_report.battle_result, rng))
@@ -3572,6 +3588,22 @@ def describe_battle(
             pre_column.append(render_monster_reinforcement_arrives(monster_name, army_name, province_name, rng))
             pre_column.append(render_monster_reinforcement_helped(monster_name, army_name, rng))
 
+    # `_BDefect`/`_BLoyal`: the summoned monster armies asked to join a commander.
+    for side, army_id, defected in battle_report.monster_defections:
+        army = state.armies.get(army_id)
+        army_name = names.get(army_id) or (
+            _narrative_army_name(make_army_name(army_id, army.army_type, Race.HUMAN), None) if army is not None else None
+        )
+        if army_name is None:
+            continue
+        if defected:
+            leader_id = (
+                battle_report.attacker_commander_leader_id if side == "attacker" else battle_report.defender_commander_leader_id
+            )
+            pre_column.append(f"{army_name} defected to {_leader_name(state, leader_id) or 'the invaders'}.")
+        else:
+            pre_column.append(f"{army_name} stayed loyal to their brethren.")
+
     # `_BFun`, `_AThirst`, `_BMagic`/`_BIA`: what the armies of each side bring to the field.
     side_info = (
         ("attacker", battle_report.attacker_kingdom_id, battle_report.attacker_commander_leader_id, battle_report.attacker_commanding_leader_ids),
@@ -3624,6 +3656,16 @@ def describe_battle(
                 is_sea=is_sea,
             )
         )
+    # `_BSpeech`, `_BRWeap`: the commander's Oratory speech and the leadership item that hypnotizes his own race.
+    for side, kingdom_id, commander_id, _commanding in side_info:
+        commander_name = _leader_name(state, commander_id) if commander_id is not None else None
+        if commander_name is None:
+            continue
+        if any(unit.oratory_boosted for unit in side_units[side]):
+            pre_column.append(render_oratory_speech(commander_name, rng))
+        rallied = sorted({unit.rallied_by_item for unit in side_units[side] if unit.rallied_by_item is not None}, key=lambda pair: pair[0].name)
+        for treasure, race in rallied:
+            pre_column.append(render_weapon_rally(commander_name, TREASURE_NAME[treasure], RACE_PLURAL_NAME[race], rng))
     if pre_column:
         lines.append(_BATTLE_PARAGRAPH + _battle_paragraph(pre_column))
 
@@ -5554,7 +5596,7 @@ def describe_kill_enemy_berserk_retaliation(
     swing_lines: list[str] = []
     for swing in result.melee_swings:
         attacker_name, defender_name = (caster_name, target_name) if swing.attacker == "a" else (target_name, caster_name)
-        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
+        attack_line = render_melee_attack(attacker_name, defender_name, melee_attack_method(rng), rng)
         attack_line += (
             render_attack_hit(defender_name, swing.damage, rng)
             if swing.hit
@@ -5980,7 +6022,7 @@ def render_fire_arrow_attack(character_name: str, opponent_name: str, rng: rando
         "<": character_name,
         "[": opponent_name,
         ">": f"{character_name}'s",
-        "$S": "Fired",
+        "$S": render(_WEAPON_HIT_PHRASES[_WEAPON_NAMES.index("Bow")], {}, rng=rng),  # whit[Bow]: "fired" / "shot"
         "^W": "arrow",
     }
     return render(variant, values, rng=rng)
@@ -7464,6 +7506,42 @@ def render_binoculars_preview(
 # TEMPLATES[0] above), so it stays consistent with the real source
 # text's own vocabulary even though it isn't itself sourced per-call.
 _MELEE_ATTACK_METHOD = "Attacked"
+
+# 2026-11-28: the real `$S` of SWANGAT.X (``RUMORS.PAS`` ``whit``/``SAY.PAS``): the verb of the weapon the attacker
+# fights with -- a character's sword ("swang at" / "thrust at"), a monster's own (``CTME.PAS`` ``mtweap1``): "The Ice
+# Devil daringly slashed at Kurator", "Kurator swang at the Ice Devil" in the real GENERAL INTELLIGENCE REPORTs. The
+# placeholder above is only the fallback of callers that do not know the monster.
+_WEAPON_NAMES = (
+    "Talons", "Fangs", "Claws", "Maw", "Jaws", "Fists", "Sword", "Dagger", "Staff", "Hooves", "MedTeeth", "ChimHeads",
+    "Club", "Axe", "UTouch", "Tentacles", "Beak", "Boulder", "Bow", "FlameBreath", "SpitAcid", "PoisBreath", "BScream",
+    "EndoPod", "Mandible", "Stinger", "Limb", "Gaze", "NoWeap",
+)
+_WEAPON_HIT_PHRASES = (
+    "slashed/Rclawed at", "lunged/Rstruck at", "slashed/Rswang at", "lunged_at/Rattacked", "lunged/Rsnapped at",
+    "punched/Rswung at", "swang/Rthrust at", "thrust/Rlunged at", "swang/Rthrust at", "kicked/Rthrust at",
+    "bit/Rsnapped at", "snapped/Rlunged at", "swang/Rsmashed at", "chopped/Rswang at", "groped_for/Rlunged_at",
+    "assailed/Rlashed_at", "pecked/Rstruck at", "threw/Rhurled", "fired/Rshot", "breathed/Rexhaled", "spat/Rsprayed",
+    "breathed/Rexhaled", "voiced/Rsounded", "oozed/Rgroped at", "snapped/Rlunged at", "thrust/Rflipped at",
+    "swang/Rclubbed at", "glared/Rglowered", "swang at",
+)
+_MONSTER_MELEE_WEAPON = (
+    "Talons", "Talons", "Fangs", "Talons", "Jaws", "Jaws", "Jaws", "Jaws", "Jaws", "Jaws",
+    "Maw", "Sword", "Club", "Fists", "Sword", "Sword", "Staff", "Dagger", "Staff", "Dagger", "Staff", "Claws",
+    "Dagger", "Hooves", "Fists", "Fists", "Claws", "Jaws", "Dagger", "Claws", "Sword", "Fangs", "Fangs", "Claws",
+    "Talons", "Claws", "Jaws", "ChimHeads", "Jaws", "Fangs", "Club", "Axe", "Fangs", "Limb", "EndoPod", "Mandible",
+    "Stinger", "Stinger", "Fangs", "UTouch", "Fists", "Fists", "UTouch", "UTouch", "UTouch", "Tentacles", "Jaws",
+    "Jaws", "Jaws", "Dagger",
+)
+
+
+def melee_attack_method(rng: random.Random, monster: Monster | None = None) -> str:
+    """The verb phrase of a melee swing ("swang at", "slashed at", "snapped at"): a character swings his sword, a
+    monster uses its own weapon."""
+
+    weapon = "Sword"
+    if monster is not None and 0 <= monster.value < len(_MONSTER_MELEE_WEAPON):
+        weapon = _MONSTER_MELEE_WEAPON[monster.value]
+    return render(_WEAPON_HIT_PHRASES[_WEAPON_NAMES.index(weapon)], {}, rng=rng)
 
 
 # Project-original, not sourced from PROSE.TXT (Phase 155) -- see module
@@ -9069,7 +9147,7 @@ def describe_encounter_combat(
 
     for swing in result.melee_swings:
         attacker_name, defender_name = (a_name, b_name) if swing.attacker == "a" else (b_name, a_name)
-        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
+        attack_line = render_melee_attack(attacker_name, defender_name, melee_attack_method(rng), rng)
         attack_line += (
             render_attack_hit(defender_name, swing.damage, rng)
             if swing.hit
@@ -9145,7 +9223,7 @@ def describe_random_encounter_combat(
 
     for swing in result.melee_swings:
         attacker_name, defender_name = (character_name, opponent_name) if swing.attacker == "a" else (opponent_name, character_name)
-        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
+        attack_line = render_melee_attack(attacker_name, defender_name, melee_attack_method(rng, None if swing.attacker == "a" else result.monster), rng)
         attack_line += (
             render_attack_hit(defender_name, swing.damage, rng)
             if swing.hit
@@ -13649,7 +13727,10 @@ def describe_search(
         melee_attacker, melee_defender = (
             (character_name, monster_name) if swing.attacker == "a" else (monster_name, character_name)
         )
-        attack_line = render_melee_attack(melee_attacker, melee_defender, _MELEE_ATTACK_METHOD, rng)
+        attack_line = render_melee_attack(
+            melee_attacker, melee_defender,
+            melee_attack_method(rng, None if swing.attacker == "a" else result.guardian_monster), rng,
+        )
         attack_line += (
             render_attack_hit(melee_defender, swing.damage, rng)
             if swing.hit

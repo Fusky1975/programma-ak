@@ -5866,6 +5866,40 @@ def test_apply_monster_summoning_aid_adds_an_adjacent_unled_matching_army():
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_apply_monster_summoning_aid_records_who_defected_and_who_stayed_loyal():
+    # The report tells "The 301st Dragons defected to X" / "... stayed loyal to their brethren."
+    for roll, defected in ((0.1, True), (0.9, False)):
+        state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+        state.add_army(ArmyState(301, None, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME))
+        recorded: list[tuple[str, int, bool]] = []
+
+        _apply_monster_summoning_aid(
+            [], commander, state, FIELD, MapBounds(*NORMAL_MAP_BOUNDS), rng=ScriptedRandom([roll]),
+            defections=recorded, **_aid_kwargs(),
+        )
+
+        assert recorded == [("attacker", 301, defected)]
+
+
+def test_build_battle_units_flags_the_oratory_and_the_leadership_item_for_the_report():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Orator", location=FIELD))
+    state.add_item(Treasure.LEADERSHIP_HUMAN, owner_leader_id=1)
+    boosted = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    boosted.oratory_boost_levels = 1
+    plain = ArmyState(102, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD)
+    state.add_army(boosted)
+    state.add_army(plain)
+
+    units = _build_battle_units(
+        [boosted, plain], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    assert [unit.oratory_boosted for unit in units] == [True, False]
+    assert [unit.rallied_by_item for unit in units] == [(Treasure.LEADERSHIP_HUMAN, Race.HUMAN), None]
+
+
 def test_apply_monster_summoning_aid_no_treasure_no_roll():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Beareria", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))

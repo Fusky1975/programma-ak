@@ -700,7 +700,7 @@ def test_describe_turn_results_renders_pursue_combat_after_the_catch_up_sentence
 
     assert lines == [
         "Aldric caught up with Borin in Eldoria.",
-        "Aldric Attacked Borin and inflicted 4 damage points.",
+        "Aldric swang at Borin and inflicted 4 damage points.",
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
         "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
@@ -726,7 +726,7 @@ def test_describe_turn_results_renders_challenge_combat():
 
     assert lines == [
         "Aldric searched throughout (0, 0) for Borin.",
-        "Aldric Fired an arrow at Borin and inflicted 5 damage points.",
+        "Aldric fired an arrow at Borin and inflicted 5 damage points.",
     ]
 
 
