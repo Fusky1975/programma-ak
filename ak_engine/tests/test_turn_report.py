@@ -17508,7 +17508,8 @@ def _battle_with(attacker_units, defender_units, *, winner="attacker", state_and
         state, coord, _watcher = _gir_battle_state()
     column = BattleColumnResult(
         attacker_strength=10.0, defender_strength=10.0, bres=3 if winner == "attacker" else -3,
-        attacker_won=winner == "attacker", cluck_index=20, attacker_units=attacker_units, defender_units=defender_units,
+        attacker_won=winner == "attacker", cluck_index=report_fields.pop("cluck_index", 20),
+        attacker_units=attacker_units, defender_units=defender_units,
         attacker_switched=report_fields.pop("attacker_switched", False),
         defender_switched=report_fields.pop("defender_switched", False),
     )
@@ -17852,6 +17853,285 @@ def test_the_gir_battle_narrative_carries_the_same_columns_mirrored():
 
     assert re.search(r"[Rr]ight (outside )?(flank|wing), the Elite 10th Garrison", from_defender)
     assert re.search(r"[Ll]eft (outside )?(flank|wing), the Elite 10th Garrison", from_attacker)
+
+
+# -- 2026-11-28: connectors, thirst, phantasmal armies, pursuits, chronology and the first person --------------------
+
+
+def test_a_column_that_went_against_its_luck_says_in_spite_of_the_good_luck():
+    # SAY.PAS _BSpite: "In spite of the 20th Legion's good luck, the 110th Bowmen fought the 20th Legion ..." (real)
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        winner="defender", cluck_index=30,
+    )
+
+    text = " ".join(_narrate(state, report, phase=0))
+
+    assert re.search(
+        r"(In spite of|Even with) the 10th Garrison's good (luck|fortune), the 10th Garrison (fought|battled)( with)? the 20th Legion",
+        text,
+    )
+
+
+def test_a_column_won_in_spite_of_bad_luck_says_even_so():
+    # SAY.PAS _BStill: "Even so, the 320th Eagles battled the 257th Legion and was able to make some progress." (real)
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        winner="attacker", cluck_index=8,
+    )
+
+    text = " ".join(_narrate(state, report, phase=0))
+
+    assert re.search(r"(Still|Even so), the 10th Garrison (fought|battled)( with)? the 20th Legion", text)
+
+
+def test_a_column_that_followed_its_luck_has_no_connector():
+    for winner, cluck_index in (("attacker", 30), ("defender", 8)):
+        state, report = _battle_with(
+            [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+            winner=winner, cluck_index=cluck_index,
+        )
+        text = " ".join(_narrate(state, report, phase=0))
+        assert not re.search(r"In spite of|Even with|Even so,|Still,", text)
+
+
+def test_an_army_with_no_water_in_the_desert_suffers_from_thirst():
+    # SAY.PAS _AThirst: "Teleko's men, ill-supplied in the tortuous desert, suffered from thirst." (real)
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10, desert_thirst=True)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20, desert_thirst=True)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"Tlazolteotl's (men|soldiers), (ill-supplied|with no camels) (in|for) the (tortuous )?desert( campaign)?, suffered from thirst\.", text)
+    assert re.search(r"Marlon's (men|soldiers), (ill-supplied|with no camels) (in|for) the (tortuous )?desert( campaign)?, suffered from thirst\.", text)
+
+
+def test_an_army_without_thirst_does_not_get_the_sentence():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+    assert "thirst" not in " ".join(_narrate(state, report))
+
+
+def test_phantasmal_armies_are_told_with_the_magic_that_aided_the_side():
+    # SAY.PAS _BMagic + _BIA: "The army of Giovanna (#7) used magic to aid their cause.  Magical phantasmal armies
+    # fought with her soldiers." (real)
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20, phantasmal_armies=True)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert "The army of Defendia (#2) used magic to aid their cause." in text
+    assert re.search(r"Magical phantasmal (armies|navies) fought with (his|her|its) soldiers\.", text)
+
+
+def test_skeletal_armies_march_into_battle_with_a_fanatical_fervor():
+    # SAY.PAS _BFun, in 33 of the 90 real battle blocks.
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10, is_skeletal=True)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+
+    assert "The Skeletal Armies led by Attackia marched into battle with a fanatical fervor." in " ".join(_narrate(state, report))
+
+
+def test_a_pursuit_the_rearguard_beat_off_is_told_with_the_pursuer_and_the_rearguard():
+    # SAY.PAS _BPFail: "The 185th Light Cavalry pursued the enemy and were beaten off by the 241st Skeletal Bowmen after
+    # a tough rearguard action." (real)
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10), BattleUnit(ArmyType.LT_CAVALRY, 5.0, source_id=12)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        pursuit_outcomes=[(12, 20, False)],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(
+        r"The 12th Light Cavalry (pursued the enemy and|gave chase and|overtook the enemy (in their \w+ retreat )?and|chased after the enemy and) "
+        r"were (beaten|driven) off by the 20th Legion (after|in) a (tough|hard-fought) rearguard (action|battle)\.",
+        text,
+    )
+
+
+def test_a_pursuit_that_destroyed_its_target_names_the_army_that_did_it():
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10), BattleUnit(ArmyType.LT_CAVALRY, 5.0, source_id=12)],
+        [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        pursuit_outcomes=[(10, 20, True)], pursuit_destroyed_army_ids=[20],
+    )
+
+    text = " ".join(_narrate(state, report))
+
+    assert re.search(r"The 10th Garrison (pursued the enemy and|gave chase and|overtook the enemy (in their \w+ retreat )?and|chased after the enemy and) (annihilated|slew|destroyed|demolished|scattered) the 20th Legion", text)
+
+
+def test_the_invasion_is_won_by_the_commander_and_the_winner_line_names_him():
+    # Real: "Tebessa was overrun by the forces of Teleko."; WINNER.X names the commander of the invaders.
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)]
+    )
+
+    outcome = _narrate(state, report)[-1]
+
+    assert "Tlazolteotl" in outcome and "Attackia" not in outcome
+
+
+def test_the_defender_side_of_winner_x_is_the_defending_king_or_the_natives_chieftain():
+    from ak_engine.report.turn_report import _battle_narrative_lines
+
+    state, report = _battle_with(
+        [BattleUnit(ArmyType.GARRISON, 10.0, source_id=10)], [BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+        winner="defender",
+    )
+    report.defender_commander_leader_id = None
+    report.defender_commanding_leader_ids = []
+    report.defender_kingdom_id = None
+
+    text = " ".join(_flat(_battle_narrative_lines(state, "P1", report, random.Random(3))))
+
+    assert "the provincial garrison commander" in text
+
+
+def _block_state():
+    state, battle_coord, _watcher = _gir_battle_state()
+    state.add_leader(LeaderState(1, 1, "King Attackia", battle_coord, is_king=True))
+    state.add_leader(LeaderState(2, 2, "King Defendia", battle_coord, is_king=True))
+    return state, battle_coord
+
+
+def test_a_battle_block_belongs_to_the_character_whose_move_started_it():
+    from ak_engine.report.turn_report import record_battle_narratives
+
+    state, battle_coord = _block_state()
+    report, results = _fought_battle(state, battle_coord)
+    state.provinces[battle_coord].owner_kingdom_id = 2
+
+    record_battle_narratives(state, results, random.Random(5))
+
+    (block,) = state.battle_blocks
+    assert block.leader_id == 11 and block.phase_label == "P1" and block.report_key == id(results[0].result)
+    assert block.attacker_kingdom_id == 1 and block.defender_kingdom_id == 2
+    # told in the first person for the hero who started it ("Standing tall with my warriors was I.")
+    assert any(re.search(r"\bI (led|commanded|marched|stood|was)|was I\b|\bmy\b", line) for line in block.attacker_lines)
+    assert not any(re.search(r"\bI (led|marched)", line) for line in block.defender_lines)
+
+
+def test_a_battle_started_by_the_king_is_told_in_the_third_person():
+    from ak_engine.report.turn_report import record_battle_narratives
+
+    state, battle_coord = _block_state()
+    report, results = _fought_battle(state, battle_coord)
+    results[0] = PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.LMOVE, result=results[0].result, error=None)
+    report.attacker_commander_leader_id = 1
+    report.attacker_commanding_leader_ids = [1]
+
+    record_battle_narratives(state, results, random.Random(5))
+
+    (block,) = state.battle_blocks
+    assert block.leader_id == 1
+    assert not any(re.search(r"\bI\b", line) for line in block.attacker_lines)
+
+
+def test_a_battle_no_character_started_has_no_leader_and_goes_to_the_kings_report():
+    from ak_engine.report.turn_report import record_battle_narratives
+
+    state, battle_coord = _block_state()
+    _report, results = _fought_battle(state, battle_coord)
+    results[0] = PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=results[0].result, error=None)
+
+    record_battle_narratives(state, results, random.Random(5))
+
+    assert state.battle_blocks[0].leader_id is None
+
+
+def test_the_battle_is_told_right_after_the_move_that_started_it_in_the_heros_letter():
+    from ak_engine.report.turn_report import _letter_paragraphs, _layout_units, record_battle_narratives
+
+    state, battle_coord = _block_state()
+    _report, results = _fought_battle(state, battle_coord)
+    entry = results[0]
+    record_battle_narratives(state, results, random.Random(5))
+
+    paragraphs = _letter_paragraphs(
+        [entry], state, random.Random(1), random.Random(2), "Tlazolteotl", "his", True, _layout_units(state),
+        ability_names=None, board_width=None, narrator=lambda entries: ["Tlazolteotl moved into Border Fort."],
+        battle_blocks=state.battle_blocks,
+    )
+    text = "\n".join(paragraphs)
+    flat = re.sub(r"\s*\n\s*", " ", text)
+
+    assert "I moved into Border Fort." in flat
+    assert flat.index("I moved into Border Fort.") < flat.index("ATTACKING ARMY")
+    # the commander speaks in the first person ...
+    assert re.search(r"\bI (commanded|was in command of) the (invading|attacking) (armies|fleet)", flat)
+    # ... but the winner's line keeps his name, as in the real letters ("overrun by the forces of Teleko")
+    assert not re.search(r"forces of me\b|\bby me\b.*campaign", text)
+    assert not re.search(r"(^|[.!?] )my (well-planned |host|forces)", flat)  # the invader's name is not turned to "my"
+    # the battle is told once: no second copy at the end of the letter
+    assert text.count("ATTACKING ARMY") == 1
+
+
+def test_a_later_phase_of_the_same_letter_comes_after_the_battle():
+    from ak_engine.report.turn_report import _letter_paragraphs, _layout_units, record_battle_narratives
+
+    state, battle_coord = _block_state()
+    _report, results = _fought_battle(state, battle_coord)
+    later = PhaseDispatchResult(leader_id=11, segment_index=1, phase_label="P2", action=ActionCode.LMOVE, result=None, error=None)
+    record_battle_narratives(state, results, random.Random(5))
+
+    paragraphs = _letter_paragraphs(
+        [results[0], later], state, random.Random(1), random.Random(2), "Tlazolteotl", "his", True, _layout_units(state),
+        ability_names=None, board_width=None,
+        narrator=lambda entries: ["Tlazolteotl went on."] if entries[0].phase_label == "P2" else ["Tlazolteotl moved."],
+        battle_blocks=state.battle_blocks,
+    )
+    text = "\n".join(paragraphs)
+
+    assert text.index("ATTACKING ARMY") < text.index("went on.")
+
+
+def test_the_defending_king_reads_the_battle_in_his_action_report_in_its_phase():
+    from ak_engine.report.turn_report import _pascal_action_report_body, record_battle_narratives
+
+    state, battle_coord = _block_state()
+    state.provinces[battle_coord].owner_kingdom_id = 2
+    _report, results = _fought_battle(state, battle_coord)
+    record_battle_narratives(state, results, random.Random(5))
+
+    defender_body = "\n".join(
+        _pascal_action_report_body(
+            [], state, 2, 2, random.Random(1), ability_names=None, board_width=None, valhalla_lines=[],
+            extra_story_lines=[], trailing_notice_lines=[], finance_sentences=[],
+        )
+    )
+    attacker_body = "\n".join(
+        _pascal_action_report_body(
+            [], state, 1, 1, random.Random(1), ability_names=None, board_width=None, valhalla_lines=[],
+            extra_story_lines=[], trailing_notice_lines=[], finance_sentences=[],
+        )
+    )
+
+    assert "ATTACKING ARMY" in defender_body
+    assert "ATTACKING ARMY" not in attacker_body  # the hero who started it tells it in his letter
+
+
+def test_first_person_battle_keeps_the_commanders_name_in_the_winner_line_and_the_armies_possessives():
+    from ak_engine.report.turn_report import _first_person_battle
+
+    lines = [
+        "\u00b6Teleko stood ready at the head of Teleko's thousands. Teleko's men, ill-supplied in the desert, suffered from thirst. "
+        "The forces commanded by Teleko were dismayed. Alderwood was overrun by the forces of Teleko."
+    ]
+
+    (converted,) = _first_person_battle(lines, "Teleko", ())
+
+    assert "Teleko's men, ill-supplied" in converted
+    assert "overrun by the forces of Teleko." in converted
+    assert "The forces commanded by me were dismayed." in converted
+    assert converted.startswith("\u00b6I stood ready at the head of my thousands.")
 
 
 # -- 2026-11-27: encounters as GENERAL INTELLIGENCE news -------------------------------------------------------------

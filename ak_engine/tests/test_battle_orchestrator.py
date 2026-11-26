@@ -2310,6 +2310,38 @@ def test_build_battle_units_race_item_bonus_not_applied_to_an_unled_army():
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_build_battle_units_flags_thirst_and_phantasmal_armies_for_the_report():
+    # The report tells "ill-supplied in the desert, suffered from thirst" and "Magical phantasmal armies fought with ..."
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Illusionist", location=FIELD, phantasmal_armies_level=2))
+    illusory = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    plain = ArmyState(102, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD)
+    state.add_army(illusory)
+    state.add_army(plain)
+
+    desert = _build_battle_units(
+        [illusory, plain], state, is_defender=False, terrain=Terrain.DESERT, province_coord=FIELD, rng=random.Random(0)
+    )
+    plains = _build_battle_units(
+        [illusory, plain], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    assert [unit.desert_thirst for unit in desert] == [True, True]
+    assert [unit.desert_thirst for unit in plains] == [False, False]
+    assert [unit.phantasmal_armies for unit in plains] == [True, False]
+
+
+def test_fight_battle_records_who_pursued_whom_and_whether_the_target_was_destroyed():
+    state = build_state()
+    rng = no_luck_overwhelming_attacker_rng()
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
+
+    assert 201 in report.pursuit_destroyed_army_ids
+    assert (101, 201, True) in report.pursuit_outcomes
+
+
 def test_build_battle_units_applies_the_commanders_phantasmal_armies_level():
     # Phase 59, Regolamento AK.txt [4.23.2]: +15%/level of the *caster*
     # (stored on the commanding LeaderState by cast_execution.py's

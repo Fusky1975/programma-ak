@@ -1604,6 +1604,23 @@ class SunkCargoEvent:
 
 
 @dataclass(slots=True)
+class BattleBlock:
+    """One fought battle as the ACTION REPORT and the LETTER REPORTS tell it (``report/turn_report.py
+    record_battle_narratives()``): the attacker's account belongs to the report of the leader whose Move started the
+    battle, right after that Move (``leader_id``, ``phase_label``), in his own first person; the defender's account (and
+    the attacker's, when no character started the battle) to the King's report, in the phase it was fought in.
+    ``report_key`` is ``id()`` of the ``BattleReport`` (valid for the one composition pass that follows)."""
+
+    report_key: int
+    phase_label: str
+    leader_id: int | None
+    attacker_kingdom_id: int | None
+    defender_kingdom_id: int | None
+    attacker_lines: list[str]
+    defender_lines: list[str]
+
+
+@dataclass(slots=True)
 class WorldEvent:
     """One cross-kingdom-visible happening (Phase 231) -- the real raw
     material for GENERAL INTELLIGENCE REPORT's own "Kingdom of X (#N):"
@@ -2135,6 +2152,8 @@ class GameState:
     # no explicit reset, no multi-turn game loop exists yet for it to
     # matter" convention as `world_events`/`rumors`/`turn_raid_events`.
     battle_narratives_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
+    # The same battles by report: where each belongs in the chronology of the letters (see ``BattleBlock``).
+    battle_blocks: list[BattleBlock] = field(default_factory=list)
     # Phase 886 -- Discovery.ULTRAVIOLET_LENSES / Treasure.AMULET_ANTI_
     # ILLUSION (Crystal of True Seeing): "characters ... see through the
     # Illusory Terrain spell" (armies stay affected regardless -- see
@@ -2738,6 +2757,7 @@ class GameState:
         self.spy_force_reports.clear()
         self.sunk_cargo_events.clear()
         self.battle_narratives_by_kingdom.clear()
+        self.battle_blocks.clear()
         self.illusory_terrain_reveals_by_kingdom.clear()
         self.blackmail_narratives_by_kingdom.clear()
         self.mercenary_quality_notices_by_kingdom.clear()
