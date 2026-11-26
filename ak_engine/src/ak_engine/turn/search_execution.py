@@ -1931,10 +1931,11 @@ def select_visit_province(state: GameState, feature: Feature) -> HexCoord | None
     return chooser.choice(candidates)
 
 
-def note_quest_visits(state: GameState, leader_id: int | None = None) -> None:
+def note_quest_visits(state: GameState, leader_id: int | None = None, phase_label: str = "") -> None:
     """A hero with a travel quest who is in its province has made the journey: the quest item turns into its "May
     Fulfill quest now" marker. Called after every phase of a plan and at the end of the turn, so a journey there and
-    back inside one turn still counts. ``leader_id`` limits the check to one hero."""
+    back inside one turn still counts. ``leader_id`` limits the check to one hero; ``phase_label`` is the phase just
+    carried out, so the report can tell the journey in that phase (``FUVIS.X2``)."""
 
     for feature in state.features.values():
         if feature.quest_visit_done or feature.quest_visit_coord is None or feature.pending_deal_leader_id is None:
@@ -1949,6 +1950,7 @@ def note_quest_visits(state: GameState, leader_id: int | None = None) -> None:
         feature.quest_visit_done = True
         for item in state.items_held_by(hero.leader_id):
             if item.charges == feature.feature_id and item.treasure in _VISIT_DONE_ITEM:
+                state.quest_visits.append((hero.leader_id, item.treasure, hero.location, phase_label))
                 item.treasure = _VISIT_DONE_ITEM[item.treasure]
 
 

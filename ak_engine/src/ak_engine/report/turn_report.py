@@ -11048,6 +11048,19 @@ def describe_turn_results(
                     continue
                 lines.append(describe_rumor(rumor, state, leader.name, board_width, rng))
 
+    # A travel quest done: told in the phase in which the hero reached its province (``FUVIS.X2``).
+    if state is not None and state.quest_visits:
+        phases_of_leader: dict[int, set[str]] = {}
+        for entry in results:
+            phases_of_leader.setdefault(entry.leader_id, set()).add(entry.phase_label)
+        for visit_leader_id, quest_item, coord, visit_label in state.quest_visits:
+            if visit_label not in phases_of_leader.get(visit_leader_id, ()):
+                continue
+            hero = state.leaders.get(visit_leader_id) or state.dead_leaders.get(visit_leader_id)
+            if hero is None:
+                continue
+            lines.append(render_quest_visit_done(hero.name, quest_item, _province_label(state, coord), _possessive_for(state, visit_leader_id), rng))
+
     return lines
 
 
@@ -12988,17 +13001,27 @@ def render_guardian_proposes_quest_location(monster_name: str, quest_location: T
       sentence reads as complete without this project fabricating any
       geography.
 
-    ``QUEST_VISIT_FULFILLED_TEXT`` (the "quest completed" narration) is
-    deliberately NOT wired here -- the same scope boundary as Riddle's
-    own unwired ``QUEST_RIDDLE_ANSWER_TEXT``: Fulfill's success is an
-    unverified generic alignment roll (``_resolve_fulfill()``'s own
-    docstring), not proof the quest was actually completed as
-    described.
+    ``QUEST_VISIT_FULFILLED_TEXT`` (the journey done) is told in the phase
+    in which the hero reaches the province (``render_quest_visit_done()``).
     """
 
     text = QUEST_VISIT_TEXT[quest_location].replace(_CTRL_X_MARKER, province_name if province_name is not None else _CTRL_X_PLACEHOLDER)
     text = _resolve_ctrl_a_markers(text)
     return f"{monster_name} proposes a quest: {text}"
+
+
+def render_quest_visit_done(
+    character_name: str, quest_item: Treasure, province_name: str, possessive: str, rng: random.Random
+) -> str:
+    """``FUVIS.X2`` (SAY.PAS ``_LFuVis``): what the hero did on arriving in the province of his travel quest -- threw the
+    Cosmic Snowball into the volcano, cast the Sapphire Ring into the lake, tossed the Lucky Penny into the well, wrote
+    down the strange gods, charmed a mermaid with the amulet. ``<`` the hero, ``@`` the province, ``>`` his possessive."""
+
+    text = _resolve_ctrl_a_markers(QUEST_VISIT_FULFILLED_TEXT[quest_item])
+    rendered = render(text, {"<": character_name, "@": province_name, ">": possessive}, rng=rng).strip()
+    rendered = re.sub(r'([.!?]"?)(?=[A-Za-z(])', r"\1 ", rendered)
+    rendered = _tidy_sentences(rendered)
+    return rendered[0].upper() + rendered[1:]
 
 
 # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.

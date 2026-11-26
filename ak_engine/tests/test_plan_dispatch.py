@@ -3483,3 +3483,6 @@ def test_run_leader_plan_notes_a_travel_quest_journey_after_each_phase():
         run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH, rng=random.Random(1))
 
     assert feature.quest_visit_done is True and item.treasure is Treasure.QUEST_LUCK_FULFILL
+    assert state.quest_visits == [(LEADER_ID, Treasure.QUEST_LUCKY_PENNY, here, "P0")]  # for the report of that phase
+    state.reset_turn_report_scratch()
+    assert state.quest_visits == []
