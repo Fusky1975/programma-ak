@@ -82,7 +82,7 @@ def test_generate_world_features_land_success_creates_one_feature():
 
 def test_generate_world_features_guardian_alignment_rolled_for_multi_option_species():
     # Monster.GI_OCTOPUS (SEA_FEATURE_TYPES[0]'s first candidate) has a
-    # 50/50 Neutral/Pagan distribution -- the roll actually drives which
+    # 50/50 Neutral/Evil distribution (Mostri.md) -- the roll actually drives which
     # one lands, proving Phase 246's wiring isn't a no-op.
     low_coord, high_coord = HexCoord(7, 7), HexCoord(8, 8)
 
@@ -96,7 +96,7 @@ def test_generate_world_features_guardian_alignment_rolled_for_multi_option_spec
     state_high.provinces[high_coord] = _province(high_coord, Terrain.SEA)
     rng_high = ScriptedRandom([0.05, 0.9], choice_indices=[0, 0, 0])
     created_high = generate_world_features(state_high, rng_high)
-    assert created_high[0].guardian_alignment is Alignment.PAGAN
+    assert created_high[0].guardian_alignment is Alignment.EVIL
 
 
 def test_generate_world_features_land_double_feature():
