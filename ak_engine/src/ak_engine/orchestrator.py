@@ -61,6 +61,7 @@ from ak_engine.report.turn_report import (
     record_blackmail_narratives,
     record_illusory_fog_foreign_entry_world_events,
     record_move_world_events,
+    record_encounter_world_events,
     record_exploration_world_events,
     record_ordinary_move_world_events,
     record_recruit_world_events,
@@ -339,6 +340,7 @@ def process_turn(
     gir_announced: set[int] = set()  # who the GIR has already named with his "(#id)" this turn
     record_ordinary_move_world_events(state, results, rng, gir_announced)
     record_exploration_world_events(state, results, rng, gir_announced)
+    record_encounter_world_events(state, results, rng, gir_announced)
     record_recruit_world_events(state, results, rng, gir_announced)
     record_illusory_fog_foreign_entry_world_events(state, results, rng)
     record_battle_world_events(state, results, rng, gir_announced)

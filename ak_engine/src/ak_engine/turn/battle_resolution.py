@@ -218,6 +218,7 @@ def _apply_alignment_king_bonus(columns: list[Column], strengths: list[float], r
         return
     chosen = rng.choice(eligible_indices)
     strengths[chosen] += columns[chosen][0].alignment_king_bonus_if_selected
+    columns[chosen][0].alignment_king_selected = True  # the report tells whom the King's title made fanatic
 
 
 def resolve_battle(

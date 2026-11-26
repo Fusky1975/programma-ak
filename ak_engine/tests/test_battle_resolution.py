@@ -585,6 +585,18 @@ def test_apply_alignment_king_bonus_adds_the_selected_units_own_delta():
     assert strengths == [10.0, 17.0]
 
 
+def test_apply_alignment_king_bonus_marks_the_unit_the_title_made_fanatic():
+    # The report tells "who were blessed by a band of priests sent by the League of Pagan Clerics" for that unit only.
+    columns = [
+        [BattleUnit(ArmyType.BOWMEN, 10, alignment_king_bonus_if_selected=4.0)],
+        [BattleUnit(ArmyType.AXEMEN, 10, alignment_king_bonus_if_selected=7.0)],
+    ]
+
+    _apply_alignment_king_bonus(columns, [10.0, 10.0], ScriptedRandom([], choice_indices=[1]))
+
+    assert [column[0].alignment_king_selected for column in columns] == [False, True]
+
+
 def test_apply_alignment_king_bonus_is_independent_of_the_duellist_bonus():
     # A column eligible for both grants (a Supreme Commander holding both
     # Duellist and an alignment-King title) gets both, via two genuinely
