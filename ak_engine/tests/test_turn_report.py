@@ -19917,3 +19917,21 @@ def test_the_vengeance_quest_names_the_hero_to_kill_in_the_offer_and_in_the_paym
 
     assert "Gorbash" in offer and "a hated rival" not in offer
     assert "Gorbash" in paid and "a hated rival" not in paid
+
+
+def test_the_travel_quest_names_the_province_to_go_to():
+    from ak_engine.models.treasure import Treasure
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Fusky", Race.ORCISH, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(78, 1, "Pascal", HexCoord(0, 0)))
+    state.provinces[HexCoord(9, 4)] = ProvinceState(HexCoord(9, 4), Terrain.PLAINS, Race.HUMAN, name="Mongu")
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX, guardian_talk_reply=MonsterTalkReply.R_VISIT,
+        guardian_quest_location=Treasure.QUEST_MERMAID_AMULET, quest_visit_coord=HexCoord(9, 4),
+    )
+
+    text = " ".join(describe_search(result, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+
+    assert "go to Mongu, charm a mermaid" in text and "a distant province" not in text

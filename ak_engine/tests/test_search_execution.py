@@ -7853,3 +7853,145 @@ def test_the_king_who_sold_his_soul_can_no_longer_practice_white_magic():
 
     assert state.leaders[LEADER_ID].skills.pair_for_ability(Ability.WHITE) == before
     assert state.leaders[LEADER_ID].pending_skill_advancement == {}
+
+
+# -- The travel quest (R_VISIT): a land province 5-7 moves away ---------------------------------------------------------
+
+from ak_engine.models.game_state import ProvinceState  # noqa: E402
+from ak_engine.models.map import Terrain  # noqa: E402
+from ak_engine.models.race import Race  # noqa: E402
+from ak_engine.turn.movement import hex_distance_wrapped  # noqa: E402
+from ak_engine.turn.search_execution import note_quest_visits, select_visit_province  # noqa: E402
+
+
+def _visit_world(*, sea_columns=()):
+    state = _quest_state_without_talk()
+    for x in range(0, 16):
+        for y in range(0, 12):
+            terrain = Terrain.SEA if x in sea_columns else Terrain.PLAINS
+            state.provinces[HexCoord(x, y)] = ProvinceState(HexCoord(x, y), terrain, Race.HUMAN)
+    return state
+
+
+def _quest_state_without_talk():
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].location = LOCATION
+    return state
+
+
+def _visit_feature(state, coord=HexCoord(8, 6)):
+    feature = _slave_feature(coord=coord, treasure=Treasure.WAND_FIREBALL)
+    state.add_feature(feature)
+    return feature
+
+
+def _talk(state, reply):
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=reply
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel"):
+        return execute_search(state, LEADER_ID, _talk_request(1, Maneuver.MELEE), ScriptedRandom([0.9] * 20))
+
+
+def test_the_visit_province_is_a_land_province_five_to_seven_moves_from_the_feature():
+    state = _visit_world(sea_columns=(0, 1, 2, 3, 4, 5, 6, 7))
+    feature = _visit_feature(state)
+
+    coord = select_visit_province(state, feature)
+
+    assert coord is not None
+    assert state.provinces[coord].terrain is not Terrain.SEA
+    assert 5 <= hex_distance_wrapped(feature.coord, coord, state.board_width) <= 7
+    assert select_visit_province(state, feature) == coord  # stable for the same monster at the same feature
+
+
+def test_a_map_with_no_province_that_far_gives_no_destination():
+    state = _state_with_leader()
+    state.provinces[HexCoord(8, 7)] = ProvinceState(HexCoord(8, 7), Terrain.PLAINS, Race.HUMAN)
+    feature = _visit_feature(state)
+
+    assert select_visit_province(state, feature) is None
+
+
+def test_the_talk_fixes_the_destination_and_the_report_names_it():
+    state = _visit_world()
+    feature = _visit_feature(state)
+    state.leaders[LEADER_ID].location = feature.coord
+
+    result = _talk(state, MonsterTalkReply.R_VISIT)
+
+    assert feature.quest_visit_coord is not None and result.quest_visit_coord == feature.quest_visit_coord
+    assert feature.quest_visit_done is False
+
+
+def test_the_journey_must_be_made_before_the_visit_quest_can_be_fulfilled():
+    state = _visit_world()
+    feature = _visit_feature(state)
+    state.leaders[LEADER_ID].location = feature.coord
+    _talk(state, MonsterTalkReply.R_VISIT)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored") as roll:
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.SERVICE_NOT_PERFORMED,) and not roll.called
+    assert feature.pending_deal_leader_id == LEADER_ID and feature.treasure is Treasure.WAND_FIREBALL
+
+
+def test_arriving_in_the_province_turns_the_quest_item_into_may_fulfill_now():
+    state = _visit_world()
+    feature = _visit_feature(state)
+    state.leaders[LEADER_ID].location = feature.coord
+    _talk(state, MonsterTalkReply.R_VISIT)
+    quest_item = state.items_held_by(LEADER_ID)[0]
+    original = quest_item.treasure
+
+    note_quest_visits(state, LEADER_ID)  # still at the feature
+    assert feature.quest_visit_done is False and quest_item.treasure is original
+
+    state.leaders[LEADER_ID].location = feature.quest_visit_coord
+    note_quest_visits(state, LEADER_ID)
+
+    assert feature.quest_visit_done is True
+    assert quest_item.treasure.name.endswith("_FULFILL") and quest_item.charges == feature.feature_id
+
+
+def test_another_heros_journey_does_not_count():
+    state = _visit_world()
+    state.add_leader(LeaderState(55, 1, "Wanderer", LOCATION))
+    feature = _visit_feature(state)
+    state.leaders[LEADER_ID].location = feature.coord
+    _talk(state, MonsterTalkReply.R_VISIT)
+
+    state.leaders[55].location = feature.quest_visit_coord
+    note_quest_visits(state)
+
+    assert feature.quest_visit_done is False
+
+
+def test_after_the_journey_the_monster_honors_with_the_visit_bonus_and_pays():
+    state = _visit_world()
+    feature = _visit_feature(state)
+    state.leaders[LEADER_ID].location = feature.coord
+    _talk(state, MonsterTalkReply.R_VISIT)
+    state.leaders[LEADER_ID].location = feature.quest_visit_coord
+    note_quest_visits(state)
+    state.leaders[LEADER_ID].location = feature.coord
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True) as roll:
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert roll.call_args.kwargs["bonus"] == 125
+    assert result.quest_fulfilled is MonsterTalkReply.R_VISIT and result.quest_treasure is Treasure.WAND_FIREBALL
+    assert [item.treasure for item in state.items_held_by(LEADER_ID)] == [Treasure.WAND_FIREBALL]  # the marker is gone
+
+
+def test_a_visit_quest_with_no_destination_asks_nothing_of_the_journey():
+    state = _state_with_leader()
+    feature = _visit_feature(state)
+    state.leaders[LEADER_ID].location = feature.coord
+    _talk(state, MonsterTalkReply.R_VISIT)
+    assert feature.quest_visit_coord is None
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True):
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_fulfilled is MonsterTalkReply.R_VISIT

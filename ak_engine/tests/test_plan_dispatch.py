@@ -3462,3 +3462,24 @@ def test_raising_skeletons_in_a_province_held_by_an_enemy_forces_a_battle():
 
     assert result.skeletal_army_raised
     assert isinstance(result.battle_report, BattleReport)
+
+
+def test_run_leader_plan_notes_a_travel_quest_journey_after_each_phase():
+    from ak_engine.models.feature import Feature, FeatureType
+    from ak_engine.models.monster import Monster
+    from ak_engine.models.treasure import Treasure
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    leader, state = _wanderer_leader_and_state()
+    here = state.leaders[LEADER_ID].location
+    feature = Feature(
+        feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX,
+        guardian_talk_reply_id=MonsterTalkReply.R_VISIT.value, pending_deal_leader_id=LEADER_ID, quest_visit_coord=here,
+    )
+    state.add_feature(feature)
+    item = state.add_item(Treasure.QUEST_LUCKY_PENNY, LEADER_ID, 1)
+
+    with patch("ak_engine.turn.plan_dispatch.dispatch_phase", return_value=NoOpResult(action=ActionCode.LMOVE)):
+        run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert feature.quest_visit_done is True and item.treasure is Treasure.QUEST_LUCK_FULFILL

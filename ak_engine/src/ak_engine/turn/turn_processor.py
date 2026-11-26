@@ -326,6 +326,7 @@ from ak_engine.turn.move_execution import (
     wind_walking_army_ids_of,
 )
 from ak_engine.turn.movement import MapBounds, resolve_move
+from ak_engine.turn.search_execution import note_quest_visits
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.sickness import apply_sickness
@@ -1080,6 +1081,7 @@ def run_turn(
     # same real turn boundary, rather than synchronously inside
     # GameState.remove_leader() itself. See that method's own docstring
     # for the full reasoning.
+    note_quest_visits(state)  # a hero who ended the turn in his quest's province (chases, retreats, ...)
     state.install_pending_royal_heirs()
     deliver_squire_items(state)  # the Heir is in place: a dead King's squire reaches him
     state.turn_number += 1

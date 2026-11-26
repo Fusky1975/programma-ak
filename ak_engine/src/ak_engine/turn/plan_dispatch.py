@@ -446,7 +446,7 @@ from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.rumor import RUMOR_CHANCE_BY_ACTION, resolve_rumor_generation
 from ak_engine.turn.search_decode import decode_search_phase
-from ak_engine.turn.search_execution import SearchExecutionResult, execute_search
+from ak_engine.turn.search_execution import SearchExecutionResult, execute_search, note_quest_visits
 from ak_engine.turn.sense_magic_items import sense_magic_items_in_province
 from ak_engine.turn.trade_decode import decode_trade_phase, rewrite_trade_as_secret_spell_cast
 from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult, execute_curator_research, execute_give
@@ -1819,6 +1819,7 @@ def run_leader_plan(
                     if rumor.phase_label is None and rumor.leader_id == leader.leader_id:
                         rumor.phase_label = label
                 note_spy_watch(state, leader.leader_id, phase, result)
+                note_quest_visits(state, leader.leader_id)
             except Exception as exc:  # noqa: BLE001 -- intentionally broad, see docstring
                 results.append(PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, None, exc))
                 continue

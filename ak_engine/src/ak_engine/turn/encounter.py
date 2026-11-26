@@ -6070,6 +6070,7 @@ def select_monster_talk_reply(
 # unsourced "skip the term" convenience it replaces.
 FULFILL_HELLISH_REFERENCE_ORDINAL = ALIGNMENT_ORDINAL[Alignment.ANTI_HOLY]  # 6, dossier's "Hellish" reference point
 FULFILL_COMMON_BONUS = 100  # dossier SS79's own "formula comune" bonus
+FULFILL_VISIT_BONUS = 125  # dossier SS79/SS81: the travel quest (RVisit) is a little more favourable
 FULFILL_UNRECORDED_ALIGNMENT_FALLBACK = Alignment.NEUTRAL  # project-original, NOT dossier-sourced
 
 
