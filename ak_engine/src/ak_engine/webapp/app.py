@@ -1292,6 +1292,9 @@ def create_app(games_root: Path | None = None) -> Flask:
             features_by_coord=features_by_coord,
             terrains=list(Terrain),
             races=list(Race),
+            army_types=list(ArmyType),
+            qualities=list(Quality),
+            feature_types=list(FeatureType),
             error=request.args.get("error"),
         )
 
@@ -2399,7 +2402,13 @@ def create_app(games_root: Path | None = None) -> Flask:
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
 
+        # The Provinces table's own inline "add army" forms post here with ``?return_to=provinces`` and go back to
+        # that table (to the same province's row) instead of to the new army's editor.
+        back_to_provinces = request.args.get("return_to") == "provinces"
+
         def _create_error(message: str):
+            if back_to_provinces:
+                return redirect(url_for("provinces_list", slug=slug, error=message))
             return redirect(url_for("armies_list", slug=slug, error=message))
 
         try:
@@ -2448,6 +2457,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             )
         )
         save_game(root, slug, state)
+        if back_to_provinces:
+            return redirect(url_for("provinces_list", slug=slug, _anchor=f"province-{x}-{y}"))
         return redirect(url_for("army_edit", slug=slug, army_id=army_id))
 
     @app.post("/games/<slug>/armies/office-holders")
@@ -2916,7 +2927,12 @@ def create_app(games_root: Path | None = None) -> Flask:
         if coord not in state.provinces:
             return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
 
+        # Same ``?return_to=provinces`` convention as ``armies_create``: the Provinces table's own inline "add feature".
+        back_to_provinces = request.args.get("return_to") == "provinces"
+
         def _create_error(message: str):
+            if back_to_provinces:
+                return redirect(url_for("provinces_list", slug=slug, error=message))
             return redirect(url_for("feature_new", slug=slug, x=x, y=y, error=message))
 
         try:
@@ -2947,6 +2963,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             )
         )
         save_game(root, slug, state)
+        if back_to_provinces:
+            return redirect(url_for("provinces_list", slug=slug, _anchor=f"province-{x}-{y}"))
         return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
 
     @app.get("/games/<slug>/turn0")

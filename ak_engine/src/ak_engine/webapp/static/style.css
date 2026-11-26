@@ -322,3 +322,9 @@ button.danger:hover {
   font-style: italic;
   margin: 0;
 }
+
+/* Provinces table: the collapsed "+ Add army" / "+ Add feature" forms of each row. */
+details.add-here { margin-top: 0.3rem; }
+details.add-here > summary { cursor: pointer; font-size: 0.85em; color: var(--link, #4a6fa5); }
+details.add-here form { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
+details.add-here select { max-width: 11em; }

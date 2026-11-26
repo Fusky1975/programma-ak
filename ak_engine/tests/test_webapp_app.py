@@ -9585,3 +9585,104 @@ def test_games_list_offers_an_export_link(tmp_path):
     html = _client(tmp_path).get("/").get_data(as_text=True)
 
     assert "/games/debug-me/export" in html
+
+
+# ---- Provinces table: inline "+ Add army" / "+ Add feature" ---------------------------------------------------------
+
+
+def test_provinces_table_offers_add_army_and_add_feature_for_every_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+
+    html = client.get(f"/games/{meta.slug}/provinces").get_data(as_text=True)
+
+    assert html.count("+ Add army") == len(state.provinces)
+    assert html.count("+ Add feature") == len(state.provinces)
+    assert 'id="province-0-0"' in html
+    assert f"/games/{meta.slug}/armies/new?return_to=provinces" in html
+    assert f"/games/{meta.slug}/provinces/0/0/features/new?return_to=provinces" in html
+
+
+def test_adding_an_army_from_the_provinces_table_returns_to_that_row(tmp_path):
+    from ak_engine.models.army_type import ARMY_TABLE
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom_id = next(iter(state.kingdoms))
+    before = set(state.armies)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/new?return_to=provinces",
+        data={"army_type": "LEGION", "quality": "AVERAGE", "kingdom_id": str(kingdom_id), "location_x": "3", "location_y": "2"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/games/{meta.slug}/provinces#province-3-2")
+    _, state = open_game(tmp_path, meta.slug)
+    (new_id,) = set(state.armies) - before
+    army = state.armies[new_id]
+    assert (army.army_type, army.quality, army.kingdom_id, army.location) == (ArmyType.LEGION, Quality.AVERAGE, kingdom_id, HexCoord(3, 2))
+    assert army.movement_points == ARMY_TABLE[ArmyType.LEGION].speed
+    assert "Legion" in client.get(f"/games/{meta.slug}/provinces").get_data(as_text=True)
+
+
+def test_an_invalid_army_from_the_provinces_table_shows_the_error_on_that_page(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/new?return_to=provinces",
+        data={"army_type": "NOT_A_TYPE", "quality": "AVERAGE", "location_x": "3", "location_y": "2"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Please choose a valid army type." in response.get_data(as_text=True)
+    assert "+ Add army" in response.get_data(as_text=True)  # still the provinces page
+
+
+def test_adding_a_feature_from_the_provinces_table_returns_to_that_row(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    before = set(state.features)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/features/new?return_to=provinces", data={"kind": "TEMPLE"}
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/games/{meta.slug}/provinces#province-{coord.x}-{coord.y}")
+    _, state = open_game(tmp_path, meta.slug)
+    (new_id,) = set(state.features) - before
+    assert state.features[new_id].coord == coord and state.features[new_id].kind.name == "TEMPLE"
+
+
+def test_the_plain_add_forms_still_go_to_the_editors(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+
+    feature = client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/features/new", data={"kind": "TEMPLE"})
+    army = client.post(
+        f"/games/{meta.slug}/armies/new",
+        data={"army_type": "LEGION", "quality": "AVERAGE", "location_x": str(coord.x), "location_y": str(coord.y)},
+    )
+
+    assert "/features/" in feature.headers["Location"] and "/provinces" not in feature.headers["Location"]
+    assert "/armies/" in army.headers["Location"]
+
+
+def test_heroes_table_shows_each_leaders_number_next_to_the_name(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+
+    html = client.get(f"/games/{meta.slug}/leaders").get_data(as_text=True)
+
+    for leader in state.leaders.values():
+        assert f'{leader.name} <span class="leader-number">(#{leader.leader_id})</span>' in html
