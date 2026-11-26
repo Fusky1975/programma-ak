@@ -2159,6 +2159,79 @@ def render_uncontested_conquest(
     return render(variant, {"<": attacker_name, "@": province_name}, rng=rng, is_sea=is_sea)
 
 
+# HostAK/TP/PROSE/INVAS.X -- the opening of a conquest of somebody's province (``SAY.PAS _BInvas``, an ``S_Army`` news
+# item: every King who may read it reads it). ``<3`` is the invader's full name (title, name, epithet and "(#n)"),
+# ``<`` his short name, ``[3`` the owner, `` ` `` the terrain.
+_INVAS_TEMPLATES: list[str] = [
+    "<3 sent/Rordered ^A invasion force into the {adjacent }` province of @, owned by [3.",
+    "a {great }host/Sfleet of {savage/Smighty }warriors/Sships carried the banner of <3 into the ` province of @, "
+    "ruled/Rheld by [3.",
+    "a conquering_horde/Sfleet owing their allegiance to <3 invaded the province of @, ^A ` area owned/Rruled by [3.",
+    "an_army/Sa_fleet coming_from/Rsent_by the empire of <3 invaded/Rentered @, hoping to conquer/Rsubjugate that "
+    "province owned/Rruled by [3 and made up of great/Rextensive `s.",
+    "<3's minions/Rforces initiated ^A campaign of conquest directed_at/Rin @, ^A ` province owing {its }allegiance to [3.",
+    "soldiers/Sships bearing/Rcarrying the battle-standards of the <ian empire marched_on/Scruised_into the ` "
+    "province of @, ^A land garrisoned/Rdefended by the forces/Rsoldiers of [3.",
+]
+
+# HostAK/TP/PROSE/INVWIN.X -- the invader wins the battle (``SAY.PAS _BInv``); ``<`` is the commander, ``<2`` the King.
+_INVWIN_TEMPLATES: list[str] = [
+    "@ was overrun/Sconquered by the forces/Sfleets of <2.",
+    "<'s host/Sarmada concluded/Rended the campaign victoriously/Rsuccessfully and conquered {the province of }@.",
+    "<'s {well-planned }campaign effected/Raccomplished the conquest of @.",
+    "@ was overrun/Sconquered by <'s men/Rforces in a hard-fought/Rbloody campaign.",
+]
+
+# ``SAY.PAS _BCdrs`` (``S_Army``): who led the two sides.
+_INVASION_ATTACKER_COMMAND_TEMPLATE = "< commanded/Rwas_in_command_of the attacking/Rinvading armies/Sfleet."
+_INVASION_DEFENDER_COMMAND_TEMPLATE = "the defenders/Rdefending_forces were led/Rcommanded by [."
+
+
+def render_invasion_intro(
+    invader_full_name: str,
+    invader_short_name: str,
+    province_name: str,
+    terrain_name: str,
+    owner_label: str,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """INVAS.X: "A conquering horde owing their allegiance to Lord Babba Sissoko Master orango (#0) invaded the
+    province of Orielle, a Plain area ruled by Bradipo I (#2)."."""
+
+    values = {
+        "<3": invader_full_name,
+        "<": invader_short_name,
+        "@": province_name,
+        "`s": f"{terrain_name}s",
+        "`": terrain_name,
+        "[3": owner_label,
+    }
+    return render(pick_variant(_INVAS_TEMPLATES, rng), values, rng=rng, is_sea=is_sea)
+
+
+def render_invasion_commanders(
+    attacker_commander: str, defender_commander: str, rng: random.Random, *, is_sea: bool = False
+) -> list[str]:
+    """``_BCdrs``: "Tlazolteotl (#88) was in command of the attacking armies." and "The defending forces were
+    commanded by Prometeo (#5)."."""
+
+    return [
+        render(_INVASION_ATTACKER_COMMAND_TEMPLATE, {"<": attacker_commander}, rng=rng, is_sea=is_sea),
+        render(_INVASION_DEFENDER_COMMAND_TEMPLATE, {"[": defender_commander}, rng=rng),
+    ]
+
+
+def render_invasion_won(
+    commander: str, invader_king: str, province_name: str, rng: random.Random, *, is_sea: bool = False
+) -> str:
+    """INVWIN.X: "Erg Iguidi was overrun by Babba Sissoko (#0)'s forces in a bloody campaign."."""
+
+    values = {"<2": invader_king, "<": commander, "@": province_name}
+    return render(pick_variant(_INVWIN_TEMPLATES, rng), values, rng=rng, is_sea=is_sea)
+
+
 def render_spy_report_opening(spy_name: str, province_name: str, rng: random.Random) -> str:
     """Renders ASpy's report-opening sentence (SPY.X).
 
@@ -6768,14 +6841,17 @@ _BATLDR_TEMPLATES: list[str] = [
 ]
 
 
-def render_battle_leader_intro(commander_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+def render_battle_leader_intro(
+    commander_name: str, rng: random.Random, *, is_sea: bool = False, possessive: str | None = None
+) -> str:
     """Renders BATLDR.X's sentence for a King/Hero personally commanding
     a battle column (Phase 593). ``is_sea`` (Phase 74) resolves each
-    variant's own "/S" marker -- every one of the five carries one.
+    variant's own "/S" marker -- every one of the five carries one. ``possessive`` is the ``>`` marker ("his",
+    "her"); without one the name's own possessive stands in, as everywhere in the ACTION REPORT.
     """
 
     variant = pick_variant(_BATLDR_TEMPLATES, rng)
-    values = {"<3": commander_name, ">": f"{commander_name}'s"}
+    values = {"<3": commander_name, ">": possessive or f"{commander_name}'s"}
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
@@ -17059,6 +17135,12 @@ def _season_phrase_for_phase_label(phase_label: str) -> str:
 
 
 def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[tuple[str, BattleReport]]:
+    """``_battle_reports_with_leaders()`` without the leader who reached each battle."""
+
+    return [(phase_label, report) for phase_label, report, _leader in _battle_reports_with_leaders(results)]
+
+
+def _battle_reports_with_leaders(results: list[PhaseDispatchResult]) -> list[tuple[str, BattleReport, int]]:
     """Every ``(phase_label, BattleReport)`` pair reachable from ``results``
     -- a battle can surface three different ways depending which real call site produced
     it (``turn/turn_processor.py``'s own docstring lists all four:
@@ -17104,7 +17186,7 @@ def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[tup
     object, so this never collapses two real, separate battles.
     """
 
-    reports: list[tuple[str, BattleReport]] = []
+    reports: list[tuple[str, BattleReport, int]] = []
     seen_report_ids: set[int] = set()
     for entry in results:
         result = entry.result
@@ -17121,7 +17203,7 @@ def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[tup
         if battle_report is None or id(battle_report) in seen_report_ids:
             continue
         seen_report_ids.add(id(battle_report))
-        reports.append((entry.phase_label, battle_report))
+        reports.append((entry.phase_label, battle_report, entry.leader_id))
     return reports
 
 
@@ -17142,66 +17224,262 @@ def _battle_defender_display_name(state: GameState, defender_kingdom_id: int | N
     return f"the natives of {_province_label(state, coord)}"
 
 
-def record_battle_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
-    """Populates ``state.world_events`` (Phase 231) from every battle
-    found in ``results`` (``turn/turn_processor.py run_turn()``'s own
-    return value) -- the one real event *source* this project wires for
-    GENERAL INTELLIGENCE REPORT so far. See ``describe_general_
-    intelligence_report()``'s own docstring for the full list of
-    confirmed-real, still-deferred event types (movement, plagues,
-    terrain illusions, cast spells...).
+def _numbered_leader_name(state: GameState, leader_id: int | None) -> str | None:
+    """"Tlazolteotl (#88)": a character as the invasion paragraphs of the GENERAL INTELLIGENCE REPORT name him."""
 
-    **Must be called exactly once per turn, before any
-    ``compose_letter_report()`` call for that turn** -- world events are
-    turn-global, not per-kingdom, so calling this once per King (the way
-    every other section composer here is called) would duplicate every
-    entry once per King. This mirrors ``run_turn()`` itself: a single
-    call whose output every King's own report composition then reads.
+    name = _leader_name(state, leader_id) if leader_id is not None else None
+    return f"{name} (#{leader_id})" if name is not None else None
 
-    **Only the battle-winner sentence is recorded, not the fuller
-    per-column clash narrative** ``describe_battle()`` can also render.
-    This is a deliberate scope split with its own sibling, not an
-    oversight: the real fixture text's own richest example (`SE3__T2.K2`
-    line 506, "Circe (#8)... invaded Big Sky... Big Sky was overrun by
-    Circe (#8)'s men in a hard-fought campaign") is exactly this outer
-    summary sentence (`render_battle_winner()`'s own template), built
-    from King/province names alone -- a real, sourced, turn-global
-    broadcast every Kingdom sees via GENERAL INTELLIGENCE REPORT.
-    **Phase 711**: the fuller per-column narrative is now handled by
-    the separate `record_battle_narratives()` (right below), which
-    populates `state.battle_narratives_by_kingdom` for the two Kingdoms
-    actually involved, read from their own ACTION REPORT -- both
-    mechanisms coexist deliberately, one broadcast-and-thin, one
-    personal-and-detailed.
 
-    A battle with no ``BattleReport.defender_kingdom_id`` (independent
-    defenders: a neutral province's native garrison or an independent
-    Hero's army) is no longer skipped as of 2026-11-21 -- see
-    ``_battle_defender_display_name()``.
+def _king_full_name(state: GameState, kingdom_id: int) -> str:
+    """"Lord Babba Sissoko Master orango (#0)": the King with his title and epithet (``<3`` in the prose files)."""
 
-    **Phase 257**: every recorded line is now prefixed with its own "In
-    <season>, " (``_season_phrase_for_phase_label()``) -- see that
-    function's own docstring for the sourcing and the documented
-    per-phase-dedup simplification.
+    short = _kingdom_display_name(state, kingdom_id)
+    kingdom = state.kingdoms.get(kingdom_id)
+    if kingdom is None:
+        return short
+    bare = short[: -len(f" (#{kingdom_id})")]
+    return " ".join(part for part in (kingdom.king_title_prefix, bare, kingdom.king_title_suffix) if part) + f" (#{kingdom_id})"
+
+
+def _side_commander_label(
+    state: GameState, leader_id: int | None, kingdom_id: int | None, province: ProvinceState
+) -> str:
+    """Who led a side, for ``_BCdrs``: the general, else the Kingdom's King, else the natives' chieftain."""
+
+    named = _numbered_leader_name(state, leader_id)
+    if named is not None:
+        return named
+    if kingdom_id is not None:
+        return _kingdom_display_name(state, kingdom_id)
+    return _unled_army_commander_name(province)
+
+
+def _bare_repeats(text: str, numbered: str) -> str:
+    """The second mention of a name inside one sentence drops its "(#n)" ("... and Tlazolteotl there established
+    our reign")."""
+
+    first = text.find(numbered)
+    if first < 0:
+        return text
+    bare = numbered.rsplit(" (#", 1)[0]
+    cut = first + len(numbered)
+    return text[:cut] + text[cut:].replace(numbered, bare)
+
+
+def describe_invasion_paragraph(
+    state: GameState, battle_report: BattleReport, rng: random.Random
+) -> str | None:
+    """The paragraph the GENERAL INTELLIGENCE REPORT tells of a battle the reader did not fight (``SAY.PAS``
+    ``_BInvas``, ``_BCdrs``, ``_BInv``/``_BDef``, all ``S_Army``): the invasion (INVAS.X), who led the two sides, and
+    how it ended (INVWIN.X, or DEFWIN.X when the invader was beaten). ``None`` for a tie (no template exists)."""
+
+    coord = battle_report.province_coord
+    attacker_id = battle_report.attacker_kingdom_id
+    province = state.provinces.get(coord) if coord is not None else None
+    if province is None or attacker_id is None or battle_report.battle_result.winner == "tie":
+        return None
+    is_sea = province.effective_terrain() == Terrain.SEA
+    province_name = _province_label(state, coord)
+    defender_id = battle_report.defender_kingdom_id
+    owner_label = _kingdom_display_name(state, defender_id) if defender_id is not None else _unled_army_commander_name(province)
+    attacker_commander = _side_commander_label(state, battle_report.attacker_commander_leader_id, attacker_id, province)
+    defender_commander = _side_commander_label(state, battle_report.defender_commander_leader_id, defender_id, province)
+    king = _kingdom_display_name(state, attacker_id)
+    sentences = [
+        render_invasion_intro(
+            _king_full_name(state, attacker_id), king, province_name, TERRAIN_NAME[province.effective_terrain()],
+            owner_label, rng, is_sea=is_sea,
+        ),
+        *render_invasion_commanders(attacker_commander, defender_commander, rng, is_sea=is_sea),
+    ]
+    if battle_report.battle_result.winner == "attacker":
+        sentences.append(render_invasion_won(attacker_commander, king, province_name, rng, is_sea=is_sea))
+    else:
+        sentences.append(
+            render(pick_variant(_DEFWIN_TEMPLATES, rng), {"<": attacker_commander, "@": province_name}, rng=rng, is_sea=is_sea)
+        )
+    return _tidy_sentences(" ".join(sentences))
+
+
+def _gir_leader_retreat(
+    state: GameState, leader_id: int, destination: str, alone: bool, announced: set[int], rng: random.Random
+) -> str | None:
+    """A leader's retreat as the GENERAL INTELLIGENCE REPORT tells it: "Rolando (#55) retreated to Kajaani." /
+    "Tiffany (#87) made for the safety of Kajaani with her motley army." (RETREAT.X, ``_BLRetr``) and, for a
+    commander none of whose forces survived, "His forces completely destroyed, Marlon (#68) escaped alone to
+    Mare Imbrium." (``_LRFlee``)."""
+
+    name = _gir_name(state, leader_id, announced)
+    if name is None:
+        return None
+    leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+    female = leader is not None and leader.sex is not None and leader.sex.name.upper().startswith("F")
+    possessive = "her" if female else "his"
+    if alone:
+        template = "> forces completely dispersed/Rdestroyed, < fled/Rescaped {frightened and }alone to ^S."
+        text = render(template, {"<": name, "^S": destination, ">": possessive}, rng=rng)
+        return text[0].upper() + text[1:]
+    return render(pick_variant(_RETREAT_TEMPLATES, rng), {"<": name, "^S": destination, ">": possessive}, rng=rng)
+
+
+def describe_battle_for_outsider(
+    state: GameState,
+    battle_report: BattleReport,
+    side: str,
+    rng: random.Random,
+    announced: set[int],
+    *,
+    phase: int | None = None,
+) -> list[str]:
+    """The narrative of a battle as the GENERAL INTELLIGENCE REPORT of the *other* side's reader carries it (real SE3
+    reports: under "Kingdom of Prometeo (#5):", the paragraphs of the Alderwood battle the reader fought against
+    Prometeo, told from Prometeo's side): the roster of ``side``'s commanders, what moved its men, the column clashes
+    and where its leaders fled -- not the reader's own luck, victory and quality changes, which his ACTION REPORT has.
+    One string per paragraph."""
+
+    coord = battle_report.province_coord
+    province = state.provinces.get(coord) if coord is not None else None
+    if province is None:
+        return []
+    is_sea = province.effective_terrain() == Terrain.SEA
+    attacking = side == "attacker"
+    commanding = battle_report.attacker_commanding_leader_ids if attacking else battle_report.defender_commanding_leader_ids
+    present = battle_report.attacker_present_leader_ids if attacking else battle_report.defender_present_leader_ids
+    home_ids = battle_report.attacker_home_province_leader_ids if attacking else battle_report.defender_home_province_leader_ids
+    fanatics = battle_report.attacker_race_fanatic_units if attacking else battle_report.defender_race_fanatic_units
+    kingdom_id = battle_report.attacker_kingdom_id if attacking else battle_report.defender_kingdom_id
+    army_names = build_battle_army_names(state, battle_report)
+
+    paragraphs: list[str] = []
+    opening: list[str] = []
+    for leader_id in sorted(commanding):
+        name = _gir_name(state, leader_id, announced)
+        if name is not None:
+            opening.append(
+                render_battle_leader_intro(name, rng, is_sea=is_sea, possessive=_possessive_for(state, leader_id))
+            )
+    if not commanding and not present and kingdom_id is not None:
+        opening.append(render_battle_leader_no_generals(_kingdom_display_name(state, kingdom_id), rng))
+    for leader_id in home_ids:
+        name = _gir_name(state, leader_id, announced)
+        if name is not None:
+            opening.append(render_homeland_defense_morale(name, rng))
+    for army_id, race, holder_id in fanatics:
+        army_name = army_names.get(army_id)
+        holder = _leader_name(state, holder_id)
+        if army_name is not None and holder is not None:
+            opening.append(render_race_fanaticism(army_name, race, holder, rng))
+    if battle_report.duel_loser_side == side:
+        loser_id = battle_report.attacker_commander_leader_id if attacking else battle_report.defender_commander_leader_id
+        loser = _leader_name(state, loser_id) if loser_id is not None else None
+        if loser is not None and battle_report.duel_bluff is None:
+            opening.append(
+                render_commander_fled_demoralized(loser, rng)
+                if battle_report.duel_loser_fled
+                else render_commander_died_demoralized(loser, rng)
+            )
+    if opening:
+        paragraphs.append(_tidy_sentences(" ".join(opening)))
+
+    luck_leader_ids = _battle_luck_leader_ids(state, battle_report, phase)
+    for column in battle_report.battle_result.columns:
+        if not column.attacker_units or not column.defender_units:
+            continue
+        attacker_army = army_names.get(column.attacker_units[0].source_id)
+        defender_army = army_names.get(column.defender_units[0].source_id)
+        if attacker_army is None or defender_army is None:
+            continue
+        sentences = [render_column_clash(column, attacker_army, defender_army, rng, is_sea=is_sea)]
+        if luck_leader_ids is not None:
+            cluck = render_cluck_narration(
+                column, attacker_army, rng, province_coord=coord, attacker_leader_id=luck_leader_ids[0],
+                defender_leader_id=luck_leader_ids[1], phase=phase,
+            )
+            if cluck is not None:
+                sentences.append(cluck)
+        paragraphs.append(_tidy_sentences(" ".join(sentences)))
+
+    side_ids = set(commanding) | set(present)
+    retreats: list[str] = []
+    for leader_id, destination in battle_report.leader_retreat_destination_coord.items():
+        if leader_id not in side_ids:
+            continue
+        line = _gir_leader_retreat(
+            state, leader_id, _province_label(state, destination), leader_id in battle_report.leaders_retreated_alone,
+            announced, rng,
+        )
+        if line is not None:
+            retreats.append(line)
+    if retreats:
+        paragraphs.append(_tidy_sentences(" ".join(retreats)))
+    return paragraphs
+
+
+def _battle_luck_leader_ids(
+    state: GameState, battle_report: BattleReport, phase: int | None
+) -> tuple[int, int] | None:
+    """The two leaders BLUCK/CLUCK name, ``None`` when the battle has no phase, no place, or a side nobody leads."""
+
+    if phase is None or battle_report.province_coord is None:
+        return None
+    attacker_leader_id = _bluck_cluck_leader_id(
+        battle_report.attacker_commander_leader_id, battle_report.attacker_kingdom_id, state
+    )
+    defender_leader_id = _bluck_cluck_leader_id(
+        battle_report.defender_commander_leader_id, battle_report.defender_kingdom_id, state
+    )
+    if attacker_leader_id is None or defender_leader_id is None:
+        return None
+    return attacker_leader_id, defender_leader_id
+
+
+def record_battle_world_events(
+    state: GameState, results: list[PhaseDispatchResult], rng: random.Random, announced: set[int] | None = None
+) -> None:
+    """Populates ``state.world_events`` with every battle found in ``results`` (``turn/turn_processor.py
+    run_turn()``'s own return value) for the GENERAL INTELLIGENCE REPORT. **Must be called exactly once per turn,
+    before any ``compose_letter_report()`` call** -- world events are turn-global, not per-kingdom.
+
+    **2026-11-26 audit against the real SE3 corpus and ``SAY.PAS``.** A battle is told in two ways:
+
+    * the paragraph of the battle as news of the world (``_BInvas``/``_BCdrs``/``_BInv``/``_BDef``, ``S_Army``):
+      the invasion (INVAS.X), who led the two sides, how it ended (INVWIN.X / DEFWIN.X) -- filed under the attacker
+      *and* under the defender, whoever owns the province in the end (SE3__T10.K1: the same paragraph under "Kingdom
+      of Babba Sissoko (#0)" and under "Kingdom of Bradipo I (#2)"). The earlier version told WINNER.X ("the forces
+      of X broke through ...") here, which is the line of the full narrative, not of this paragraph, and never named
+      the commanders. The two Kingdoms that fought do not read it: they have the battle in their own ACTION REPORT;
+    * the narrative of the battle (``S_Batt``) for a Kingdom that *took part*: filed under its opponent, told from the
+      opponent's side (``describe_battle_for_outsider()``). The earlier docstring held that the per-column narrative
+      never appears in a real GIR; it appears in every one of the 14 battles the reader of SE3__T5-T11.K1 fought.
+
+    A Move that started the battle is told just before it ("Tlazolteotl (#88) flew into Zululand.").
     """
 
-    for phase_label, battle_report in _battle_reports_from_results(results):
+    announced = announced if announced is not None else set()
+    for phase_label, battle_report, leader_id in _battle_reports_with_leaders(results):
         coord = battle_report.province_coord
-        if coord is None or battle_report.attacker_kingdom_id is None:
+        attacker_id = battle_report.attacker_kingdom_id
+        if coord is None or attacker_id is None or battle_report.battle_result.winner == "tie":
             continue
-        province = state.provinces.get(coord)
-        is_sea = province is not None and province.effective_terrain() == Terrain.SEA
-        winner_sentence = render_battle_winner(
-            battle_report.battle_result,
-            _kingdom_display_name(state, battle_report.attacker_kingdom_id),
-            _battle_defender_display_name(state, battle_report.defender_kingdom_id, coord),
-            _province_label(state, coord),
-            rng,
-            is_sea=is_sea,
-        )
-        if winner_sentence is not None:
-            prefix = _season_phrase_for_phase_label(phase_label)
-            state.record_world_event(coord, [prefix + winner_sentence], phase=phase_label)
+        defender_id = battle_report.defender_kingdom_id
+        kingdoms = tuple(dict.fromkeys(k for k in (attacker_id, defender_id) if k is not None))
+        paragraph = describe_invasion_paragraph(state, battle_report, rng)
+        if paragraph is not None:
+            state.record_world_event(
+                coord, [paragraph], phase=phase_label, section_kingdom_ids=kingdoms, involved_kingdom_ids=kingdoms,
+                involved_view="hide", seasonal=True, leader_id=leader_id, after_leader=True,
+            )
+        phase = int(phase_label[1:]) if phase_label.startswith("P") and phase_label[1:].isdigit() else None
+        for reader, opponent, side in ((attacker_id, defender_id, "defender"), (defender_id, attacker_id, "attacker")):
+            if reader is None or opponent is None or reader == opponent:
+                continue
+            narrative = describe_battle_for_outsider(state, battle_report, side, rng, announced, phase=phase)
+            if narrative:
+                state.record_world_event(
+                    coord, narrative, phase=phase_label, section_kingdom_ids=(opponent,),
+                    involved_kingdom_ids=(reader,), involved_view="only", seasonal=True,
+                )
 
 
 def _battle_narrative_lines(
@@ -18087,7 +18365,7 @@ def record_move_world_events(state: GameState, results: list[PhaseDispatchResult
             line = render_fly_move_world_event(leader.name, province_name, rng)
         else:
             continue
-        state.record_world_event(new_location, [prefix + line], phase=entry.phase_label)
+        state.record_world_event(new_location, [prefix + line], phase=entry.phase_label, leader_id=entry.leader_id)
 
 
 def _gir_name(state: GameState, leader_id: int, announced: set[int]) -> str | None:
@@ -18134,7 +18412,8 @@ def record_ordinary_move_world_events(
             continue
         announced.add(entry.leader_id)
         state.record_world_event(
-            new_location, [_season_phrase_for_phase_label(entry.phase_label) + sentence], phase=entry.phase_label
+            new_location, [_season_phrase_for_phase_label(entry.phase_label) + sentence], phase=entry.phase_label,
+            leader_id=entry.leader_id,
         )
         # A Special Place the Move turned up is news too.
         for feature in getattr(result, "discovered_features", ()):
@@ -18252,35 +18531,24 @@ def record_illusory_fog_foreign_entry_world_events(
         state.record_world_event(new_location, [prefix + line], phase=entry.phase_label)
 
 
-def record_uncontested_conquest_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
-    """Populates ``state.world_events`` (Phase 410) from every Move that
-    conquered a province with no battle at all -- the fifth real event
-    *source* wired for GENERAL INTELLIGENCE REPORT, alongside
-    ``record_battle_world_events()``/``record_spell_world_events()``/
-    ``record_plague_spread_world_events()``/``record_move_world_events()``.
-    Same "call once per turn, before any ``compose_letter_report()`` call"
-    contract as those four.
+def record_uncontested_conquest_world_events(
+    state: GameState, results: list[PhaseDispatchResult], rng: random.Random, announced: set[int] | None = None
+) -> None:
+    """Populates ``state.world_events`` from every Move that conquered a province with no battle at all (CONQ.X,
+    Phase 410). Same "call once per turn, before any ``compose_letter_report()`` call" contract as the other
+    recorders.
 
-    ``render_uncontested_conquest()`` (``HostAK/TP/PROSE/CONQ.X``, Phase
-    63) had been fully built since Phase 63 with nothing to feed it --
-    no code path ever produced a real uncontested conquest until Phase
-    410 wired the mechanic itself into ``turn/move_execution.py
-    execute_move()`` (see that function's own Phase 410 addendum).
-    ``result.conquered and result.battle_report is None`` is exactly
-    that case -- a battle-won conquest (``battle_report`` present) is
-    already covered by ``record_battle_world_events()``'s own winner
-    sentence and must not be double-recorded here.
-
-    Duck-types ``result.moved``/``result.conquered``/``result.battle_
-    report``/``result.new_location`` the same way ``record_move_world_
-    events()`` does -- only ``turn/move_execution.py
-    MoveExecutionResult`` carries ``conquered`` today (``turn_processor.py
-    MultiAttackerMoveResult`` always goes through a real battle, so it
-    never needs this path), but duck-typing keeps this consistent with
-    every other recorder here rather than importing a concrete type to
-    ``isinstance``-check.
+    ``result.conquered and result.battle_report is None`` is exactly that case -- a battle-won conquest is told by
+    ``record_battle_world_events()`` and must not be recorded twice. **2026-11-26 audit against the real SE3
+    reports**: a province that had an owner is first announced by its INVAS.X invasion ("A fleet sent by the empire
+    of Lord Babba Sissoko Master orango (#0) invaded Waterford, hoping to subjugate that province ruled by Prometeo
+    (#5) and made up of extensive Seas.  Tlazolteotl (#88)'s forces experienced little opposition in Waterford and
+    Tlazolteotl there established our reign.") and the paragraph is told under the invader and under the owner; a
+    province nobody owned is just taken ("Samantha's naval forces took possession of Kabompo practically
+    uncontested."). The Kingdoms that fought do not read it in the world news.
     """
 
+    announced = announced if announced is not None else set()
     for entry in results:
         result = entry.result
         if not getattr(result, "conquered", False) or getattr(result, "battle_report", None) is not None:
@@ -18288,24 +18556,39 @@ def record_uncontested_conquest_world_events(state: GameState, results: list[Pha
         new_location = getattr(result, "new_location", None)
         if new_location is None:
             continue
-        # Phase 847 bug fix: a bare `state.leaders.get(entry.leader_id)`
-        # silently dropped this ENTIRE conquest notice whenever the
-        # conquering Hero died in a LATER phase of the SAME turn (e.g.
-        # losing a Challenge) -- `remove_leader()` only installs a
-        # same-id Royal Heir for a King (whose own name survives via
-        # succession anyway), never for an ordinary Hero, so the dead
-        # Hero's `leader_id` is simply gone from `state.leaders` by the
-        # time this runs. `_leader_name()` already exists to fix this,
-        # matching every other narration branch in this file.
+        # Phase 847 bug fix: the conquering Hero may die in a LATER phase of the SAME turn, so his name comes
+        # from ``_leader_name()`` (which also reads the archive of the dead).
         attacker_name = _leader_name(state, entry.leader_id)
         province = state.provinces.get(new_location)
         if attacker_name is None or province is None:
             continue
         province_name = _province_label(state, new_location)
         is_sea = province.effective_terrain() == Terrain.SEA
+        previous_owner = getattr(result, "previous_owner_kingdom_id", None)
+        conqueror = getattr(result, "conquering_kingdom_id", None)
+        if conqueror is None:
+            conqueror = province.owner_kingdom_id
+        if previous_owner is not None and conqueror is not None and previous_owner in state.kingdoms:
+            numbered = f"{attacker_name} (#{entry.leader_id})"
+            conquest = _bare_repeats(render_uncontested_conquest(numbered, province_name, rng, is_sea=is_sea), numbered)
+            intro = render_invasion_intro(
+                _king_full_name(state, conqueror), _kingdom_display_name(state, conqueror), province_name,
+                TERRAIN_NAME[province.effective_terrain()], _kingdom_display_name(state, previous_owner), rng,
+                is_sea=is_sea,
+            )
+            kingdoms = tuple(dict.fromkeys((conqueror, previous_owner)))
+            state.record_world_event(
+                new_location, [_tidy_sentences(f"{intro} {conquest}")],
+                phase=entry.phase_label, section_kingdom_ids=kingdoms, involved_kingdom_ids=kingdoms,
+                involved_view="hide", seasonal=True, leader_id=entry.leader_id, after_leader=True,
+            )
+            continue
+        name = _gir_name(state, entry.leader_id, announced) or attacker_name
+        line = _bare_repeats(render_uncontested_conquest(name, province_name, rng, is_sea=is_sea), name)
         prefix = _season_phrase_for_phase_label(entry.phase_label)
-        line = render_uncontested_conquest(attacker_name, province_name, rng, is_sea=is_sea)
-        state.record_world_event(new_location, [prefix + line], phase=entry.phase_label)
+        state.record_world_event(
+            new_location, [prefix + line], phase=entry.phase_label, leader_id=entry.leader_id, after_leader=True
+        )
 
 
 def record_diplomacy_world_events(state: GameState, rng: random.Random) -> None:
@@ -18499,8 +18782,8 @@ def describe_general_intelligence_report(
     **Visibility**: `turn/world_events.py is_visible_to()` -- rulebook
     [1.4], a province this kingdom owns or one adjacent to it.
 
-    **Grouping key**: each visible event's own province's *current*
-    `owner_kingdom_id`, read at render time (after the whole turn's
+    **Grouping key** (unless the event names its ``section_kingdom_ids``, as battles and conquests do): each
+    visible event's own province's *current* `owner_kingdom_id`, read at render time (after the whole turn's
     battles have resolved) -- not the event's own recorded attacker/
     defender. Confirmed against real fixture text: `SE3__T2.K2`'s own
     "Kingdom of Circe (#8): ...Big Sky was overrun by Circe (#8)'s
@@ -18571,20 +18854,11 @@ def describe_general_intelligence_report(
     full algorithm), and this phase (722) wires the real narration into
     `record_spell_world_events()`'s own Scar Terrain branch.
 
-    **The rest of the `S_Army`-tagged per-battle narrative cluster
-    (`FD('invas'/'conq'/'invwin'/'defwin', S_Army, ...)`) is not a
-    remaining gap, it's a closed question**: `WINNER.X`/`DEFWIN.X` were
-    already ported as `render_battle_winner()` (Phase 61) and `CONQ.X`
-    as `render_uncontested_conquest()` (Phase 63) -- `record_battle_
-    world_events()`'s own docstring documents, against real fixture
-    text (`SE3__T2.K2`), that the richer per-column clash narrative
-    `describe_battle()` can also render (`_BClash`/`_BRes`, `invas`'s
-    own opening line, commander names, the `_BConq` tax-base reveal)
-    genuinely doesn't appear in real GIR paragraphs -- only the outer
-    winner/conquest sentence does. Phase 410 confirmed this holds for
-    uncontested conquest too, by construction: `render_uncontested_
-    conquest()` renders the exact same outer-sentence shape as `render_
-    battle_winner()`, just for the no-battle case.
+    **The `S_Army`-tagged per-battle cluster (`FD('invas'/'conq'/'invwin'/'defwin', S_Army, ...)`, `_BCdrs`) is told
+    by ``describe_invasion_paragraph()`` and ``record_uncontested_conquest_world_events()``** (INVAS.X, the two
+    commander sentences, INVWIN.X / DEFWIN.X / CONQ.X) -- see ``record_battle_world_events()`` for the 2026-11-26
+    audit that replaced the WINNER.X sentence this section used to tell, and for the `S_Batt` narrative a Kingdom
+    that fought a battle finds under its opponent.
 
     **2026-11-26 audit against the real SE3 corpus** (70 reports): the real GIRs also carry, besides what is listed
     above, (a) the Treats, new alliances and Diplomatic Furors of the Kings the reader has met
@@ -18605,30 +18879,46 @@ def describe_general_intelligence_report(
 
     bounds = MapBounds(state.board_width, state.board_height)
     groups: dict[int, list[str]] = {}
-    order: list[int] = []
+    last_phase: dict[int, str] = {}
+
+    def file_under(section: int, event: object) -> None:
+        lines = list(event.lines)
+        phase = getattr(event, "phase", "")
+        if getattr(event, "seasonal", False) and lines:
+            # SAY.PAS `phasewrit`: the "In <season>, " opening is written once per run of one Kingdom's news of the
+            # same phase; the following paragraph just starts a new sentence.
+            opening = "" if phase and last_phase.get(section) == phase else _season_phrase_for_phase_label(phase)
+            lines[0] = opening + lines[0] if opening else lines[0][:1].upper() + lines[0][1:]
+        groups.setdefault(section, []).extend(lines)
+        last_phase[section] = phase
+
     for event in state.world_events:
         actor = getattr(event, "actor_kingdom_id", None)
         if actor is not None:
             # Diplomatic news (a Treat, a Furor) is filed under the Kingdom that made it and is read by every
             # King who has met it, wherever it happened (the real GIRs show other Kings' Treats freely).
             if actor != kingdom_id and state.has_met(kingdom_id, actor):
-                if actor not in groups:
-                    groups[actor] = []
-                    order.append(actor)
-                groups[actor].extend(event.lines)
+                file_under(actor, event)
             continue
-        if not is_visible_to(state, kingdom_id, event.coord, bounds) and not state.spy_watched(
+        involved = getattr(event, "involved_kingdom_ids", ())
+        view = getattr(event, "involved_view", "")
+        if view == "hide" and kingdom_id in involved:
+            continue  # the reader fought it: his own ACTION REPORT tells it
+        if view == "only":
+            if kingdom_id not in involved:
+                continue  # the narrative of a battle goes to the Kingdoms that fought it
+        elif not is_visible_to(state, kingdom_id, event.coord, bounds) and not state.spy_watched(
             kingdom_id, event.coord, getattr(event, "phase", "")
         ):
             continue
-        province = state.provinces.get(event.coord)
-        owner = province.owner_kingdom_id if province is not None else None
-        if owner is None or owner == kingdom_id:
-            continue
-        if owner not in groups:
-            groups[owner] = []
-            order.append(owner)
-        groups[owner].extend(event.lines)
+        sections = getattr(event, "section_kingdom_ids", ())
+        if not sections:
+            province = state.provinces.get(event.coord)
+            owner = province.owner_kingdom_id if province is not None else None
+            sections = (owner,) if owner is not None else ()
+        for section in sections:
+            if section != kingdom_id:
+                file_under(section, event)
 
     lines = [_GENERAL_INTELLIGENCE_REPORT_HEADER]
     if not groups:

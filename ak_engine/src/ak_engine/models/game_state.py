@@ -1632,6 +1632,21 @@ class WorldEvent:
     # the Kingdom it is filed under, and who may read it (those who have met it) -- ``coord`` is then unused.
     # Read with ``getattr(event, "actor_kingdom_id", None)``: saved games predate it.
     actor_kingdom_id: int | None = None
+    # A battle or a conquest is news of the Kingdoms it concerns rather than of the province it happened in: the real
+    # GENERAL INTELLIGENCE REPORTs file it under the attacker and under the defender (SE3__T10.K1: the same
+    # "A conquering horde ... invaded the province of Orielle" paragraph under both Kingdoms). ``section_kingdom_ids``
+    # names them; empty means the province's own owner, as for every other event. Read with ``getattr(event, ..., ())``.
+    section_kingdom_ids: tuple[int, ...] = ()
+    # The Kingdoms that fought. ``involved_view`` "hide": the outer paragraph is not shown to them (they read the
+    # battle in their own ACTION REPORT); "only": shown to them alone -- the real GIRs carry, under the opponent's
+    # Kingdom, the battle narrative of a battle the reader took part in (S_Batt news, SAY.PAS).
+    involved_kingdom_ids: tuple[int, ...] = ()
+    involved_view: str = ""
+    # True when the report writes the "In <season>, " opening itself, once per run of same-phase news of a Kingdom
+    # (``SAY.PAS``'s ``phasewrit``), instead of the line carrying it.
+    seasonal: bool = False
+    # The character the news is about, so that a Move and the invasion it started stay together.
+    leader_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -2744,10 +2759,27 @@ class GameState:
         kind: str = "",
         phase: str = "",
         actor_kingdom_id: int | None = None,
+        section_kingdom_ids: tuple[int, ...] = (),
+        involved_kingdom_ids: tuple[int, ...] = (),
+        involved_view: str = "",
+        seasonal: bool = False,
+        leader_id: int | None = None,
+        after_leader: bool = False,
     ) -> None:
         """Appends one ``WorldEvent`` at ``coord`` -- see that class's own
         docstring for GENERAL INTELLIGENCE REPORT's own real raw material
-        (Phase 231).
+        (Phase 231). ``after_leader`` puts it right after the last event of the same character and phase (the Move
+        that started an invasion), instead of at the end.
         """
 
-        self.world_events.append(WorldEvent(coord, lines, kind, phase, actor_kingdom_id))
+        event = WorldEvent(
+            coord, lines, kind, phase, actor_kingdom_id, section_kingdom_ids, involved_kingdom_ids, involved_view,
+            seasonal, leader_id,
+        )
+        if after_leader and leader_id is not None:
+            for index in range(len(self.world_events) - 1, -1, -1):
+                other = self.world_events[index]
+                if getattr(other, "leader_id", None) == leader_id and other.phase == phase:
+                    self.world_events.insert(index + 1, event)
+                    return
+        self.world_events.append(event)
