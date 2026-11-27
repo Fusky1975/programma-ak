@@ -366,3 +366,30 @@ def test_the_processing_log_says_why_a_cast_had_no_effect():
     assert applied.endswith(": OK")
     assert not_there.endswith(": OK (had no effect -- CHARM on #59: not co-located)")
     assert fizzled.endswith(": OK (had no effect -- CHARM on #59: spell failed)")
+
+
+def test_the_processing_log_shows_the_chance_and_the_dice_of_a_cast():
+    from ak_engine.models.enums import Spell
+    from ak_engine.turn.cast_decode import CastRequest
+    from ak_engine.turn.cast_execution import CastExecutionResult, CastRoll
+
+    state = _generated_state()
+    leader_id = next(iter(state.leaders))
+    request = CastRequest(spell=Spell.CHARM, target=59)
+    results = [
+        PhaseDispatchResult(
+            leader_id, 0, "P2", ActionCode.CAST,
+            CastExecutionResult(request, applied=False, reason="spell failed", cast_roll=CastRoll(0.6, 0.78)), None,
+        ),
+        PhaseDispatchResult(
+            leader_id, 0, "P3", ActionCode.CAST,
+            CastExecutionResult(request, applied=True, cast_roll=CastRoll(0.6, 0.41)), None,
+        ),
+    ]
+
+    lines = format_turn_processing_log(results, state)
+
+    failed = next(line for line in lines if "/ P2 /" in line)
+    worked = next(line for line in lines if "/ P3 /" in line)
+    assert failed.endswith(": OK (had no effect -- CHARM on #59: spell failed prob. 60% rolled 78)")
+    assert worked.endswith(": OK (CHARM on #59: prob. 60% rolled 41)")

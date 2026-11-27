@@ -10034,3 +10034,72 @@ def test_a_bad_new_player_form_is_refused_with_a_message_and_changes_nothing(tmp
 
     _, state = open_game(tmp_path, meta.slug)
     assert state.kingdoms[2].out_of_game is True and 2 not in state.leaders
+
+
+# -- Turns hub: when a move file was saved and which phases it leaves without an order --------------------------------
+
+
+def _save_composed(client, meta, kingdom_id, form):
+    return client.post(f"/games/{meta.slug}/turns/{kingdom_id}/compose", data=form, follow_redirects=True)
+
+
+def test_turns_hub_shows_when_the_move_file_was_saved_and_that_it_is_complete(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    roster = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    _save_composed(client, meta, 1, _compose_form(roster, action=ActionCode.WAIT))
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert response.status_code == 200
+    assert b"saved 20" in response.data  # "saved 2026-..-.. HH:MM"
+    assert b"every character has an order in every phase" in response.data
+    assert b"Phases left without an order" not in response.data
+
+
+def test_turns_hub_lists_the_phases_each_character_left_without_an_order(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    roster = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    king_id, hero_id = roster[0], roster[1]
+    form = _compose_form(roster, action=ActionCode.WAIT)
+    for n in (3, 4):  # the King's phases 4 and 5 left at "No Action"
+        form[f"action_{king_id}_{n}"] = str(int(ActionCode.NO_ACTION))
+    for n in range(5):  # a hero with no order at all
+        form[f"action_{hero_id}_{n}"] = str(int(ActionCode.NO_ACTION))
+    _save_composed(client, meta, 1, form)
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    text = response.data.decode()
+    assert "Phases left without an order" in text
+    assert f"{state.leaders[king_id].name} (#{king_id}): phases 4, 5" in text
+    assert f"{state.leaders[hero_id].name} (#{hero_id}): phases 1, 2, 3, 4, 5" in text and "no orders at all" in text
+    assert "every character has an order in every phase" not in text
+
+
+def test_a_deliberate_defend_is_an_order_too(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    roster = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    _save_composed(client, meta, 1, _compose_form(roster))  # Defend in every phase
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert b"every character has an order in every phase" in response.data
+
+
+def test_a_move_file_the_hub_cannot_read_is_flagged_not_a_crash(tmp_path):
+    from ak_engine.webapp.turn_processing import summarize_move_file
+
+    path = tmp_path / "AKx.K1"
+    path.write_text("not a move file at all")
+
+    summary = summarize_move_file(path)
+
+    assert summary.readable is False and summary.saved_at is not None and summary.gaps == ()
+    assert summarize_move_file(tmp_path / "missing.K1").readable is False
+

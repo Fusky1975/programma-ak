@@ -8529,18 +8529,28 @@ def test_describe_cast_tells_a_cast_that_did_not_take_effect():
         assert line is not None and "Vitello" in line and "Charm" in line, (reason, line)
 
 
-def test_describe_cast_stays_silent_for_a_spell_that_is_not_executed():
-    result = CastExecutionResult(
-        request=CastRequest(spell=Spell.KILL_ENEMY, target=0), applied=False, reason=SPELL_EFFECT_NOT_MODELED_REASON
-    )
+def test_describe_cast_tells_a_combat_spell_cast_as_an_action_with_the_originals_dubious_line():
+    # SAY.PAS _SDub: the caster "was dubious that the ~ spell would work here, so tried to think of another stratagem".
+    for spell in (Spell.FIREBALL, Spell.HOLY_SYMBOL, Spell.ILLUS_HERO, Spell.TELEK_STORM):
+        result = CastExecutionResult(
+            request=CastRequest(spell=spell, target=0), applied=False, reason=SPELL_EFFECT_NOT_MODELED_REASON
+        )
 
-    assert describe_cast(result, caster_name="Aldric", rng=ScriptedRandom([]), target_name="Borin") is None
+        line = describe_cast(result, caster_name="Aldric", rng=random.Random(2), target_name="Borin")
+
+        assert line is not None and line.startswith("Aldric was dubious that the ") and "spell would work here" in line, line
+        assert SPELL_NAME[spell] in line
 
 
-def test_describe_cast_can_be_asked_to_stay_silent_about_a_failure():
-    result = CastExecutionResult(request=CastRequest(spell=Spell.CHARM, target=59), applied=False, reason="spell failed")
+def test_a_wand_that_did_nothing_is_told_too():
+    from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
-    assert describe_cast(result, caster_name="Vitello", rng=ScriptedRandom([]), tell_failure=False) is None
+    cast = CastExecutionResult(request=CastRequest(spell=Spell.CHARM, target=59), applied=False, reason="not co-located")
+    result = UseMIExecutionResult(applied=True, cast_result=cast)
+
+    line = describe_use_mi(result, caster_name="Vitello", rng=random.Random(3), target_name="Thrym")
+
+    assert line is not None and "Vitello" in line and "Charm" in line
 
 
 def test_describe_cast_renders_the_wand_used_improperly_message():
@@ -8797,18 +8807,6 @@ def test_describe_use_mi_delegates_to_describe_cast_for_a_wand():
     line = describe_use_mi(result, caster_name="Aldric", rng=rng, target_name="Borin")
 
     assert line == "Aldric cast a Kill Enemy spell and Borin was magically killed by a dark Necromantic spell!"
-
-
-def test_describe_use_mi_renders_nothing_when_the_wand_cast_fizzled():
-    cast_result = CastExecutionResult(
-        request=CastRequest(spell=Spell.KILL_ENEMY, target=0), applied=False, reason="cast roll failed"
-    )
-    result = UseMIExecutionResult(applied=True, cast_result=cast_result)
-    rng = ScriptedRandom([])
-
-    line = describe_use_mi(result, caster_name="Aldric", rng=rng, target_name="Borin")
-
-    assert line is None
 
 
 def test_describe_use_mi_renders_the_wand_used_improperly_message():
@@ -19221,7 +19219,7 @@ def test_a_mystic_winds_cast_names_the_leader_carried_into_the_sky():
     assert lines == ["Caster cast a Mystic Winds spell and the Wind Spirits carried Friend into the sky."]
 
 
-def test_a_failed_secret_spell_says_nothing():
+def test_a_failed_secret_spell_is_told_as_a_failed_cast():
     from ak_engine.models.enums import ActionCode, Spell
     from ak_engine.turn.cast_decode import CastRequest
     from ak_engine.turn.cast_execution import CastExecutionResult
@@ -19233,7 +19231,10 @@ def test_a_failed_secret_spell_says_nothing():
     failed = CastExecutionResult(CastRequest(Spell.ILLUS_FOG, target=0), applied=False, reason="spell failed")
     entry = PhaseDispatchResult(1, 0, "P1", ActionCode.CAST, failed, None)
 
-    assert describe_turn_results([entry], state, random.Random(1), board_width=10) == []
+    # 2026-11-27: a Cast that did not take effect is told (SFAIL.X), it used to say nothing.
+    lines = describe_turn_results([entry], state, random.Random(1), board_width=10)
+
+    assert len(lines) == 1 and "Caster" in lines[0] and "Illusory Fog" in lines[0]
 
 
 def test_describe_battle_narrates_a_commander_retreating_with_his_armies_and_one_fleeing_alone():
@@ -20116,3 +20117,32 @@ def test_describe_turn_results_tells_a_charm_that_did_nothing_in_the_phase_it_wa
     worked = [line for line in lines if "Thrym was magically charmed by Vitello" in line]
     assert len(failed) == 1 and len(worked) == 1
     assert lines.index(failed[0]) < lines.index(worked[0])  # in the order the phases came
+
+
+def test_describe_turn_results_tells_every_cast_that_did_nothing_whatever_its_spell_and_target():
+    # 2026-11-27: the per-spell branches needed a target name, a province or a board width and silently dropped a Cast that
+    # could not be resolved to one (a Charm on a hero that does not exist, a combat spell cast as an action, a wand).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    cases = [
+        (CastRequest(spell=Spell.CHARM, target=999), "target character not found", "charm"),
+        (CastRequest(spell=Spell.FIREBALL, target=0), SPELL_EFFECT_NOT_MODELED_REASON, "dubious"),
+        (CastRequest(spell=Spell.TORNADO, target=0), "spell failed", "Tornado"),
+        (CastRequest(spell=Spell.BLESS, target=0), "spell failed", "Bless"),
+    ]
+    for request, reason, fragment in cases:
+        entries = [
+            PhaseDispatchResult(1, 0, "P0", ActionCode.CAST, CastExecutionResult(request, applied=False, reason=reason), None)
+        ]
+
+        lines = describe_turn_results(entries, state, random.Random(4))  # no board_width: the old branches skipped it
+
+        assert len(lines) == 1 and fragment.lower() in lines[0].lower(), (request.spell, lines)
+
+    wand = UseMIExecutionResult(
+        applied=True, cast_result=CastExecutionResult(CastRequest(spell=Spell.CHARM, target=999), applied=False, reason="spell failed")
+    )
+    entries = [PhaseDispatchResult(1, 0, "P0", ActionCode.USE_MI, wand, None)]
+    lines = describe_turn_results(entries, state, random.Random(4))
+    assert len(lines) == 1 and "Charm" in lines[0]

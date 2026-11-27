@@ -4561,3 +4561,65 @@ def test_resurrecting_an_ordinary_hero_leaves_an_out_of_game_kingdom_as_it_is():
     execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
     assert state.kingdoms[1].out_of_game is True
+
+
+# -- The dice of an Action Cast, for the GM's log -----------------------------------------------------------------------
+
+
+def test_a_cast_that_comes_to_a_roll_records_the_chance_and_the_dice():
+    from ak_engine.turn.cast_execution import CastRoll
+
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 3)
+    state.leaders[78] = LeaderState(78, None, "Free Hero", LOCATION)
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.CHARM, target=78), rng=ScriptedRandom([0.78])
+    )
+
+    assert result.applied is False and result.reason == "spell failed"
+    assert result.cast_roll == CastRoll(chance=0.6, roll=0.78)  # 15% + 15% x level 3
+    assert result.cast_roll.describe() == "prob. 60% rolled 78"
+
+
+def test_a_successful_roll_is_recorded_too():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 3)
+    state.leaders[78] = LeaderState(78, None, "Free Hero", LOCATION)
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.CHARM, target=78), rng=ScriptedRandom([0.41] + [0.5] * 10)
+    )
+
+    assert result.applied is True and result.cast_roll.describe() == "prob. 60% rolled 41"
+
+
+def test_a_cast_refused_before_any_roll_records_no_dice():
+    state = build_state()
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.CHARM, target=999), rng=ScriptedRandom([0.5])
+    )
+
+    assert result.applied is False and result.cast_roll is None
+    assert execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.FIREBALL, target=0), rng=ScriptedRandom([])
+    ).cast_roll is None  # nor a spell that is not an Action Cast
+
+
+def test_the_dice_of_one_cast_never_leak_into_the_next():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 3)
+    state.leaders[78] = LeaderState(78, None, "Free Hero", LOCATION)
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.CHARM, target=78), rng=ScriptedRandom([0.9]))
+
+    second = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.CHARM, target=999), rng=ScriptedRandom([]))
+
+    assert second.cast_roll is None
+
+
+def test_the_roll_of_a_chance_that_is_not_a_whole_percentage_shows_a_decimal():
+    from ak_engine.turn.cast_execution import CastRoll
+
+    assert CastRoll(chance=0.525, roll=0.527).describe() == "prob. 52.5% rolled 52.7"
+    assert CastRoll(chance=0.95, roll=0.999).describe() == "prob. 95% rolled 99"

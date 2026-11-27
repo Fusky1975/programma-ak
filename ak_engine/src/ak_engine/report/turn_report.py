@@ -5306,7 +5306,6 @@ def describe_cast(
     real_terrain_name: str | None = None,
     army_names: list[str] | None = None,
     feature_name: str | None = None,
-    tell_failure: bool = True,
 ) -> str | None:
     """Compose Cast's own turn-report line from an already-computed
     ``CastExecutionResult``, the same ``describe_*`` composition pattern
@@ -5316,7 +5315,12 @@ def describe_cast(
     real Pascal order, using caller-supplied display names/context (this
     project has no name-synthesis system anywhere).
 
-    Returns ``None`` when ``result.applied`` is ``False`` -- an invalid
+    **2026-11-27**: a Cast that did not take effect is no longer silent: a Personal-Combat spell cast as an Action
+    (``SPELL_EFFECT_NOT_MODELED_REASON``) is told with ``_SDub`` (``render_spell_dubious()``), every other failure -- a failed
+    roll, an invalid target, a wand that did nothing -- with ``_SFail`` (``render_spell_cast_failed()``); a Kill Enemy that
+    went berserk on its caster stays with its own block. (The paragraphs below describe the older, silent behaviour.)
+
+    Returned ``None`` when ``result.applied`` was ``False`` -- an invalid
     target, an unsuitable province, or (``result.reason == "spell
     effect not modeled"``) one of the 10 unexecuted spells all have no
     sourced narrative and are correctly silent, mirroring ``describe_
@@ -5424,14 +5428,15 @@ def describe_cast(
             treasure = _WAND_SPELL_TO_TREASURE.get(result.request.spell)
             if treasure is not None:
                 return render_wand_used_improperly(caster_name, TREASURE_NAME[treasure], rng)
-        if result.reason == SPELL_EFFECT_NOT_MODELED_REASON or not tell_failure or result.kill_enemy_berserk_winner is not None:
-            # (a Kill Enemy that went berserk on the caster has its own, longer story, told by its own block)
-            return None  # one of the spells this project does not execute: nothing happened to tell
-        # 2026-11-27 (a played turn: two Charms cast on a freed Hero left no trace): every other Cast that did not
-        # take effect -- a failed roll, a target not there, one that already commands armies, no casts left this
-        # turn -- is told the way the original tells it (``_SFail`` = SFAIL.X, "<Vitello> attempted a Charm spell,
-        # but bungled it."), so the player knows the order was carried out and did nothing. (The GM's processing
-        # log says why.)
+        if result.kill_enemy_berserk_winner is not None:
+            return None  # a Kill Enemy that went berserk on the caster has its own, longer story, told by its own block
+        if result.reason == SPELL_EFFECT_NOT_MODELED_REASON:
+            # A Personal-Combat spell cast as an Action (SAY.PAS _SDub) -- told, not silent (2026-11-27).
+            return render_spell_dubious(caster_name, SPELL_NAME[result.request.spell], rng)
+        # 2026-11-27 (a played turn: two Charms on a freed Hero left no trace): every other Cast that did not take effect
+        # -- a failed roll, a target not there, one that already commands armies, no casts left this turn, a wand that did
+        # nothing -- is told the way the original tells it (``_SFail`` = SFAIL.X, "<Vitello> attempted a Charm spell, but
+        # bungled it."), so the player knows the order was carried out and did nothing. (The GM's processing log says why.)
         return render_spell_cast_failed(caster_name, SPELL_NAME[result.request.spell], rng)
     spell = result.request.spell
     if spell is Spell.SKELETAL_ARMY:
@@ -5794,6 +5799,20 @@ def render_spell_fizzled_in_combat(character_name: str, spell_name: str, rng: ra
     return render(variant, values, rng=rng)
 
 
+# HostAK/TP/SAY.PAS _SDub (S_Priv) -- a Cast Spell action of a spell that cannot work here: the caster "was dubious that
+# the ~ spell would work here, so tried to think of another stratagem". Told (2026-11-27) for the spells this project does
+# not execute as an Action Cast -- every one of them is a Personal-Combat spell (Holy Symbol, Hand of Death, Fireball,
+# Psychic Blast, Invisibility, Spiritwrack, Control Undead, Ice Suspend, Telekinetic Storm, Mirror Image, Heal, Gate Demon,
+# Lava Pool, Augur Combat, Illusory Hero), cast in an Encounter Plan -- so a top-level Cast of one no longer vanishes.
+_SDUB_TEMPLATE = "< was dubious that the ~ spell would work here, so < tried to think of another strategem/Rtactic."
+
+
+def render_spell_dubious(character_name: str, spell_name: str, rng: random.Random) -> str:
+    """Renders ``_SDub``'s sentence: the caster gave up a spell that would not work as an Action."""
+
+    return render(_SDUB_TEMPLATE, {"<": character_name, "~": spell_name}, rng=rng)
+
+
 _SFAIL_TEMPLATES: list[str] = [
     "< attempted/Rtried ^A ~ spell, but bungled/Rbotched it.",
     "< failed in > {ineffectual }attempt to cast ^A ~ spell.",
@@ -5930,7 +5949,6 @@ def describe_use_mi(
             real_terrain_name=real_terrain_name,
             army_names=army_names,
             feature_name=feature_name,
-            tell_failure=False,  # a wand that did nothing stays silent (SFAIL.X is the Cast Spell action's own text)
         )
     if result.ability_boosted is not None and book_name is not None and ability_name is not None:
         return render_skill_book_read(caster_name, book_name, ability_name, rng)
@@ -10261,6 +10279,14 @@ def describe_turn_results(
                 # (which assumes `_leader_name(state, request.target)`).
                 lines.extend(describe_locate_object(entry.result, caster_name=caster_name, state=state, rng=rng))
                 continue
+            if not entry.result.applied and entry.result.kill_enemy_berserk_winner is None:
+                # 2026-11-27: a Cast that did not take effect is told whatever its spell and target (a failed roll, a
+                # target not there, a Personal-Combat spell cast as an Action...): it used to vanish in the per-spell
+                # branches below, each of which needs a name, a province or a board width it cannot always resolve.
+                line = describe_cast(entry.result, caster_name=caster_name, rng=rng)
+                if line is not None:
+                    lines.append(line)
+                continue
             if spell is Spell.BLESS:
                 # Phase 935: the one province-targeted Cast spell wired
                 # here so far -- unlike the leader-targeted spells below,
@@ -10541,6 +10567,12 @@ def describe_turn_results(
             continue
         elif entry.action is ActionCode.USE_MI and isinstance(entry.result, UseMIExecutionResult):
             cast_result = entry.result.cast_result
+            if cast_result is not None and not cast_result.applied and cast_result.kill_enemy_berserk_winner is None:
+                # The same, for a wand: a cast that did nothing is told (WAND_USED_IMPROPERLY / _SDub / _SFail).
+                line = describe_cast(cast_result, caster_name=caster_name, rng=rng)
+                if line is not None:
+                    lines.append(line)
+                continue
             if cast_result is not None:
                 spell = cast_result.request.spell
                 # Phase 1046 bug fix -- a Wand-triggered cast of any of

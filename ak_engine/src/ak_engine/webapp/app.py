@@ -159,6 +159,7 @@ from ak_engine.webapp.turn_processing import (
     processed_turn_numbers,
     remove_uploaded_move_file,
     save_uploaded_move_file,
+    summarize_move_file,
     uploaded_move_files,
 )
 from ak_engine.webapp.xk_reports import XKExportError, build_xk_file_for_kingdom
@@ -3199,6 +3200,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta=meta,
             state=state,
             uploads=uploads,
+            upload_summaries={kingdom_id: summarize_move_file(path) for kingdom_id, path in uploads.items()},
             processed_turns=processed_turn_numbers(directory),
             error=request.args.get("error"),
             gw_sync_result=request.args.get("gw_sync_result"),
