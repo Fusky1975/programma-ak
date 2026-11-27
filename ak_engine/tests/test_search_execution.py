@@ -8152,3 +8152,130 @@ def test_the_lonely_monster_wants_another_lair_of_its_kind_known_to_the_kingdom(
     assert not roll.called  # no honor roll for the lonely monster
     assert result.quest_fulfilled is MonsterTalkReply.R_MATE and result.quest_treasure is Treasure.WAND_FIREBALL
     assert feature.looted is True  # it departed on its pilgrimage
+
+
+# -- Stage 3, batch 2: the lost artifact, the trade and the wish ---------------------------------------------------------
+
+from ak_engine.turn.search_execution import closest_world_item, select_required_treasure  # noqa: E402
+
+
+def _regain_world(reply):
+    state = _state_with_leader()
+    feature = _slave_feature(treasure=Treasure.WAND_FIREBALL)
+    state.add_feature(feature)
+    # a magic item lying in another feature: what the monster may ask for
+    state.add_feature(_slave_feature(feature_id=2, coord=HexCoord(7, 7), guardian_monster=Monster.SPHINX, treasure=Treasure.LEADERSHIP_HUMAN))
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=reply
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel"):
+        execute_search(state, LEADER_ID, _talk_request(1, Maneuver.MELEE), ScriptedRandom([0.9] * 20))
+    return state, feature
+
+
+def test_the_artifact_asked_for_is_a_magic_item_that_exists_elsewhere_in_the_world():
+    for reply in (MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_TRADE):
+        state, feature = _regain_world(reply)
+        wanted = feature.quest_required_treasure
+        assert wanted is not None and wanted is not feature.treasure
+        assert wanted in {other.treasure for other in state.features.values() if other is not feature}
+        assert wanted.value < Treasure.GOLD_HOARD_LARGE.value
+        assert select_required_treasure(state, feature) is wanted  # stable
+
+
+def test_a_world_with_no_other_magic_item_asks_for_none():
+    state, feature = _quest_state(MonsterTalkReply.R_REGAIN)
+
+    assert feature.quest_required_treasure is None
+
+
+@pytest.mark.parametrize("reply", [MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_TRADE])
+def test_without_the_item_the_hero_is_sent_away_and_the_deal_stays(reply):
+    state, feature = _regain_world(reply)
+
+    with _honored() as roll:
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.NO_PRICE,) and not roll.called
+    assert feature.pending_deal_leader_id == LEADER_ID
+
+
+@pytest.mark.parametrize("reply", [MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_TRADE])
+def test_the_hero_who_brings_the_item_swaps_it_for_the_treasure(reply):
+    state, feature = _regain_world(reply)
+    wanted = feature.quest_required_treasure
+    state.add_item(wanted, LEADER_ID)
+
+    with _honored():
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_fulfilled is reply and result.quest_required_treasure is wanted
+    assert wanted is Treasure.LEADERSHIP_HUMAN
+    assert [item.treasure for item in state.items_held_by(LEADER_ID)] == [Treasure.WAND_FIREBALL]  # swapped
+
+
+def test_a_monster_that_breaks_its_word_keeps_the_item_brought():
+    state, feature = _regain_world(MonsterTalkReply.R_TRADE)
+    wanted = feature.quest_required_treasure
+    state.add_item(wanted, LEADER_ID)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=False):
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(1))
+
+    assert QuestNote.BETRAYED in result.quest_notes and result.quest_fulfilled is None
+    assert all(item.treasure is not wanted for item in state.items_held_by(LEADER_ID))
+    assert feature.treasure is Treasure.WAND_FIREBALL  # nothing paid
+
+
+def test_the_wish_names_the_nearest_item_lying_in_the_world():
+    state = _state_with_leader()
+    own = _slave_feature(treasure=Treasure.WAND_FIREBALL)
+    elsewhere = _slave_feature(feature_id=2, coord=HexCoord(7, 7), treasure=Treasure.LEADERSHIP_HUMAN)
+    state.add_feature(own)
+    state.add_feature(elsewhere)
+
+    near_fire = closest_world_item(state, own, "a wand of fireball")
+    near_lead = closest_world_item(state, own, "leadership")
+
+    assert near_fire == (Treasure.WAND_FIREBALL, None)
+    assert near_lead == (Treasure.LEADERSHIP_HUMAN, elsewhere)
+    assert closest_world_item(state, own, "   ") is None
+
+
+def _wish_request(text):
+    return SearchRequest(
+        feature_id=1, unconfirmed_extra0=0,
+        tactics=[SearchTactic(maneuver=Maneuver.SAY, say_text=text), SearchTactic(maneuver=Maneuver.FULFILL), SearchTactic(maneuver=Maneuver.MELEE)],
+    )
+
+
+def test_a_wish_with_no_item_named_is_sent_away():
+    state, feature = _quest_state(MonsterTalkReply.R_WISH)
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.NO_PRICE,) and feature.pending_deal_leader_id == LEADER_ID
+
+
+def test_the_wish_gives_the_item_named_takes_it_from_where_it_lay_and_the_monster_leaves_the_world():
+    state, feature = _quest_state(MonsterTalkReply.R_WISH)
+    elsewhere = _slave_feature(feature_id=2, coord=HexCoord(7, 7), treasure=Treasure.LEADERSHIP_HUMAN)
+    state.add_feature(elsewhere)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True) as roll:
+        result = execute_search(state, LEADER_ID, _wish_request("leadership"), random.Random(0))
+
+    assert roll.call_args.kwargs["bonus"] == 1000
+    assert result.quest_fulfilled is MonsterTalkReply.R_WISH and result.quest_treasure is Treasure.LEADERSHIP_HUMAN
+    assert Treasure.LEADERSHIP_HUMAN in {item.treasure for item in state.items_held_by(LEADER_ID)}
+    assert elsewhere.treasure is None  # taken from where it lay
+    assert feature.looted is True  # "[the monster] was gone"
+    assert feature.treasure is None
+
+
+def test_the_wish_can_name_the_monsters_own_treasure():
+    state, feature = _quest_state(MonsterTalkReply.R_WISH)
+
+    with _honored():
+        result = execute_search(state, LEADER_ID, _wish_request("wand of fireball"), random.Random(0))
+
+    assert result.quest_treasure is Treasure.WAND_FIREBALL and feature.looted is True

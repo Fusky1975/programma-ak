@@ -13584,6 +13584,7 @@ def render_guardian_quest_fulfilled(
     possessive: str,
     rng: random.Random,
     target_name: str | None = None,
+    required_name: str | None = None,
 ) -> list[str]:
     """The story of a fulfilled agreement: what the character did (``FULFILL.X2``, SAY.PAS ``_LSpake``) and then the
     monster's reply that hands over the reward (``MACCEPT.X2``, ``_MFulf``) -- for the old monster of ``R_SLAVE`` it
@@ -13607,6 +13608,8 @@ def render_guardian_quest_fulfilled(
         text = _resolve_ctrl_a_markers(source).replace("⟦CTRL-K:king-title⟧", king_name)
         if target_name is not None:
             text = text.replace("⟦CTRL-C:quest-character⟧", target_name)
+        if required_name is not None:
+            text = text.replace("⟦CTRL-T:treasure-2⟧", required_name)
         for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
             text = text.replace(marker, placeholder)
         rendered = render(text, values, rng=rng).strip()
@@ -13662,6 +13665,7 @@ def render_guardian_talk_offer(
     rng: random.Random,
     target_name: str | None = None,
     price: int | None = None,
+    required_name: str | None = None,
 ) -> list[str]:
     """Two lines: that the character spoke with the guardian, then the
     guardian's own offer (``MONSTER_TALK_OFFER_TEXT[reply]``), with the
@@ -13671,6 +13675,8 @@ def render_guardian_talk_offer(
     text = _resolve_ctrl_a_markers(MONSTER_TALK_OFFER_TEXT[reply])
     if target_name is not None:
         text = text.replace("⟦CTRL-C:quest-character⟧", target_name)
+    if required_name is not None:
+        text = text.replace("⟦CTRL-T:treasure-2⟧", required_name)
     for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
         text = text.replace(marker, placeholder)
     text = text.replace("FU-lfill", "Fulfill").replace("# gold", f"{price} gold" if price is not None else "a hefty sum in gold")
@@ -13898,6 +13904,7 @@ def _describe_search_lines(
                 possessive=_COMBAT_POSSESSIVES.get().get(character_name, "his"),
                 rng=rng,
                 target_name=_quest_target_name(state, result.quest_target_leader_id),
+                required_name=TREASURE_NAME[result.quest_required_treasure] if result.quest_required_treasure is not None else None,
             )
         )
     if result.quest_notes:
@@ -13942,6 +13949,7 @@ def _describe_search_lines(
                 rng=rng,
                 target_name=_quest_target_name(state, result.quest_target_leader_id),
                 price=result.quest_price,
+                required_name=TREASURE_NAME[result.quest_required_treasure] if result.quest_required_treasure is not None else None,
             )
         )
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.

@@ -20021,3 +20021,24 @@ def test_the_seller_names_its_price_in_the_offer():
     )
 
     assert "23 gold" in offer and "hefty" not in offer
+
+
+def test_the_artifact_asked_for_is_named_in_the_offer_and_in_the_payment():
+    from ak_engine.report.turn_report import render_guardian_quest_fulfilled, render_guardian_talk_offer
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    for reply in (MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_TRADE):
+        offer = " ".join(
+            render_guardian_talk_offer(
+                "Pascal", "the Sphinx", reply, province_name="Plains", treasure_name="Wand of Fireball",
+                feature_name="Pyramid", rng=random.Random(4), required_name="Amulet of Doom",
+            )
+        )
+        paid = " ".join(
+            render_guardian_quest_fulfilled(
+                "Pascal", "the Sphinx", reply, treasure_name="Wand of Fireball", feature_name="Pyramid",
+                king_name="Fusky", possessive="his", rng=random.Random(4), required_name="Amulet of Doom",
+            )
+        )
+        assert "Amulet of Doom" in offer and "lost relic" not in offer
+        assert "Amulet of Doom" in paid and "lost relic" not in paid
