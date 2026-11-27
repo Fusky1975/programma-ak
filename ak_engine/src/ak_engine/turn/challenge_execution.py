@@ -851,6 +851,7 @@ def _resolve_personal_combat_cast(
     cast_slots_used: dict[Ability, int],
     cast_spells_attempted: set[Spell],
     fizzled_spells: list[tuple[str, Spell]] | None = None,
+    cast_successes: list[tuple[int, Ability]] | None = None,
     hand_of_death_channels: list[tuple[str, str, tuple[int, ...], int | None, str]] | None = None,
     is_defensive: bool = False,
     melee_setup_done: list[bool] | None = None,
@@ -1065,6 +1066,11 @@ def _resolve_personal_combat_cast(
             state, target_leader.leader_id, rng
         ):
             return None
+
+    # A relevant spell that came off earns its school experience ([3.13]); the caller awards it once the
+    # whole combat is over (``award_combat_cast_experience``). A summon probe settles nothing yet.
+    if succeeded and cast_successes is not None and caster_leader is not None and not summon_probe:
+        cast_successes.append((caster_leader.leader_id, ability))
 
     if spell is Spell.CONTROL_UNDEAD:
         if succeeded:
@@ -1809,6 +1815,22 @@ class ChallengeCombatOutcome:
     # report -- not even a winning channel -- so a real cast looked like it
     # was never carried out.
     hand_of_death_channels: tuple[tuple[str, str, tuple[int, ...], int | None, str], ...] = ()
+    # Every personal-combat spell that came off, as ``(caster leader id, its school)`` -- what the caller
+    # credits with school experience (``award_combat_cast_experience``).
+    cast_successes: tuple[tuple[int, Ability], ...] = ()
+
+
+def award_combat_cast_experience(
+    state: GameState, cast_successes: tuple[tuple[int, Ability], ...], rng: random.Random
+) -> None:
+    """School experience (base 10, [3.13]) for each spell cast in a personal combat that took effect --
+    "skill 0 stays excluded", as for an Action Cast."""
+
+    for leader_id, ability in cast_successes:
+        caster = state.leaders.get(leader_id)
+        if caster is None or caster.skills is None or caster.skills.pair_for_ability(ability)[0] < 1:
+            continue
+        add_experience(caster, ability, 10, rng)
 
 
 def _close_to(target_range: CombatRange, current_range: CombatRange) -> CombatRange:
@@ -2195,6 +2217,7 @@ def resolve_challenge_combat(
     melee_swings: list[MeleeSwing] = []
     # Phase 858: see `ChallengeCombatOutcome.fizzled_spells`'s own docstring.
     fizzled_spells: list[tuple[str, Spell]] = []
+    cast_successes: list[tuple[int, Ability]] = []
     hand_of_death_channels: list[tuple[str, str, tuple[int, ...], int | None, str]] = []
 
     def _outcome(
@@ -2212,6 +2235,7 @@ def resolve_challenge_combat(
             melee_swings=tuple(melee_swings),
             fizzled_spells=tuple(fizzled_spells),
             hand_of_death_channels=tuple(hand_of_death_channels),
+            cast_successes=tuple(cast_successes),
         )
 
     def _round_outcome(round_result: str | None) -> ChallengeCombatOutcome:
@@ -2354,6 +2378,7 @@ def resolve_challenge_combat(
             cast_slots_used=target_cast_slots_used,
             cast_spells_attempted=target_cast_spells_attempted,
             fizzled_spells=fizzled_spells,
+            cast_successes=cast_successes,
             hand_of_death_channels=hand_of_death_channels,
             is_defensive=True,
             melee_setup_done=setup_box,
@@ -2692,6 +2717,7 @@ def resolve_challenge_combat(
                 cast_slots_used=caster_cast_slots_used,
                 cast_spells_attempted=caster_cast_spells_attempted,
                 fizzled_spells=fizzled_spells,
+                cast_successes=cast_successes,
                 hand_of_death_channels=hand_of_death_channels,
                 melee_setup_done=setup_box,
                 melee_swings=melee_swings,

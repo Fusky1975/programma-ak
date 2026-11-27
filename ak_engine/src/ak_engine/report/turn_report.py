@@ -3594,6 +3594,11 @@ def describe_battle(
         if commander_name is not None:
             pre_column.append(render_homeland_defense_morale(commander_name, rng))
 
+    # The duel itself: the challenge, the fight and its death, before the loser's men lose heart.
+    pre_column.extend(
+        _battle_duel_sentences(state, battle_report, rng, is_sea=is_sea, viewer_kingdom_id=viewer_kingdom_id)
+    )
+
     # Phase 739 -- _ADishK/_ADishF: the duel loser's own forces become demoralized (rulebook [7.1]).
     if battle_report.duel_loser_side is not None:
         loser_leader_id = (
@@ -7188,14 +7193,14 @@ def render_valhalla_visit_announcement(king_name: str, hero_name: str, rng: rand
     """Renders ``turn/valhalla_execution.py VALHALLA_VISIT_ANNOUNCEMENT_
     TEMPLATE`` (Phase 585) -- the real ``GOOD.X2``/``EVIL.X2`` template
     sentence announcing a new Valhalla visitor to the King they spawned
-    beside. `#` (the historical game number, see that constant's own
-    docstring for why this project has no such concept) is deliberately
-    left out of ``values`` -- ``render()``'s own contract leaves any
-    unmapped marker untouched in the output, matching that module's own
-    documented "kept as the literal, unresolved `#` marker" stance.
+    beside. `#` (the historical game number) is an invented, stable
+    number derived from the hero's name -- see the comment below.
     """
 
-    values = {"<": king_name, "=": hero_name}
+    # 2026-11-27 (user): the original names the numbered game the hero comes from ("a great King from Game 74"); here
+    # there is no such history, so each hero gets a stable invented game number from his name, never a bare "#".
+    game_number = 10 + sum(ord(character) for character in hero_name) % 90
+    values = {"<": king_name, "=": hero_name, "#": str(game_number)}
     return render(VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE, values, rng=rng)
 
 
@@ -10951,7 +10956,8 @@ def describe_turn_results(
             if entry.result.battlefield_fallen and explore_coord is not None:
                 lines.append(
                     render_battlefield_discovery(
-                        caster_name, explore_province_name, entry.result.battlefield_fallen, rng, is_sea=explore_is_sea
+                        caster_name, explore_province_name, entry.result.battlefield_fallen, rng, is_sea=explore_is_sea,
+                        army_ids=entry.result.battlefield_fallen_army_ids,
                     )
                 )
             continue
@@ -11450,6 +11456,124 @@ def describe_practice_side_effects(
         lines.append(render_practice_gems_made(character_name, result.gems_gold_gained, rng))
     if result.gold_looted_as_bandit > 0 and province_name is not None:
         lines.append(render_practice_bandit_raid(character_name, province_name, result.gold_looted_as_bandit, rng, is_sea=is_sea))
+    return lines
+
+
+# HostAK/TP/SAY.PAS _LBEnc / _LAccept / _LAvoid / _LExper / _LRApt -- the personal combat of the two Supreme
+# Commanders before a battle ([7.1]/[5.10]): who challenged whom, the answer, the fight itself (told by the same
+# composer as a Challenge) and the experience it earned.
+_DUEL_CHALLENGE_TEMPLATE = "<3 stepped/Rstrode forward and challenged [ to honorable/Rpersonal combat."
+_DUEL_ACCEPT_TEMPLATE = "[3 {bravely/Rcourageously }accepted/Ranswered the challenge/Rinvitation to honorable/Rpersonal combat."
+_DUEL_REFUSE_TEMPLATE = "< declined/Rrefused to enter {personal }combat."
+_EXPERIENCE_SKILL_TEMPLATE = "<'s experience/Refforts raised/Rimproved > skill/Rprowess in ^."
+_EXPERIENCE_APTITUDE_TEMPLATE = "<'s experience/Refforts raised/Rimproved > aptitude in ^."
+
+
+def render_duel_challenge(challenger_name: str, challenged_name: str, rng: random.Random) -> str:
+    """_LBEnc: the Supreme Commander who volunteered the duel steps forward."""
+
+    return render(_DUEL_CHALLENGE_TEMPLATE, {"<3": challenger_name, "[": challenged_name}, rng=rng)
+
+
+def render_duel_accepted(challenged_name: str, rng: random.Random) -> str:
+    """_LAccept: the challenged Supreme Commander takes up the challenge."""
+
+    return render(_DUEL_ACCEPT_TEMPLATE, {"[3": challenged_name}, rng=rng)
+
+
+def render_duel_refused(refuser_name: str, rng: random.Random) -> str:
+    """_LAvoid: the challenged Supreme Commander will not fight."""
+
+    return render(_DUEL_REFUSE_TEMPLATE, {"<": refuser_name}, rng=rng)
+
+
+def render_experience_raised(character_name: str, possessive: str, ability_name: str, *, aptitude: bool, rng: random.Random) -> str:
+    """_LExper / _LRApt: a skill (or an aptitude) went up through experience."""
+
+    template = _EXPERIENCE_APTITUDE_TEMPLATE if aptitude else _EXPERIENCE_SKILL_TEMPLATE
+    return render(template, {"<": character_name, ">": possessive, "^": ability_name}, rng=rng)
+
+
+def _duel_fighter_name(state: GameState, leader_id: int, viewer_kingdom_id: int | None) -> str | None:
+    """A Supreme Commander as the duel names him: plain for the reader's own, "Name (#n)" for anybody else."""
+
+    leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+    if leader is None:
+        return None
+    own = leader.kingdom_id is not None and leader.kingdom_id == viewer_kingdom_id
+    return leader.name if own else f"{leader.name} (#{leader.leader_id})"
+
+
+def _battle_duel_sentences(
+    state: GameState,
+    battle_report: BattleReport,
+    rng: random.Random,
+    *,
+    is_sea: bool,
+    viewer_kingdom_id: int | None,
+) -> list[str]:
+    """The duel the two Supreme Commanders fought before the armies clashed: the challenge, the answer
+    (accepted, refused, or the Coward's excuse), every cast, shot and swing of the fight with its death, and
+    the skill the reader's own fighter earned. ``[]`` when no duel was really triggered (the estimated duel of
+    a caller without a game state)."""
+
+    side = battle_report.duel_challenger_side
+    attacker_id = battle_report.attacker_commander_leader_id
+    defender_id = battle_report.defender_commander_leader_id
+    if side is None or attacker_id is None or defender_id is None:
+        return []
+    challenger_id, responder_id = (attacker_id, defender_id) if side == "attacker" else (defender_id, attacker_id)
+    attacker_name = _duel_fighter_name(state, attacker_id, viewer_kingdom_id)
+    defender_name = _duel_fighter_name(state, defender_id, viewer_kingdom_id)
+    if attacker_name is None or defender_name is None:
+        return []
+    challenger_name, responder_name = (attacker_name, defender_name) if side == "attacker" else (defender_name, attacker_name)
+
+    if battle_report.duel_bluff == "succeeded":
+        return []  # BLUFF.X tells the challenge and the excuse in one go
+    lines = [render_duel_challenge(challenger_name, responder_name, rng)]
+    combat = battle_report.duel_combat
+    if combat is None:
+        if battle_report.duel_loser_fled and battle_report.duel_bluff is None:
+            lines.append(render_duel_refused(responder_name, rng))
+        return lines
+    lines.append(render_duel_accepted(responder_name, rng))
+
+    killed = battle_report.duel_loser_side is not None and not battle_report.duel_loser_fled
+    loser_id = None
+    if killed:
+        loser_id = attacker_id if battle_report.duel_loser_side == "attacker" else defender_id
+    winner_id = (defender_id if loser_id == attacker_id else attacker_id) if loser_id is not None else None
+    fight = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=winner_id,
+        loser_leader_id=loser_id,
+        loser_killed=killed,
+        fled=combat.fled,
+        steal_outcome=combat.steal_outcome,
+        looted_item_ids=list(battle_report.duel_looted_item_ids),
+        fire_arrow_shots=combat.fire_arrow_shots,
+        melee_swings=combat.melee_swings,
+        fizzled_spells=combat.fizzled_spells,
+        hand_of_death_channels=combat.hand_of_death_channels,
+    )
+    lines.extend(
+        describe_encounter_combat(
+            fight, a_leader_id=attacker_id, a_name=attacker_name, b_name=defender_name, rng=rng, is_sea=is_sea,
+            state=state, b_leader_id=defender_id,
+        )
+    )
+    # What the fight taught the reader's own fighter(s) is private to his Kingdom (``S_Priv``).
+    for leader_id, ability, kind in battle_report.duel_experience:
+        leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+        if leader is None or leader.kingdom_id is None or leader.kingdom_id != viewer_kingdom_id:
+            continue
+        lines.append(
+            render_experience_raised(
+                leader.name, _sex_possessive(leader.sex), ABILITY_NAME[ability], aptitude=kind == "aptitude", rng=rng
+            )
+        )
     return lines
 
 
@@ -13355,12 +13479,11 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
         values["\\"] = TREASURE_NAME[rumor.described_treasure]
         variant = pick_variant(_FRUMOR_ITEM_TEMPLATES, rng)
 
+    # 2026-11-27 (user): the real reports always name the province of a rumor ("a feature in Kalabo: a Maze"), even
+    # one the Kingdom has never visited -- never "$51". The raw hex code is only a last resort for a province with
+    # no name at all.
     described_province = state.provinces.get(rumor.described_coord)
-    if (
-        described_province is not None
-        and described_province.name is not None
-        and described_province.known_to_kingdom(rumor.kingdom_id)
-    ):
+    if described_province is not None and described_province.name is not None:
         variant = variant.replace("$#", "@")
         values["@"] = described_province.name
     else:
@@ -13442,18 +13565,26 @@ def render_battlefield_discovery(
     rng: random.Random,
     *,
     is_sea: bool = False,
+    army_ids: list[int | None] | None = None,
 ) -> str:
     """The battlefield disclosure of an Explore (SAY.PAS ``_ABFList``/``_ABFArmy``): who discovered
-    it, where, and the fallen armies by type and rank ("2 Average Bowmen and 1 Veteran Legion") --
-    what a Skeletal Armies caster needs to know, since a risen army is identical to the dead one."""
+    it, where, and the fallen armies by type and rank ("2 Average Bowmen (28th, 167th) and 1 Veteran
+    Legion (69th)") -- what a Skeletal Armies caster needs to know, since a risen army is identical
+    to the dead one. ``army_ids`` (parallel to ``fallen``) adds each dead army's own order number."""
 
     counts: dict[tuple[ArmyType, Quality], int] = {}
-    for key in fallen:
+    ordinals: dict[tuple[ArmyType, Quality], list[str]] = {}
+    for index, key in enumerate(fallen):
         counts[key] = counts.get(key, 0) + 1
-    parts = [
-        f"{count} {QUALITY_NAME[quality]} {ARMY_TYPE_DESIGNATION[army_type]}"
-        for (army_type, quality), count in counts.items()
-    ]
+        army_id = army_ids[index] if army_ids is not None and index < len(army_ids) else None
+        if army_id is not None:
+            ordinals.setdefault(key, []).append(make_army_ordinal(army_id))
+    parts = []
+    for (army_type, quality), count in counts.items():
+        part = f"{count} {QUALITY_NAME[quality]} {ARMY_TYPE_DESIGNATION[army_type]}"
+        if (army_type, quality) in ordinals:
+            part += f" ({', '.join(ordinals[(army_type, quality)])})"
+        parts.append(part)
     listing = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
     header = render(_BATTLEFIELD_HEADER_TEMPLATE, {"<": character_name, "@": province_name}, rng=rng, is_sea=is_sea)
     body = render(_BATTLEFIELD_FALLEN_TEMPLATE, {"=": listing}, rng=rng, is_sea=is_sea)
@@ -19990,7 +20121,7 @@ def _indefinite(noun: str) -> str:
 
 
 def _possessive_for(state: GameState, leader_id: int | None) -> str:
-    leader = state.leaders.get(leader_id) if leader_id is not None else None
+    leader = (state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)) if leader_id is not None else None
     return _sex_possessive(leader.sex if leader is not None else None)
 
 

@@ -760,3 +760,12 @@ def test_a_hero_who_sold_nothing_dying_never_puts_a_kingdom_out_of_the_game():
     state.remove_leader(2)
 
     assert state.kingdoms[1].out_of_game is False
+
+
+def test_record_battle_death_remembers_the_fallen_armys_order_number():
+    state = GameState()
+
+    state.record_battle_death(HexCoord(1, 1), ArmyType.LEGION, Quality.AVERAGE, None, army_id=167)
+    state.record_battle_death(HexCoord(1, 1), ArmyType.AXEMEN, Quality.AVERAGE, None)
+
+    assert [entry.army_id for entry in state.battle_graveyard[HexCoord(1, 1)]] == [167, None]

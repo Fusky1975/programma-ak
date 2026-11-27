@@ -1375,7 +1375,13 @@ def _award_cast_experience(state: GameState, leader_id: int, spell: Spell, rng: 
     being 1+, so both must still be excluded from credit here.
     """
 
-    caster = state.leaders[leader_id]
+    award_spell_experience(state.leaders[leader_id], spell, rng)
+
+
+def award_spell_experience(caster: LeaderState, spell: Spell, rng: random.Random) -> None:
+    """The school-experience row of ``_award_cast_experience()`` for a caster already in hand -- shared with
+    the spells cast inside a personal combat (a duel), which are real casts too."""
+
     ability = _spell_ability(caster, spell)
     natural_skill = caster.skills.pair_for_ability(ability)[0] if caster.skills is not None else 0
     if natural_skill < 1:
