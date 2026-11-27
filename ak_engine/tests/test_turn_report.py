@@ -439,7 +439,12 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
-from ak_engine.turn.cast_execution import CastExecutionResult, LocateObjectResult, WAND_USED_IMPROPERLY_REASON
+from ak_engine.turn.cast_execution import (
+    SPELL_EFFECT_NOT_MODELED_REASON,
+    WAND_USED_IMPROPERLY_REASON,
+    CastExecutionResult,
+    LocateObjectResult,
+)
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
 from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
@@ -8513,15 +8518,29 @@ def test_describe_cast_renders_the_announcement_when_applied():
     assert line == "Aldric cast a Kill Enemy spell and Borin was magically killed by a dark Necromantic spell!"
 
 
-def test_describe_cast_renders_nothing_when_not_applied():
+def test_describe_cast_tells_a_cast_that_did_not_take_effect():
+    # 2026-11-27: two Charms cast on a freed Hero left no trace in the report -- every rejection is now told the way
+    # the original tells a failed cast (SAY.PAS _SFail = SFAIL.X), whatever the reason.
+    for reason in ("spell failed", "not co-located", "target commands military units", "no action-cast slots remaining"):
+        result = CastExecutionResult(request=CastRequest(spell=Spell.CHARM, target=59), applied=False, reason=reason)
+
+        line = describe_cast(result, caster_name="Vitello", rng=random.Random(3), target_name="Thrym")
+
+        assert line is not None and "Vitello" in line and "Charm" in line, (reason, line)
+
+
+def test_describe_cast_stays_silent_for_a_spell_that_is_not_executed():
     result = CastExecutionResult(
-        request=CastRequest(spell=Spell.KILL_ENEMY, target=0), applied=False, reason="cast roll failed"
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=0), applied=False, reason=SPELL_EFFECT_NOT_MODELED_REASON
     )
-    rng = ScriptedRandom([])
 
-    line = describe_cast(result, caster_name="Aldric", rng=rng, target_name="Borin")
+    assert describe_cast(result, caster_name="Aldric", rng=ScriptedRandom([]), target_name="Borin") is None
 
-    assert line is None
+
+def test_describe_cast_can_be_asked_to_stay_silent_about_a_failure():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.CHARM, target=59), applied=False, reason="spell failed")
+
+    assert describe_cast(result, caster_name="Vitello", rng=ScriptedRandom([]), tell_failure=False) is None
 
 
 def test_describe_cast_renders_the_wand_used_improperly_message():
@@ -20077,3 +20096,23 @@ def test_the_monster_that_is_brought_a_king_says_he_did_not_taste_like_a_hero():
     text = " ".join(describe_search(result, state=_quest_note_state(), character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
 
     assert "did not taste like a Hero" in text and "go away!" in text.lower()
+
+
+def test_describe_turn_results_tells_a_charm_that_did_nothing_in_the_phase_it_was_cast():
+    # 2026-11-27 (a played turn): a King cast Charm twice on a freed Hero and the report said nothing at all.
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Vitelloia", Race.HUMAN, Alignment.UNDEAD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Vitello", location=HexCoord(1, 1), is_king=True, alignment=Alignment.UNDEAD))
+    state.add_leader(LeaderState(59, kingdom_id=None, name="Thrym", location=HexCoord(1, 1)))
+    request = CastRequest(spell=Spell.CHARM, target=59)
+    entries = [
+        PhaseDispatchResult(2, 0, "P2", ActionCode.CAST, CastExecutionResult(request, applied=False, reason="spell failed"), None),
+        PhaseDispatchResult(2, 0, "P3", ActionCode.CAST, CastExecutionResult(request, applied=True), None),
+    ]
+
+    lines = describe_turn_results(entries, state, random.Random(5))
+
+    failed = [line for line in lines if "Charm" in line and "Vitello" in line and "charmed by" not in line]
+    worked = [line for line in lines if "Thrym was magically charmed by Vitello" in line]
+    assert len(failed) == 1 and len(worked) == 1
+    assert lines.index(failed[0]) < lines.index(worked[0])  # in the order the phases came
