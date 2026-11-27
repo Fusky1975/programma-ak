@@ -986,6 +986,8 @@ class QuestNote(Enum):
     WRONG_ANSWER = "wrong_answer"  # _LFWrong: the riddle was not answered (right)
     SERVICE_NOT_PERFORMED = "service_not_performed"  # _LFTryAg: the hero did not do what the monster asked
     KING_ONLY = "king_only"  # _LFKOnly: only a King can sell his soul
+    NO_PRICE = "no_price"  # _LFNoPri: the Kingdom cannot pay the price
+    NOT_QUALIFIED = "not_qualified"  # _LFNQual: the hero has not the skill the monster asks for
     BETRAYED = "betrayed"  # the monster does not keep its word and attacks (_LHaHa / _LWGrr, _LPrDie)
 
 
@@ -1187,6 +1189,7 @@ class SearchExecutionResult:
     # The hero a monster of vengeance asks the character to kill (the target of the Talk that proposed it).
     quest_target_leader_id: int | None = None
     quest_visit_coord: HexCoord | None = None  # the province a travel quest sends the hero to
+    quest_price: int | None = None  # the gold a monster that sells its treasure asks (``MonsterTalkReply.R_SELL``)
     quest_reply: MonsterTalkReply | None = None  # the quest the notes above are about
     guardian_talk_treasure: Treasure | None = None
     guardian_talk_coord: HexCoord | None = None
@@ -1803,10 +1806,55 @@ def _select_guardian_quest_location(monster: Monster, feature_id: int) -> Treasu
     return _select_guardian_item(monster, feature_id, _GUARDIAN_QUEST_LOCATIONS)
 
 
-def _honor_bonus_kwargs(reply: MonsterTalkReply) -> dict[str, int]:
-    """The ``WillHonor`` bonus of a quest where it is not the common 100: the travel quest's 125."""
+def _honor_bonus_kwargs(reply: MonsterTalkReply, monster: Monster | None = None) -> dict:
+    """The ``WillHonor`` parameters of a quest where they are not the common ones: the travel quest's bonus 125, and
+    the drain's bonus 0 with the veto on an intelligent monster (``AKGEN_reverse_engineering_report (3).md`` SS79, SS82)."""
 
-    return {"bonus": FULFILL_VISIT_BONUS} if reply is MonsterTalkReply.R_VISIT else {}
+    if reply is MonsterTalkReply.R_VISIT:
+        return {"bonus": FULFILL_VISIT_BONUS}
+    if reply is MonsterTalkReply.R_DRAIN:
+        kwargs: dict = {"bonus": 0}
+        if monster is not None:
+            kwargs["guardian_intelligence"] = MONSTER_RUNTIME_PROFILE[monster].intelligence
+        return kwargs
+    return {}
+
+
+def sell_price(feature: Feature) -> int:
+    """The gold a monster that sells its treasure asks (``MonsterTalkReply.R_SELL``): ``10 + (feature number AND 31)``,
+    that is 10 to 41 gold (``AKGEN_reverse_engineering_report (3).md`` SS77)."""
+
+    return 10 + (feature.feature_id & 31)
+
+
+WFREE_MIN_WHITE_MAGIC = 3
+
+
+def drain_half_the_soul(leader: LeaderState, rng: random.Random) -> None:
+    """Every skill and every aptitude of the hero is halved; an odd one rounds up or down with a 50% chance each
+    (``(value + a random bit) div 2``, each of the 15 pairs and each of its two values drawn on its own)."""
+
+    skills = leader.skills
+    if skills is None:
+        return
+    for ability in Ability:
+        skill, aptitude = skills.pair_for_ability(ability)
+        skills.set_pair_for_ability(ability, (skill + rng.randint(0, 1)) // 2, (aptitude + rng.randint(0, 1)) // 2)
+
+
+def _kingdom_knows_another_lair_of(state: GameState, feature: Feature, kingdom_id: int | None) -> bool:
+    """For the lonely monster (``MonsterTalkReply.R_MATE``): the Kingdom has found another living feature held by a
+    monster of its kind."""
+
+    if kingdom_id is None:
+        return False
+    return any(
+        other.feature_id != feature.feature_id
+        and other.guardian_monster is feature.guardian_monster
+        and not other.looted
+        and other.discovered_by_kingdom.get(kingdom_id, 0) > 0
+        for other in state.features.values()
+    )
 
 
 def quest_item_for_reply(reply: MonsterTalkReply, monster: Monster, feature_id: int) -> Treasure | None:
@@ -1872,6 +1920,11 @@ _MODELLED_QUESTS = frozenset(
         MonsterTalkReply.R_PREVENGE,
         MonsterTalkReply.R_SOUL,
         MonsterTalkReply.R_VISIT,
+        MonsterTalkReply.R_PAIN,
+        MonsterTalkReply.R_SELL,
+        MonsterTalkReply.R_WFREE,
+        MonsterTalkReply.R_DRAIN,
+        MonsterTalkReply.R_MATE,
     }
 )
 
@@ -4048,7 +4101,7 @@ def _resolve_search_encounter_body(
                 leader.alignment,
                 rng,
                 caster_is_silver_tongue=caster_is_silver_tongue,
-                **_honor_bonus_kwargs(reply),
+                **_honor_bonus_kwargs(reply, feature.guardian_monster),
             )
             feature.psychic_mage_sensed_fulfill_honor = sensed_fulfill_honor
         give_quest_item(state, leader_id, feature)
@@ -4080,6 +4133,7 @@ def _resolve_search_encounter_body(
             guardian_talk_coord=feature.coord,
             quest_target_leader_id=feature.quest_target_leader_id,
             quest_visit_coord=feature.quest_visit_coord,
+            quest_price=sell_price(feature) if reply is MonsterTalkReply.R_SELL else None,
         )
 
     def _resolve_slave_fulfill() -> SearchExecutionResult | None:
@@ -4140,6 +4194,16 @@ def _resolve_search_encounter_body(
             note_quest_visits(state, leader_id)
             if feature.quest_visit_coord is not None and not feature.quest_visit_done:
                 return _quest_requirement_unmet(QuestNote.SERVICE_NOT_PERFORMED, reply)
+        elif reply is MonsterTalkReply.R_SELL:
+            kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None
+            if kingdom is None or kingdom.treasury < sell_price(feature):
+                return _quest_requirement_unmet(QuestNote.NO_PRICE, reply)
+        elif reply is MonsterTalkReply.R_WFREE:
+            if effective_skill_level(state, leader, Ability.WHITE) < WFREE_MIN_WHITE_MAGIC:
+                return _quest_requirement_unmet(QuestNote.NOT_QUALIFIED, reply)
+        elif reply is MonsterTalkReply.R_MATE:
+            if not _kingdom_knows_another_lair_of(state, feature, leader.kingdom_id):
+                return _quest_requirement_unmet(QuestNote.SERVICE_NOT_PERFORMED, reply)
         elif reply is MonsterTalkReply.R_SOUL and not leader.is_king:
             return _quest_requirement_unmet(QuestNote.KING_ONLY, reply)
 
@@ -4148,8 +4212,10 @@ def _resolve_search_encounter_body(
         feature.psychic_mage_sensed_fulfill_honor = None
         silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
         caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
-        if reply is MonsterTalkReply.R_SOUL:
-            honored = True  # the compiled Fulfill makes no honor roll for the contract of the soul
+        if reply is MonsterTalkReply.R_DRAIN:
+            drain_half_the_soul(leader, rng)  # before the test: a betrayal does not give the soul back
+        if reply in (MonsterTalkReply.R_SOUL, MonsterTalkReply.R_MATE):
+            honored = True  # the compiled Fulfill makes no honor roll for these
         elif sensed_fulfill_honor is not None:
             honored = sensed_fulfill_honor
         else:
@@ -4158,9 +4224,12 @@ def _resolve_search_encounter_body(
                 leader.alignment,
                 rng,
                 caster_is_silver_tongue=caster_is_silver_tongue,
-                **_honor_bonus_kwargs(reply),
+                **_honor_bonus_kwargs(reply, feature.guardian_monster),
             )
         if not honored:
+            if reply is MonsterTalkReply.R_SELL:
+                kingdom = state.kingdoms.get(leader.kingdom_id)
+                kingdom.treasury -= min(kingdom.treasury, sell_price(feature))  # takes what is offered, does not pay
             quest_log.append((QuestNote.BETRAYED, reply))
             combat_attempted = True  # "now, prepare to die": the plan goes on to its fight
             return None
@@ -4175,6 +4244,12 @@ def _resolve_search_encounter_body(
         _close_quest_item(state, leader_id, feature, reply)
         if reply is MonsterTalkReply.R_SOUL:
             leader.soul_sold = True
+        if reply is MonsterTalkReply.R_SELL:
+            state.kingdoms[leader.kingdom_id].treasury -= sell_price(feature)
+        if reply is MonsterTalkReply.R_MATE:
+            # "[the monster] wasted no time in departing on its romantic pilgrimage": the lair is empty, as if its
+            # guardian were dead (a raider's raids end with it, which the pacification above already credited).
+            feature.looted = True
         outcome = SearchExecutionResult(
             accepted=True,
             combat_resolved=False,

@@ -13632,7 +13632,16 @@ def render_quest_fulfill_notes(
             text = render_quest_service_not_performed(monster_name, rng)
         elif note is QuestNote.KING_ONLY:
             text = render_quest_fled_in_fear(character_name, monster_name, rng)
-        elif reply is MonsterTalkReply.R_SOUL:
+        elif note is QuestNote.NO_PRICE:
+            text = render_quest_insufficient_price(monster_name, rng)
+        elif note is QuestNote.NOT_QUALIFIED:
+            text = render_quest_insufficient_skill(monster_name, rng)
+        elif reply in (MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_TRADE, MonsterTalkReply.R_SELL):
+            # _LWTake (its quote left open, as in the original) closed by _LPrDie: it takes what was offered, does not pay
+            text = render_quest_item_taken_anyway(monster_name, rng) + render(
+                _MONSTER_THREAT_DEATH_TEMPLATES[1], {"[1": monster_name}, rng=rng
+            )
+        elif reply in (MonsterTalkReply.R_SOUL, MonsterTalkReply.R_SACH, MonsterTalkReply.R_JUNDEAD, MonsterTalkReply.R_DRAIN):
             text = render_quest_mockery(monster_name, rng) + render(_MONSTER_THREAT_DEATH_TEMPLATES[1], {"[1": monster_name}, rng=rng)
         else:
             text = render_monster_threat_death(monster_name, rng)
@@ -13652,6 +13661,7 @@ def render_guardian_talk_offer(
     feature_name: str,
     rng: random.Random,
     target_name: str | None = None,
+    price: int | None = None,
 ) -> list[str]:
     """Two lines: that the character spoke with the guardian, then the
     guardian's own offer (``MONSTER_TALK_OFFER_TEXT[reply]``), with the
@@ -13663,7 +13673,7 @@ def render_guardian_talk_offer(
         text = text.replace("⟦CTRL-C:quest-character⟧", target_name)
     for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
         text = text.replace(marker, placeholder)
-    text = text.replace("FU-lfill", "Fulfill").replace("# gold", "a hefty sum in gold")
+    text = text.replace("FU-lfill", "Fulfill").replace("# gold", f"{price} gold" if price is not None else "a hefty sum in gold")
     values = {
         "[1": monster_name,
         "[": monster_name,
@@ -13931,6 +13941,7 @@ def _describe_search_lines(
                 feature_name=feature_name,
                 rng=rng,
                 target_name=_quest_target_name(state, result.quest_target_leader_id),
+                price=result.quest_price,
             )
         )
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.

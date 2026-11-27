@@ -19973,3 +19973,51 @@ def test_the_journey_is_told_in_the_phase_in_which_the_hero_arrived():
 
     assert any("While Pascal was in Mongu" in line and "Cosmic Snowball" in line for line in in_that_phase)
     assert not any("Cosmic Snowball" in line for line in in_another_phase)
+
+
+def test_the_monsters_refusals_for_the_price_and_the_skill():
+    from ak_engine.turn.encounter import MonsterTalkReply
+    from ak_engine.turn.search_execution import QuestNote
+
+    state = _quest_note_state()
+    for note, reply, fragment in (
+        (QuestNote.NO_PRICE, MonsterTalkReply.R_SELL, "asking price"),
+        (QuestNote.NOT_QUALIFIED, MonsterTalkReply.R_WFREE, "skill"),
+    ):
+        result = SearchExecutionResult(
+            accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX, quest_notes=(note,), quest_reply=reply
+        )
+        text = " ".join(describe_search(result, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+        assert fragment in text and "Go away!" in text, text
+
+
+def test_a_broken_word_for_a_sale_is_the_take_what_i_want_line_and_for_a_drain_the_mockery():
+    from ak_engine.turn.encounter import MonsterTalkReply
+    from ak_engine.turn.search_execution import QuestNote
+
+    state = _quest_note_state()
+    for reply, fragment in ((MonsterTalkReply.R_SELL, "always"), (MonsterTalkReply.R_TRADE, "always"), (MonsterTalkReply.R_DRAIN, "tricked")):
+        result = SearchExecutionResult(
+            accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX,
+            quest_notes=(QuestNote.BETRAYED,), quest_reply=reply,
+        )
+        text = " ".join(describe_search(result, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+        assert text.rstrip().endswith('!"') and "Now," in text, text  # the open quote of the taunt is closed by the threat
+        if reply is MonsterTalkReply.R_DRAIN:
+            assert "tricked" in text or "deceived" in text, text
+        else:
+            assert "thank you" in text and ("always" in text or "wrest" in text), text
+
+
+def test_the_seller_names_its_price_in_the_offer():
+    from ak_engine.report.turn_report import render_guardian_talk_offer
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    offer = " ".join(
+        render_guardian_talk_offer(
+            "Pascal", "the Sphinx", MonsterTalkReply.R_SELL, province_name="Plains", treasure_name="Wand of Fireball",
+            feature_name="Pyramid", rng=random.Random(4), price=23,
+        )
+    )
+
+    assert "23 gold" in offer and "hefty" not in offer
