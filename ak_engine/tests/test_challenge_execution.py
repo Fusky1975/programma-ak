@@ -849,13 +849,15 @@ def test_execute_challenge_cast_charm_success_makes_the_caster_flee():
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
     request = _cast_request(2, Spell.CHARM, Maneuver.MELEE)
 
-    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1]))
+    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.5, 0.5]))
 
     assert result.accepted is True
     assert result.combat_occurred is True
     assert result.fled is True
     assert result.winner_leader_id is None
     assert 1 in state.leaders and 2 in state.leaders
+    # 2026-11-27: the Charm that came off earned Psychic experience, as an Action Cast does.
+    assert state.leaders[1].experience_credit == 10
 
 
 def test_execute_challenge_cast_fizzle_falls_through_to_melee_and_is_recorded():
@@ -1163,7 +1165,7 @@ def test_execute_challenge_cast_kill_enemy_kills_via_a_successful_roll():
     request = _cast_request(2, Spell.KILL_ENEMY)
 
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True):
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.0]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert result.winner_leader_id == 1
     assert result.loser_killed is True
@@ -1475,7 +1477,7 @@ def test_execute_challenge_cast_augur_combat_not_blocked_by_target_anti_magic_am
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="b", rounds=1)
     ), patch("ak_engine.turn.challenge_execution.resolve_augur_combat", return_value=True):
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert result.fled is True
 
@@ -1486,7 +1488,7 @@ def test_execute_challenge_cast_control_undead_success_kills_undead_target():
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD))
     request = _cast_request(2, Spell.CONTROL_UNDEAD)
 
-    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1]))
+    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.5, 0.5]))
 
     assert result.winner_leader_id == 1
     assert result.loser_leader_id == 2
@@ -1542,7 +1544,7 @@ def test_execute_challenge_cast_control_undead_enhanced_ability_makes_anti_holy_
     request = _cast_request(2, Spell.CONTROL_UNDEAD)
 
     with patch("ak_engine.turn.challenge_execution.control_undead_anti_holy_resist_chance", return_value=0.0):
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.9]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.9, 0.5, 0.5]))
 
     assert result.winner_leader_id == 1
     assert result.loser_leader_id == 2
@@ -1563,7 +1565,7 @@ def test_execute_challenge_cast_control_undead_anti_holy_resist_roll_blocks_neut
         "ak_engine.turn.challenge_execution.resolve_melee_duel"
     ) as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.5]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.5, 0.5, 0.5]))
 
     assert mock_melee.called
 
@@ -1582,7 +1584,7 @@ def test_execute_challenge_cast_holy_symbol_enhanced_grants_bonus_damage_against
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.roll_holy_symbol_undead_damage", return_value=999
     ):
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert result.winner_leader_id == 1
     assert result.loser_leader_id == 2
@@ -1599,7 +1601,7 @@ def test_execute_challenge_cast_holy_symbol_without_enhancement_no_bonus_against
         "ak_engine.turn.challenge_execution.roll_holy_symbol_undead_damage", return_value=999
     ) as mock_damage, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert not mock_damage.called
     assert mock_melee.called
@@ -1614,7 +1616,7 @@ def test_execute_challenge_cast_fireball_kills_via_damage():
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.roll_fireball_damage", return_value=99
     ):
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert result.winner_leader_id == 1
     assert result.loser_leader_id == 2
@@ -1637,7 +1639,7 @@ def test_execute_challenge_cast_fireball_target_kingdom_holding_asbestos_clothin
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.roll_fireball_damage", return_value=99
     ) as mock_damage:
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_damage.call_args.kwargs["target_has_asbestos_clothing"] is True
 
@@ -1651,7 +1653,7 @@ def test_execute_challenge_cast_fireball_target_kingdom_without_asbestos_clothin
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.roll_fireball_damage", return_value=99
     ) as mock_damage:
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_damage.call_args.kwargs["target_has_asbestos_clothing"] is False
 
@@ -1677,7 +1679,7 @@ def test_execute_challenge_cast_words_of_healing_heals_the_caster():
         "ak_engine.turn.challenge_execution.resolve_melee_duel"
     ) as mock_melee, patch("ak_engine.turn.challenge_execution.words_of_healing_heal") as mock_heal:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     mock_heal.assert_called_once()
     healed_combatant, max_hit_points = mock_heal.call_args[0]
@@ -1764,7 +1766,7 @@ def test_execute_challenge_cast_hand_of_death_channel_win_kills_target():
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="a", rounds=3)
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert result.winner_leader_id == 1
     assert result.loser_leader_id == 2
@@ -1786,7 +1788,7 @@ def test_execute_challenge_cast_hand_of_death_victims_lethal_counter_attack_wins
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="b", rounds=3)
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert result.winner_leader_id == 2
     assert result.loser_leader_id == 1
@@ -1804,7 +1806,7 @@ def _run_hand_of_death_challenge(channel_result, *, target_alignment=None, melee
     ) as mock_channel, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
         mock_channel.return_value = channel_result
         mock_melee.return_value = EncounterCombatResult(winner=melee_winner, rounds=1)
-        return execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        return execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))  # + the school experience
 
 
 def test_execute_challenge_hand_of_death_records_a_winning_channel():
@@ -1853,7 +1855,7 @@ def test_execute_challenge_cast_hand_of_death_enhanced_ability_overrides_the_imm
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="a", rounds=3)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_channel.call_args.kwargs["target_is_immune"] is False
 
@@ -1875,7 +1877,7 @@ def test_execute_challenge_cast_hand_of_death_target_kingdom_holding_artificial_
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_channel.call_args.kwargs["target_has_artificial_organs"] is True
 
@@ -1890,7 +1892,7 @@ def test_execute_challenge_cast_hand_of_death_target_kingdom_without_artificial_
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_channel.call_args.kwargs["target_has_artificial_organs"] is False
 
@@ -1911,7 +1913,7 @@ def test_execute_challenge_cast_hand_of_death_blocks_a_non_immune_target_from_ca
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     target_combatant = mock_channel.call_args.args[1]
     assert target_combatant.blocked_from_cast is True
@@ -1931,7 +1933,7 @@ def test_execute_challenge_cast_hand_of_death_does_not_block_an_immune_target():
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     target_combatant = mock_channel.call_args.args[1]
     assert target_combatant.blocked_from_cast is False
@@ -1952,7 +1954,7 @@ def test_execute_challenge_cast_hand_of_death_enhanced_ability_still_blocks_an_u
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     target_combatant = mock_channel.call_args.args[1]
     assert target_combatant.blocked_from_cast is True
@@ -1974,7 +1976,7 @@ def test_execute_challenge_cast_hand_of_death_artificial_organs_blocks_cast_only
         "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
     ) as mock_channel:
         mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     target_combatant = mock_channel.call_args.args[1]
     assert target_combatant.blocked_from_cast is True
@@ -1991,7 +1993,7 @@ def test_execute_challenge_cast_mirror_image_caster_wins():
         "ak_engine.turn.challenge_execution.resolve_mirror_image_duel"
     ) as mock_duel:
         mock_duel.return_value = EncounterCombatResult(winner="a", rounds=2)
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert result.winner_leader_id == 1
 
@@ -2012,7 +2014,7 @@ def test_execute_challenge_cast_mirror_image_caster_passes_own_detect_illusions_
         "ak_engine.turn.challenge_execution.resolve_mirror_image_duel"
     ) as mock_duel:
         mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is True
     assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is False
@@ -2030,7 +2032,7 @@ def test_execute_challenge_cast_mirror_image_target_passes_own_detect_illusions_
         "ak_engine.turn.challenge_execution.resolve_mirror_image_duel"
     ) as mock_duel:
         mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is True
     assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is False
@@ -2049,7 +2051,7 @@ def test_execute_challenge_cast_illusory_hero_caster_passes_own_detect_illusions
         "ak_engine.turn.challenge_execution.resolve_illusory_hero_duel"
     ) as mock_duel:
         mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is True
     assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is False
@@ -2068,7 +2070,7 @@ def test_execute_challenge_cast_illusory_hero_target_passes_own_detect_illusions
         "ak_engine.turn.challenge_execution.resolve_illusory_hero_duel"
     ) as mock_duel:
         mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_duel.call_args.kwargs["opponent_has_detect_illusions"] is True
     assert mock_duel.call_args.kwargs["caster_has_detect_illusions"] is False
@@ -2167,7 +2169,7 @@ def test_execute_challenge_cast_gate_demon_summons_and_the_demon_wins():
         "ak_engine.turn.challenge_execution.roll_gate_demon_type", return_value=Monster.SUCCUBUS
     ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5, 0.5]))
 
     assert result.winner_leader_id == 1
     demon_combatant = mock_melee.call_args[0][0]
@@ -2196,7 +2198,7 @@ def test_execute_challenge_cast_gate_demon_duel_passes_skip_temper_setup_and_sur
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1, melee_swings=(swing,))
         # the surfaced swing now also credits Melee XP (add_experience()'s
         # own "1 + random() - random()" spread) -- two extra draws needed.
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5, 0.5]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5, 0.5, 0.5, 0.5]))
 
     # Gate Demon is the plan's own first and only tactic -- this is the
     # encounter's very first melee contact, so setup was not done yet.
@@ -2213,7 +2215,7 @@ def test_execute_challenge_cast_psychic_blast_bonus_attacks_can_finish_the_targe
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.roll_psychic_blast_stun_rounds", return_value=2
     ), patch("ak_engine.turn.challenge_execution.roll_melee_attack", return_value=99):
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert result.winner_leader_id == 1
     assert result.loser_leader_id == 2
@@ -2233,7 +2235,7 @@ def test_execute_challenge_cast_psychic_blast_target_kingdom_holding_lead_lined_
         "ak_engine.turn.challenge_execution.roll_psychic_blast_stun_rounds", return_value=0
     ) as mock_stun, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_stun.call_args.kwargs["target_has_lead_lined_helmet"] is True
 
@@ -2248,7 +2250,7 @@ def test_execute_challenge_cast_psychic_blast_target_kingdom_without_lead_lined_
         "ak_engine.turn.challenge_execution.roll_psychic_blast_stun_rounds", return_value=0
     ) as mock_stun, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+        execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
 
     assert mock_stun.call_args.kwargs["target_has_lead_lined_helmet"] is False
 
@@ -3591,7 +3593,7 @@ def test_execute_challenge_fled_credits_no_duel_encounter_merit():
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
     request = _cast_request(2, Spell.CHARM, Maneuver.MELEE)
 
-    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1]))
+    result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.1, 0.5, 0.5]))
 
     assert result.fled is True
     assert state.leaders[1].merit_tally.duel_merit_net == 0

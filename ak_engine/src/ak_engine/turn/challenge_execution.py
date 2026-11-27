@@ -3244,6 +3244,7 @@ def execute_challenge(
         add_experience(challenger, Ability.ARCHERY, 10, rng)
     if any(s.shooter == "b" for s in combat_result.fire_arrow_shots):
         add_experience(target, Ability.ARCHERY, 10, rng)
+    award_combat_cast_experience(state, combat_result.cast_successes, rng)
 
     if combat_result.fled:
         return ChallengeExecutionResult(

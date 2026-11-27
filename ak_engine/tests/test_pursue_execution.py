@@ -20,6 +20,7 @@ from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import (
+    FireArrowShot,
     CHARACTER_HIT_POINTS,
     EncounterCombatResult,
     MeleeRoundOutcome,
@@ -731,7 +732,7 @@ def test_execute_pursue_cast_charm_success_makes_the_pursuer_flee():
         tactics=[SearchTactic(Maneuver.CAST, Spell.CHARM.value), SearchTactic(Maneuver.MELEE)],
     )
     # catch-up roll, Add_Experience's own gain draws, then the cast's own success roll.
-    rng = ScriptedRandom([0.0, 0.5, 0.5, 0.1])
+    rng = ScriptedRandom([0.0, 0.5, 0.5, 0.1, 0.5, 0.5])  # ... and the cast's own school experience
 
     result = execute_pursue(state, 1, request, rng=rng)
 
@@ -740,6 +741,9 @@ def test_execute_pursue_cast_charm_success_makes_the_pursuer_flee():
     assert result.fled is True
     assert result.winner_leader_id is None
     assert 1 in state.leaders and 2 in state.leaders
+    # The Charm that came off earned Psychic experience (round(10 * (1 + 0.5 - 0.5)) = 10), on top of the Spy
+    # experience of catching up.
+    assert state.leaders[1].experience_credit == 20
 
 
 # -- Phase 295: round-per-round engine + Temper-setup fix reachable via execute_pursue --
@@ -860,6 +864,27 @@ def test_execute_pursue_landed_melee_hit_credits_the_target_independently():
     # fires for `pursuer` here -- only Melee/Archery credit is under test.
     combat_ability_calls = [c for c in mock_add_experience.call_args_list if c.args[1] in (Ability.MELEE, Ability.ARCHERY)]
     assert all(call.args[0] is not pursuer for call in combat_ability_calls)
+
+
+def test_execute_pursue_fire_arrow_shot_credits_both_sides_archery_independently():
+    # Archery: an attempted shot counts, a miss too (rulebook [3.13], user decision 2026-11-23).
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.pursue_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="a",
+            fire_arrow_shots=(FireArrowShot(shooter="a", hit=False, damage=0), FireArrowShot(shooter="b", hit=True, damage=2)),
+        )
+        execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    mock_add_experience.assert_any_call(pursuer, Ability.ARCHERY, 10, ANY)
+    mock_add_experience.assert_any_call(target, Ability.ARCHERY, 10, ANY)
 
 
 def test_execute_pursue_all_miss_credits_nothing():

@@ -135,6 +135,7 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.challenge_execution import (
+    award_combat_cast_experience,
     is_encounter_accepted,
     plan_needs_combat_dispatch,
     resolve_challenge_combat,
@@ -488,6 +489,7 @@ def execute_patrol(
         add_experience(patroller, Ability.ARCHERY, 10, rng)
     if any(s.shooter == "b" for s in combat_result.fire_arrow_shots):
         add_experience(target, Ability.ARCHERY, 10, rng)
+    award_combat_cast_experience(state, combat_result.cast_successes, rng)
 
     if combat_result.fled:
         return PatrolExecutionResult(

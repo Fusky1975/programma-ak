@@ -3368,7 +3368,7 @@ def test_execute_search_cast_illusory_hero_no_valhalla_visitor_has_no_effect():
         "ak_engine.turn.search_execution.resolve_illusory_hero_duel"
     ) as mock_duel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
-        execute_search(state, LEADER_ID, request, random.Random(0))
+        execute_search(state, LEADER_ID, request, random.Random(5))
 
     assert not mock_duel.called
     assert mock_melee.called
@@ -3741,7 +3741,7 @@ def test_execute_search_cast_gate_angel_no_hero_visiting_has_no_effect():
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:
-        execute_search(state, LEADER_ID, request, random.Random(0))
+        execute_search(state, LEADER_ID, request, random.Random(5))
 
     assert mock_melee.call_count == 1  # only the plan's own Melee tactic -- no angel duel attempted
 
@@ -4155,7 +4155,7 @@ def test_execute_search_cast_augur_combat_simulated_win_never_shirks():
             EncounterCombatResult(winner="a", rounds=2),  # the silent simulation: caster wins
             EncounterCombatResult(winner="a", rounds=1),  # the plan's own real, following Melee
         ]
-        result = execute_search(state, LEADER_ID, request, random.Random(0))
+        result = execute_search(state, LEADER_ID, request, random.Random(5))
 
     assert mock_melee.call_count == 2  # simulation always runs, real duel follows (never shirks)
     assert result.fled is False
@@ -4195,7 +4195,7 @@ def test_execute_search_cast_augur_combat_simulated_loss_no_shirk_falls_through(
             EncounterCombatResult(winner="b", rounds=2),  # simulation: caster loses
             EncounterCombatResult(winner="a", rounds=1),  # real Melee, unaffected by the loss
         ]
-        result = execute_search(state, LEADER_ID, request, random.Random(0))
+        result = execute_search(state, LEADER_ID, request, random.Random(5))
 
     assert mock_melee.call_count == 2
     assert result.fled is False
