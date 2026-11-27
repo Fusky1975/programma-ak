@@ -733,6 +733,7 @@ prior behavior unchanged.
 from __future__ import annotations
 
 import random
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
@@ -1036,11 +1037,35 @@ _SPELL_ABILITY: dict[Spell, Ability] = {
 }
 
 
+@dataclass(frozen=True)
+class CastRoll:
+    """The dice of an Action Cast, for the GM's processing log: the chance the spell had (0..1) and what was rolled (0..1);
+    it takes effect when ``roll < chance``."""
+
+    chance: float
+    roll: float
+
+    def describe(self) -> str:
+        """"prob. 60% rolled 78" -- whole percentages when the chance is one, one decimal otherwise."""
+
+        percent = self.chance * 100
+        if abs(percent - round(percent)) < 1e-9:
+            return f"prob. {round(percent)}% rolled {int(self.roll * 100)}"
+        return f"prob. {percent:.1f}% rolled {self.roll * 100:.1f}"
+
+
+# Set by ``_roll_cast_success()`` and picked up by ``execute_cast()``, which hangs it on the result: the many
+# ``_execute_*`` handlers each call ``_roll_cast_success()`` once and none of them needs to know.
+_LAST_CAST_ROLL: ContextVar[CastRoll | None] = ContextVar("last_cast_roll", default=None)
+
+
 @dataclass(slots=True)
 class CastExecutionResult:
     request: CastRequest
     applied: bool
     reason: str | None = None  # set when applied is False
+    # The dice of the cast, when it came to a roll (the GM's processing log shows them: prob. 60% rolled 78).
+    cast_roll: CastRoll | None = None
     # Phase 270: set when the defending side's own anti-spell ward
     # Discovery changed the spell's effect (see module docstring's own
     # Phase 270 addendum) -- ``applied`` stays True (the spell *was*
@@ -1272,6 +1297,7 @@ def execute_cast(
     rng = rng if rng is not None else random.Random()
     board_width = board_width if board_width is not None else state.board_width
     spell = request.spell
+    _LAST_CAST_ROLL.set(None)
 
     if spell in CHARACTER_TARGET_SPELLS and spell is not Spell.RESURRECTION and request.target == VALHALLA_VISITOR_LEADER_ID:
         visitor = state.leaders.get(VALHALLA_VISITOR_LEADER_ID)
@@ -1323,6 +1349,7 @@ def execute_cast(
     else:
         return CastExecutionResult(request, applied=False, reason=SPELL_EFFECT_NOT_MODELED_REASON)
 
+    result.cast_roll = _LAST_CAST_ROLL.get()
     if result.applied:
         _award_cast_experience(state, leader_id, spell, rng)
         _award_royal_title_spell_merit(state, leader_id, spell)
@@ -1591,7 +1618,9 @@ def _roll_cast_success(
         chance += PLACES_BONUS_PERCENT
     chance *= success_chance_multiplier
     chance = min(chance, ACTION_SPELL_CHANCE_CAP)
-    if rng.random() < chance:
+    roll = rng.random()
+    _LAST_CAST_ROLL.set(CastRoll(chance=chance, roll=roll))
+    if roll < chance:
         return True, None
     return False, "spell failed"
 

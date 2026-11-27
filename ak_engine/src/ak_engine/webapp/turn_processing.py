@@ -12,6 +12,9 @@ same screen, until the game ends.
 from __future__ import annotations
 
 import struct
+import warnings
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Collection
 
@@ -189,21 +192,68 @@ def _processing_log_leader_label(state: GameState, leader_id: int) -> tuple[str,
     return kingdom_label, f"{leader.name} (#{leader_id})"
 
 
-def _order_outcome_note(result: object) -> str:
-    """For the GM's log: an order that was carried out but did nothing -- a Cast with ``applied`` false -- says why (the
-    spell, its target and the reason), which the players' own reports tell only as "bungled it"."""
+@dataclass(frozen=True)
+class MoveFileSummary:
+    """What the turns hub shows about one saved move file: when it was saved and, for each character, the phases (numbered
+    1 to 5, the way the players count them) the file leaves without any order -- so an old or incomplete file is seen before
+    the turn is processed. ``readable`` is False for a file that could not be read at all."""
 
-    if getattr(result, "applied", None) is not False:
+    saved_at: datetime | None
+    readable: bool = True
+    gaps: tuple[tuple[int, str, tuple[int, ...]], ...] = ()  # (leader id, name, phases without an order)
+    characters: int = 0
+
+
+def summarize_move_file(path: Path) -> MoveFileSummary:
+    """A phase counts as without an order when the file has none for it or has "No Action" (``ActionCode.NO_ACTION``, what
+    the Compose page puts in every row nobody touched); a deliberate Wait or Defend is an order."""
+
+    try:
+        saved_at = datetime.fromtimestamp(path.stat().st_mtime)
+    except OSError:
+        saved_at = None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            kingdom = parse_k1_moves_file(path)
+    except Exception:  # noqa: BLE001 -- a file the hub cannot read must not break the hub
+        return MoveFileSummary(saved_at=saved_at, readable=False)
+    gaps: list[tuple[int, str, tuple[int, ...]]] = []
+    for leader in kingdom.leaders:
+        ordered: set[int] = set()
+        if leader.plan is not None:
+            for segment in leader.plan.segments:
+                for label, phase in segment.phases.items():
+                    if phase.action is not ActionCode.NO_ACTION and label[1:].isdigit():
+                        ordered.add(int(label[1:]))
+        missing = tuple(n + 1 for n in range(5) if n not in ordered)
+        if missing:
+            gaps.append((leader.leader_id, leader.name, missing))
+    return MoveFileSummary(saved_at=saved_at, gaps=tuple(gaps), characters=len(kingdom.leaders))
+
+
+def _order_outcome_note(result: object) -> str:
+    """For the GM's log: a Cast says what it was, on whom and, when it came to a roll, the chance and the dice -- so a
+    failure is seen to be bad luck ("spell failed prob. 60% rolled 78"); one that did nothing says why."""
+
+    applied = getattr(result, "applied", None)
+    if applied is None:
         return ""
     request = getattr(result, "request", None)
     spell = getattr(request, "spell", None)
     target = getattr(request, "target", None)
     what = getattr(spell, "name", None)
-    detail = f" -- {what}" if what else ""
+    detail = f"{what}" if what else ""
     if what and target is not None:
         detail += f" on #{target}"
+    roll = getattr(result, "cast_roll", None)
+    dice = f" {roll.describe()}" if roll is not None else ""
+    if applied is True:
+        return f" ({detail}:{dice})" if detail and dice else ""
     reason = getattr(result, "reason", None)
-    return f" (had no effect{detail}: {reason})" if reason else f" (had no effect{detail})"
+    body = f"{reason}{dice}" if reason else dice.strip()
+    prefix = f" -- {detail}" if detail else ""
+    return f" (had no effect{prefix}: {body})" if body else f" (had no effect{prefix})"
 
 
 def format_turn_processing_log(results: list[PhaseDispatchResult], state: GameState) -> list[str]:

@@ -38,7 +38,23 @@
         <tr>
           <td>{{ kingdom.name }}</td>
           {% if kingdom_id in uploads %}
-            <td class="status-ok">{{ uploads[kingdom_id].name }}</td>
+            {% set summary = upload_summaries[kingdom_id] %}
+            <td class="{{ 'status-ok' if summary.readable and not summary.gaps else 'status-warning' }}">
+              {{ uploads[kingdom_id].name }}
+              {% if summary.saved_at %}<br><span class="hex-map-legend-note">saved {{ summary.saved_at.strftime('%Y-%m-%d %H:%M') }}</span>{% endif %}
+              {% if not summary.readable %}
+                <br><strong>Could not read this file's orders.</strong>
+              {% elif not summary.gaps %}
+                <br><span class="hex-map-legend-note">every character has an order in every phase</span>
+              {% else %}
+                <br><strong>Phases left without an order:</strong>
+                <ul class="plain-list">
+                  {% for leader_id, leader_name, phases in summary.gaps %}
+                    <li>{{ leader_name }} (#{{ leader_id }}): {{ 'phase' if phases|length == 1 else 'phases' }} {{ phases|join(', ') }}{% if phases|length == 5 %} &mdash; no orders at all{% endif %}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </td>
             <td>
               <a class="button" href="{{ url_for('turns_view_upload', slug=meta.slug, kingdom_id=kingdom_id) }}">View</a>
               <form class="inline" method="post" action="{{ url_for('turns_remove_upload', slug=meta.slug, kingdom_id=kingdom_id) }}">
