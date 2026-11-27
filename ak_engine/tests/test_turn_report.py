@@ -5963,14 +5963,15 @@ def test_render_valhalla_visit_announcement_substitutes_king_and_hero():
     line = render_valhalla_visit_announcement("Aldric", "Quintilian", rng)
     assert line == (
         'Aldric was visited by a hero from Valhalla, named Quintilian!The characteristics '
-        'for this great King from Game # are given in your "CHARACTERS" report.'
+        'for this great King from Game 74 are given in your "CHARACTERS" report.'
     )
 
 
-def test_render_valhalla_visit_announcement_leaves_the_game_number_marker_literal():
-    rng = ScriptedRandom([])
-    line = render_valhalla_visit_announcement("Aldric", "Quintilian", rng)
-    assert "Game #" in line
+def test_render_valhalla_visit_announcement_gives_the_hero_a_stable_game_number_never_a_bare_hash():
+    first = render_valhalla_visit_announcement("Aldric", "Quintilian", ScriptedRandom([]))
+    second = render_valhalla_visit_announcement("Borin", "Quintilian", ScriptedRandom([]))
+    assert "Game #" not in first
+    assert first.split("Game ")[1].split(" ")[0] == second.split("Game ")[1].split(" ")[0]
 
 
 def _gate_angel_visit_sentinel(visitor: LeaderState) -> PhaseDispatchResult:
@@ -6960,7 +6961,7 @@ def test_describe_rumor_shows_the_real_name_for_a_province_this_kingdom_already_
     assert "$" not in line
 
 
-def test_describe_rumor_shows_a_raw_hex_code_for_a_province_this_kingdom_does_not_know():
+def test_describe_rumor_names_a_province_this_kingdom_has_never_visited_too():
     coord = HexCoord(9, 9)
     state, feature = _rumor_state_with_feature(coord, guardian_monster=Monster.ARCHER)
     state.add_province(
@@ -6981,13 +6982,13 @@ def test_describe_rumor_shows_a_raw_hex_code_for_a_province_this_kingdom_does_no
 
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
-    assert line == "Aldric heard of a feature in  $99:  a Dungeon (#1) inhabited by the Renegade Archer."
-    assert "Thornwood" not in line
+    # The real reports always name the province of a rumor, visited or not -- never "$99".
+    assert line == "Aldric heard of a feature in  Thornwood:  a Dungeon (#1) inhabited by the Renegade Archer."
+    assert "$" not in line
 
 
-def test_describe_rumor_shows_a_different_kingdoms_knowledge_does_not_leak():
-    # Kingdom 2 knows the province; the rumor was heard by Kingdom 1,
-    # which doesn't -- its own report must still use the raw hex code.
+def test_describe_rumor_names_the_province_whoever_knows_it():
+    # Kingdom 2 knows the province; the rumor was heard by Kingdom 1, which doesn't -- both read the name.
     coord = HexCoord(9, 9)
     state, feature = _rumor_state_with_feature(coord, guardian_monster=Monster.ARCHER)
     state.add_province(
@@ -7008,7 +7009,7 @@ def test_describe_rumor_shows_a_different_kingdoms_knowledge_does_not_leak():
 
     line = describe_rumor(rumor, state, "Aldric", board_width=10, rng=rng)
 
-    assert line == "Aldric heard of a feature in  $99:  a Dungeon (#1) inhabited by the Renegade Archer."
+    assert line == "Aldric heard of a feature in  Thornwood:  a Dungeon (#1) inhabited by the Renegade Archer."
 
 
 def test_describe_rumor_picks_the_selected_variant():

@@ -7193,14 +7193,14 @@ def render_valhalla_visit_announcement(king_name: str, hero_name: str, rng: rand
     """Renders ``turn/valhalla_execution.py VALHALLA_VISIT_ANNOUNCEMENT_
     TEMPLATE`` (Phase 585) -- the real ``GOOD.X2``/``EVIL.X2`` template
     sentence announcing a new Valhalla visitor to the King they spawned
-    beside. `#` (the historical game number, see that constant's own
-    docstring for why this project has no such concept) is deliberately
-    left out of ``values`` -- ``render()``'s own contract leaves any
-    unmapped marker untouched in the output, matching that module's own
-    documented "kept as the literal, unresolved `#` marker" stance.
+    beside. `#` (the historical game number) is an invented, stable
+    number derived from the hero's name -- see the comment below.
     """
 
-    values = {"<": king_name, "=": hero_name}
+    # 2026-11-27 (user): the original names the numbered game the hero comes from ("a great King from Game 74"); here
+    # there is no such history, so each hero gets a stable invented game number from his name, never a bare "#".
+    game_number = 10 + sum(ord(character) for character in hero_name) % 90
+    values = {"<": king_name, "=": hero_name, "#": str(game_number)}
     return render(VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE, values, rng=rng)
 
 
@@ -13479,12 +13479,11 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
         values["\\"] = TREASURE_NAME[rumor.described_treasure]
         variant = pick_variant(_FRUMOR_ITEM_TEMPLATES, rng)
 
+    # 2026-11-27 (user): the real reports always name the province of a rumor ("a feature in Kalabo: a Maze"), even
+    # one the Kingdom has never visited -- never "$51". The raw hex code is only a last resort for a province with
+    # no name at all.
     described_province = state.provinces.get(rumor.described_coord)
-    if (
-        described_province is not None
-        and described_province.name is not None
-        and described_province.known_to_kingdom(rumor.kingdom_id)
-    ):
+    if described_province is not None and described_province.name is not None:
         variant = variant.replace("$#", "@")
         values["@"] = described_province.name
     else:
