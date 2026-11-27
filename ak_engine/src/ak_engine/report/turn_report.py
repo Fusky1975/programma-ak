@@ -5424,7 +5424,8 @@ def describe_cast(
             treasure = _WAND_SPELL_TO_TREASURE.get(result.request.spell)
             if treasure is not None:
                 return render_wand_used_improperly(caster_name, TREASURE_NAME[treasure], rng)
-        if result.reason == SPELL_EFFECT_NOT_MODELED_REASON or not tell_failure:
+        if result.reason == SPELL_EFFECT_NOT_MODELED_REASON or not tell_failure or result.kill_enemy_berserk_winner is not None:
+            # (a Kill Enemy that went berserk on the caster has its own, longer story, told by its own block)
             return None  # one of the spells this project does not execute: nothing happened to tell
         # 2026-11-27 (a played turn: two Charms cast on a freed Hero left no trace): every other Cast that did not
         # take effect -- a failed roll, a target not there, one that already commands armies, no casts left this
