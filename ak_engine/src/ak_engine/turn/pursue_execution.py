@@ -186,6 +186,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, snaps
 from ak_engine.turn.diplomacy import is_attackable_at
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.challenge_execution import (
+    award_combat_cast_experience,
     is_encounter_accepted,
     plan_needs_combat_dispatch,
     resolve_challenge_combat,
@@ -586,6 +587,7 @@ def execute_pursue(
         add_experience(pursuer, Ability.ARCHERY, 10, rng)
     if any(s.shooter == "b" for s in combat_result.fire_arrow_shots):
         add_experience(target, Ability.ARCHERY, 10, rng)
+    award_combat_cast_experience(state, combat_result.cast_successes, rng)
 
     if combat_result.fled:
         return PursueExecutionResult(

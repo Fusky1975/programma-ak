@@ -731,7 +731,7 @@ def test_execute_pursue_cast_charm_success_makes_the_pursuer_flee():
         tactics=[SearchTactic(Maneuver.CAST, Spell.CHARM.value), SearchTactic(Maneuver.MELEE)],
     )
     # catch-up roll, Add_Experience's own gain draws, then the cast's own success roll.
-    rng = ScriptedRandom([0.0, 0.5, 0.5, 0.1])
+    rng = ScriptedRandom([0.0, 0.5, 0.5, 0.1, 0.5, 0.5])  # ... and the cast's own school experience
 
     result = execute_pursue(state, 1, request, rng=rng)
 
@@ -740,6 +740,9 @@ def test_execute_pursue_cast_charm_success_makes_the_pursuer_flee():
     assert result.fled is True
     assert result.winner_leader_id is None
     assert 1 in state.leaders and 2 in state.leaders
+    # The Charm that came off earned Psychic experience (round(10 * (1 + 0.5 - 0.5)) = 10), on top of the Spy
+    # experience of catching up.
+    assert state.leaders[1].experience_credit == 20
 
 
 # -- Phase 295: round-per-round engine + Temper-setup fix reachable via execute_pursue --

@@ -660,6 +660,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_NAME, TREASURE_WAND_SPELL, Treasure, TreasureCategory
+from ak_engine.turn.challenge_execution import award_combat_cast_experience
 from ak_engine.turn.command_experience import award_talk_experience
 from ak_engine.turn.sickness import make_sick
 from ak_engine.turn.experience import add_experience
@@ -2865,6 +2866,11 @@ def _resolve_search_encounter_body(
             )
         ):
             return None
+
+        # A spell the Searcher cast that came off earns its school experience ([3.13]); a wand's casts count only
+        # when he has natural skill in the school (``award_combat_cast_experience`` skips skill 0).
+        if succeeded and caster_is_leader:
+            award_combat_cast_experience(state, ((leader_id, ability),), rng)
 
         if spell is Spell.CONTROL_UNDEAD:
             if succeeded:

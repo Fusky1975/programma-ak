@@ -99,7 +99,7 @@ from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase
 from ak_engine.models.race import HUMANOID_RACES
-from ak_engine.turn.challenge_execution import resolve_challenge_combat
+from ak_engine.turn.challenge_execution import award_combat_cast_experience, resolve_challenge_combat
 from ak_engine.turn.discovery_effects import (
     arcane_valor_hit_points_bonus,
     effective_skill_level,
@@ -411,6 +411,7 @@ def resolve_random_encounter(
         add_experience(leader, Ability.MELEE, 10, rng)
     if any(shot.shooter == "a" for shot in outcome.fire_arrow_shots):
         add_experience(leader, Ability.ARCHERY, 10, rng)
+    award_combat_cast_experience(state, outcome.cast_successes, rng)
 
     # Duellist / King of Cowards / Bravest of the Brave: the personal combat against one of the humanlike monsters
     # (Giant..Witch, the same group a Search guardian fight uses) moves these titles' merit, one-sided, exactly as
