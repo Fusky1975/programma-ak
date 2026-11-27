@@ -159,10 +159,12 @@ _SEARCHER_LEADER_ID = 999
 # reproducible fact of this scenario, not a tuning choice. The first
 # treasure+guardian feature (feature_id 1) is now guarded by a HYDRA.
 _SEARCH_WIN_SEED = 9  # rescanned 2026-11-23: Melee now shifts the hit chance by the skill difference
-# feature_id 5 (a BASILISK guarding a Druid skill book) is the
-# SKILL_BOOK-category feature this test now targets.
-_BOOK_FEATURE_ID = 5
-_BOOK_SEARCH_WIN_SEED = 527  # rescanned 2026-11-23 (Melee hit chance now depends on the skill difference)
+# the SKILL_BOOK-category feature this test targets (see _BOOK_FEATURE_ID below).
+_BOOK_FEATURE_ID = 56
+# Rescanned 2026-11-27 after the Kings' turn-0 start changed (a Rich and a Prosperous province next to every Home, a hero of
+# the King's alignment and another of his temper/near alignment: more RNG consumed before the features are placed): the first
+# SKILL_BOOK feature with a beatable guardian is now feature_id 56, an ELE_MAGE guarding BOOK_MARCH, win seed 7.
+_BOOK_SEARCH_WIN_SEED = 7
 
 
 def _generate_game(king_count: int = 10) -> GameState:
@@ -207,7 +209,7 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
     # This project's real generate_new_game(seed=1) scenario places a
-    # BOOK_DRUID on feature_id 5 (guarded by a BASILISK) -- not tuned
+    # skill book on _BOOK_FEATURE_ID (guarded by an ELE_MAGE) -- not tuned
     # for that, just what this fixed, reproducible generation run
     # produces (see _BOOK_FEATURE_ID's own 2026-11-20 note above). Any
     # SKILL_BOOK category member would exercise the same chain.

@@ -366,7 +366,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from ak_engine.models.alignment import Alignment
+from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, ArmyType
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState, record_newly_known_column
@@ -388,7 +388,12 @@ from ak_engine.turn.movement import MapBounds
 from ak_engine.turn.rename_province import assign_province_name
 from ak_engine.turn.strength import ELEPHANTS_STRENGTH_RANGE
 from ak_engine.worldgen.feature_placement import place_all_features
-from ak_engine.worldgen.hero_talent_generation import roll_alignment, roll_skill_and_aptitude_table, roll_temper
+from ak_engine.worldgen.hero_talent_generation import (
+    ORDINARY_ALIGNMENT_ROLL,
+    roll_alignment,
+    roll_skill_and_aptitude_table,
+    roll_temper,
+)
 from ak_engine.worldgen.initial_armies import (
     COMMANDER_NONE,
     INITIAL_ARMY_QUALITY,
@@ -851,6 +856,19 @@ def generate_new_game(
                 # [2.2]: "un Eroe di allineamento uguale al loro"); the aptitudes follow the alignment, so re-rolled.
                 alignment = king_alignment
                 skills = roll_skill_and_aptitude_table(hero_id, alignment, rng)
+            elif companion_index == 1:
+                # User 2026-11-27 (rulebook [2.2]: "uno di allineamento adiacente"): the other one's alignment is 1 or 2
+                # places from the King's on the real scale (Divine, Good, Druidic, Neutral, Pagan, Evil) -- a Druidic
+                # King's at most Pagan, an Evil King's at most Neutral...
+                distance = abs(ALIGNMENT_ORDINAL[alignment] - ALIGNMENT_ORDINAL[king_alignment])
+                if not 1 <= distance <= 2:
+                    near = [
+                        a
+                        for a in ORDINARY_ALIGNMENT_ROLL
+                        if 1 <= abs(ALIGNMENT_ORDINAL[a] - ALIGNMENT_ORDINAL[king_alignment]) <= 2
+                    ]
+                    alignment = near[rng.irand() % len(near)]
+                    skills = roll_skill_and_aptitude_table(hero_id, alignment, rng)
             # ... and the other has the King's own temper (user 2026-11-27).
             if companion_index == 1 and king_temper is not None:
                 temper = king_temper
