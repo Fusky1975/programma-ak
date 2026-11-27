@@ -1637,6 +1637,9 @@ class BattleBlock:
     defender_kingdom_id: int | None
     attacker_lines: list[str]
     defender_lines: list[str]
+    # The attacker's account told in the third person, for a letter a squire writes about the commander (a hero's own
+    # letter uses ``attacker_lines``, whose roster speaks as "I"). ``None`` when both are the same.
+    attacker_lines_third_person: list[str] | None = None
 
 
 @dataclass(slots=True)

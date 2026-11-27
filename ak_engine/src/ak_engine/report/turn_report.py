@@ -6797,6 +6797,17 @@ _GMSPOILS_TEMPLATES: list[str] = [
 ]
 
 
+_TREASURE_SECURED_TEMPLATE = "< {walked/Sswam over to ^A pile/Rmound of treasure and }bagged/Rsecured the ^L\\."
+
+
+def render_treasure_secured(looter_name: str, treasure_name: str, rng: random.Random) -> str:
+    """The first choice of GMSPOILS.X, the only one the original engine could ever reach (its header declares `1 1`):
+    "I walked over to a mound of treasure and secured the Huge Hoard of Gold." / "Garin secured the Flaming Scimitar."
+    -- one sentence per treasure a guardian's feature yielded."""
+
+    return render(_TREASURE_SECURED_TEMPLATE, {"<": looter_name}, rng=rng, lists={"\\": [treasure_name]})
+
+
 def render_group_spoils_from_corpse(
     looter_name: str, victim_name: str, looted_items: Sequence[str], rng: random.Random, *, is_sea: bool = False
 ) -> str:
@@ -8455,42 +8466,28 @@ def describe_cargo_boarded(
     return lines
 
 
-# 2026-11-20 bug fix, user-confirmed via a deep audit: `turn/sense_
-# magic_items.py sense_magic_items_in_province()` already correctly
-# computes the real Office.MAGE "Sense Magic Items in Province" perk on
-# every Move (wired from the real LMOVE dispatch, `turn/plan_dispatch.py`),
-# but that module's own docstring documented a deliberate "no narrative
-# rendering" scope -- no sourced `.X2` template exists for this perk --
-# so the Arch-Mage's own sensed items were computed and then silently
-# discarded, never actually shown in any report. This closes that gap
-# with project-original text, explicitly authorized by the user (no
-# sourced prose exists to transcribe instead).
-SENSED_MAGIC_ITEMS_TEMPLATE = "As the realm's own Arch-Mage, < senses the presence of the ^L\\ nearby, though not precisely where."
+# HostAK/TP/SAY.PAS `_LPWand` (S_Priv): the Arch-Mage's Platinum Wand names each magic item present in the
+# province he has just moved into -- "The Platinum Wand senses the Cloak of Stealth in Cretacia." (real SE3 reports).
+SENSED_MAGIC_ITEM_TEMPLATE = "The Platinum Wand senses the \\ in @."
 
 
-def render_sensed_magic_items(character_name: str, item_names: list[str], rng: random.Random) -> str:
-    """Renders ``Office.MAGE``'s own "Sense Magic Items in Province" perk
-    -- see ``SENSED_MAGIC_ITEMS_TEMPLATE``'s own docstring addendum above
-    for why this is project-original text, not a transcription.
-    """
+def render_sensed_magic_item(item_name: str, province_name: str, rng: random.Random) -> str:
+    """``_LPWand``: one sentence per magic item the Wand senses in the province."""
 
-    return render(SENSED_MAGIC_ITEMS_TEMPLATE, {"<": character_name}, rng=rng, lists={"\\": item_names})
+    return render(SENSED_MAGIC_ITEM_TEMPLATE, {"\\": item_name, "@": province_name}, rng=rng)
 
 
 def describe_sensed_magic_items(
-    result: MoveExecutionResult, *, character_name: str, rng: random.Random
+    result: MoveExecutionResult, state: GameState, *, character_name: str = "", rng: random.Random
 ) -> list[str]:
-    """One sentence naming every magic item ``result.sensed_magic_items``
-    found (Office.MAGE's own Move-triggered perk) -- ``[]`` for a Mover
-    who doesn't hold the office (``None``) or senses nothing (``[]``,
-    a real, empty result, matching ``sense_magic_items_in_province()``'s
-    own docstring distinction between the two).
-    """
+    """One ``_LPWand`` sentence per magic item ``result.sensed_magic_items`` found (Office.MAGE's own Move-
+    triggered perk) -- ``[]`` for a Mover who doesn't hold the office (``None``) or senses nothing (``[]``, a
+    real, empty result, matching ``sense_magic_items_in_province()``'s own distinction between the two)."""
 
-    if not result.sensed_magic_items:
+    if not result.sensed_magic_items or result.new_location is None:
         return []
-    item_names = [TREASURE_NAME[treasure] for treasure in result.sensed_magic_items]
-    return [render_sensed_magic_items(character_name, item_names, rng)]
+    province_name = _province_label(state, result.new_location)
+    return [render_sensed_magic_item(TREASURE_NAME[treasure], province_name, rng) for treasure in result.sensed_magic_items]
 
 
 # Phase 736 -- project-original, per the user's own directive: the
@@ -11051,7 +11048,7 @@ def describe_turn_results(
             if line is not None:
                 lines.append(line)
             lines.extend(describe_cargo_boarded(entry.result, state, character_name=caster_name, rng=rng))
-            lines.extend(describe_sensed_magic_items(entry.result, character_name=caster_name, rng=rng))
+            lines.extend(describe_sensed_magic_items(entry.result, state, character_name=caster_name, rng=rng))
             # A Special Place turned up by the partial exploration of the entered province.
             for feature in entry.result.discovered_features:
                 lines.extend(describe_feature_discovery(feature, caster_name, _province_label(state, feature.coord), rng))
@@ -13588,6 +13585,7 @@ def render_battlefield_discovery(
     listing = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
     header = render(_BATTLEFIELD_HEADER_TEMPLATE, {"<": character_name, "@": province_name}, rng=rng, is_sea=is_sea)
     body = render(_BATTLEFIELD_FALLEN_TEMPLATE, {"=": listing}, rng=rng, is_sea=is_sea)
+    body = body[:1].upper() + body[1:]  # a new sentence after the header's full stop ("... battles. Brave and ...")
     return f"{header} {body}."
 
 
@@ -14258,6 +14256,24 @@ def _describe_search_lines(
 
     if result.monster_fled:
         lines.append(render_monster_fled(foe, character_name, rng))
+
+    # The victory over a guardian, as the real reports tell it (SE3__T10: "The Chimera dropped to the ground, fatally
+    # pierced.  I sacked the treasure room of the Chimera.  I walked over to a mound of treasure and secured the Huge
+    # Hoard of Gold.  I found 38 gold in the treasure of the Chimera."): its death, the sacking of its treasure room and
+    # each treasure secured, before the gold.
+    if result.combat_resolved and result.winner == "leader" and result.feature_looted:
+        if not result.monster_fled:
+            death = render_mortally_wounded(foe, rng, is_sea=is_sea)
+            lines.append(death[:1].upper() + death[1:])
+        if result.treasures_taken:
+            if not result.monster_fled:
+                lines.append(render_treasure_spoils_from_corpse(character_name, foe, rng))
+            for treasure in result.treasures_taken:
+                lines.append(
+                    render_treasure_secured(
+                        character_name, GOLD_HOARD_DISPLAY_NAME.get(treasure) or TREASURE_NAME[treasure], rng
+                    )
+                )
 
     if result.gold_found > 0:
         lines.append(render_gold_spoils(character_name, foe, result.gold_found, rng))
@@ -17280,7 +17296,13 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
         if state.office_title_change_notices.get(office) == top.leader_id:
             name = state.leaders[top.leader_id].name
             lines.append("")
-            lines.append(_office_title_acquired_paragraph(office, {"<": name, "<2": name, ">": f"{name}'s"}))
+            # ``>`` is the holder's pronoun ("While studying his spells, Guerin looked up ..." in the real Arch-Mage
+            # paragraph), not "Name's": the pronoun pass only turns *later* mentions of a name into "his".
+            lines.append(
+                _office_title_acquired_paragraph(
+                    office, {"<": name, "<2": name, ">": _possessive_for(state, top.leader_id)}
+                )
+            )
 
         runner_up = kingdom_runner_up(state, office, kingdom_id, exclude_leader_id=top.leader_id)
         if runner_up is not None:
@@ -18616,7 +18638,8 @@ def record_battle_narratives(state: GameState, results: list[PhaseDispatchResult
             )
         state.battle_blocks.append(
             BattleBlock(
-                id(battle_report), phase_label, real_leader, attacker_id, defender_id, block_lines, defender_lines
+                id(battle_report), phase_label, real_leader, attacker_id, defender_id, block_lines, defender_lines,
+                attacker_lines if block_lines is not attacker_lines else None,
             )
         )
 
@@ -20553,7 +20576,10 @@ def _letter_paragraphs(
         if block is None:
             return None
         # In the hero's own letter the battle he started is his to tell, in the first person.
-        return _first_person_battle(block.attacker_lines, leader_name, units) if first_person else block.attacker_lines
+        if first_person:
+            return _first_person_battle(block.attacker_lines, leader_name, units)
+        # A squire tells it in the third person: never the roster's "I".
+        return block.attacker_lines_third_person or block.attacker_lines
 
     for index in sorted(by_phase):
         if battle_blocks:

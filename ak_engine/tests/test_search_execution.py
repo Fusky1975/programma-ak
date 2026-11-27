@@ -402,6 +402,24 @@ def test_execute_search_no_melee_tactic_reports_unresolved():
     assert "no Melee or Fire Arrow tactic" in result.reason
 
 
+def test_execute_search_win_records_the_treasure_taken_from_the_feature():
+    raw = [0] * 30
+    raw[Ability.MELEE.value * 2] = 9
+    raw[Ability.MELEE.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.AMULET_ANTI_WHITE,
+    )
+    state.add_feature(feature)
+
+    result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.1, 0.5, 0.9] * 20))
+
+    assert result.winner == "leader"
+    assert result.treasures_taken == (Treasure.AMULET_ANTI_WHITE,)
+    assert [item.treasure for item in state.items_held_by(LEADER_ID)] == [Treasure.AMULET_ANTI_WHITE]
+
+
 def test_execute_search_leader_wins_marks_feature_looted():
     # A leader with high Melee skill (level 9) always acts first against
     # a Gargoyle (melee_skill=1); scripted so the leader always hits and

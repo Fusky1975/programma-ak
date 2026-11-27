@@ -524,6 +524,7 @@ from __future__ import annotations
 
 import difflib
 import random
+from contextvars import ContextVar
 import re
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -1007,6 +1008,9 @@ class SearchExecutionResult:
     winner: str | None = None
     feature_looted: bool = False
     gold_found: int = 0  # gold a captured Hoard paid into the Kingdom treasury (GOLD_HOARD_PAYOUT)
+    # Every treasure the Search took from the feature (a magic item or a Hoard of Gold), for the report's "secured the
+    # Flaming Scimitar" (real SE3 reports).
+    treasures_taken: tuple[Treasure, ...] = ()
     leader_killed: bool = False
     rescued_items: tuple[RescuedItem, ...] = ()  # legendary items of the fallen hero (turn/legendary_item_rescue.py)
     fled: bool = False
@@ -2196,6 +2200,10 @@ GOLD_HOARD_PAYOUT: dict[Treasure, tuple[int, int]] = {
 }
 
 
+# The treasures ``_grant_search_treasure()`` hands over while one Search runs (set by ``_resolve_search_encounter()``).
+_TREASURES_TAKEN: ContextVar[list[Treasure] | None] = ContextVar("search_treasures_taken", default=None)
+
+
 def _grant_search_treasure(
     state: GameState, leader_id: int, treasure: Treasure, rng: random.Random, gold_log: list[int]
 ) -> None:
@@ -2207,6 +2215,9 @@ def _grant_search_treasure(
     he keeps the Hoard as an item, as before.
     """
 
+    taken = _TREASURES_TAKEN.get()
+    if taken is not None:
+        taken.append(treasure)
     payout = GOLD_HOARD_PAYOUT.get(treasure)
     leader = state.leaders.get(leader_id)
     kingdom = state.kingdoms.get(leader.kingdom_id) if payout is not None and leader is not None and leader.kingdom_id is not None else None
@@ -2257,8 +2268,14 @@ def _resolve_search_encounter(
 
     gold_log: list[int] = []
     quest_log: list[tuple[QuestNote, MonsterTalkReply]] = []
-    result = _resolve_search_encounter_body(state, leader_id, request, rng, gold_log, quest_log)
+    taken: list[Treasure] = []
+    token = _TREASURES_TAKEN.set(taken)
+    try:
+        result = _resolve_search_encounter_body(state, leader_id, request, rng, gold_log, quest_log)
+    finally:
+        _TREASURES_TAKEN.reset(token)
     result.gold_found = sum(gold_log)
+    result.treasures_taken = tuple(taken)
     if quest_log:
         result.quest_notes = tuple(note for note, _ in quest_log)
         result.quest_reply = quest_log[-1][1]
