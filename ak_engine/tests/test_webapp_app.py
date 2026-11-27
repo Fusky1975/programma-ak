@@ -9931,3 +9931,18 @@ def test_the_cost_per_turn_of_a_missing_hero_shows_an_error_not_a_crash(tmp_path
     response = client.post(f"/games/{meta.slug}/leaders/999/pay", data={"pay": "3"}, follow_redirects=True)
 
     assert response.status_code == 200 and b"Hero not found" in response.data
+
+
+def test_turns_hub_says_a_kingdom_is_out_of_the_game_instead_of_asking_for_its_moves(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    state.kingdoms[2].out_of_game = True
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert response.status_code == 200
+    assert response.data.count(b"Out of the game") == 1
+    assert response.data.count(b"Not uploaded") == len(state.kingdoms) - 1
+    assert b"Compose Manually" in response.data  # the other Kingdoms still offer it

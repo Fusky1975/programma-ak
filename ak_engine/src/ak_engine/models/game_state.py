@@ -411,6 +411,13 @@ class KingdomState:
     alignment: Alignment
     home_province: HexCoord
     treasury: int = 0
+    # True once the King of this Kingdom died after signing the contract of the soul (``MonsterTalkReply.R_SOUL``): "[the
+    # monster] also grabs your children's souls, so that if the king dies, you have no heir and you are out of the game."
+    # No Royal Heir comes; the player gets one last report and then no more, and no move file is expected from him. The
+    # lands, armies and Heroes stay where they are.
+    out_of_game: bool = False
+    # The last report of an out-of-game Kingdom has been composed (it is told, once, that it is out of the game).
+    final_report_sent: bool = False
     # Sage's "Discoveries" (Phase 266) -- CTBOTH.PAS's own `dknow` is a
     # per-kingdom `array[discovery] of boolean` ("does this kingdom know
     # this Discovery"), never a count or per-leader value, so a plain
@@ -2539,7 +2546,13 @@ class GameState:
             if army.commanded_by == leader_id:
                 army.commanded_by = None
         if leader.is_king and leader.kingdom_id is not None:
-            self.pending_king_successions.add(leader_id)
+            if leader.soul_sold:
+                # The contract of the soul: no heir, and the player is out of the game.
+                dead_kingdom = self.kingdoms.get(leader.kingdom_id)
+                if dead_kingdom is not None:
+                    dead_kingdom.out_of_game = True
+            else:
+                self.pending_king_successions.add(leader_id)
 
     def install_pending_royal_heirs(self) -> None:
         """Installs a Royal Heir for every ``leader_id`` in ``pending_

@@ -128,6 +128,18 @@ def _processed_turn_title_lines(state: GameState, kingdom_id: int) -> list[str]:
     return processed_turn_title_lines(state.game_number, state.turn_number - 1, king_name)
 
 
+def _out_of_the_game_lines() -> list[str]:
+    """The last words of the last report of a Kingdom whose King died after selling his soul."""
+
+    return [
+        "",
+        "   Sire... thy soul was sold, and with it the souls of thy children.  The King is dead and there is no heir",
+        "to take the throne: thy game ends here.  Thy lands, armies and heroes remain where they are, but no one",
+        "commands them any more, and no further reports will be sent to thee.",
+        "",
+    ]
+
+
 def process_turn(
     state: GameState,
     order_file_paths: list[Path],
@@ -372,6 +384,10 @@ def process_turn(
     # every turn-processing mutation above is already done. See
     # compose_letter_report()'s own Phase 1193 docstring addendum.
     king_cache: dict[int, int | None] = {}
+    # A Kingdom out of the game (its King died with his soul sold, no heir) gets one last report and then none.
+    reported_kingdom_ids = [
+        kingdom_id for kingdom_id, kingdom in state.kingdoms.items() if not (kingdom.out_of_game and kingdom.final_report_sent)
+    ]
     letter_reports = {
         kingdom_id: _processed_turn_title_lines(state, kingdom_id) + compose_letter_report(
             results,
@@ -393,8 +409,13 @@ def process_turn(
             ability_names=ABILITY_NAME,
             pascal_layout=True,
         )
-        for kingdom_id in state.kingdoms
+        for kingdom_id in reported_kingdom_ids
     }
+    for kingdom_id in reported_kingdom_ids:
+        kingdom = state.kingdoms[kingdom_id]
+        if kingdom.out_of_game:
+            letter_reports[kingdom_id] = letter_reports[kingdom_id] + _out_of_the_game_lines()
+            kingdom.final_report_sent = True
 
     return TurnOutcome(
         results=results,

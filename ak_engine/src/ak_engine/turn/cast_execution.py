@@ -2347,6 +2347,10 @@ def _execute_resurrection(
         if kingdom is not None:
             target.alignment = kingdom.alignment
     state.leaders[request.target] = target
+    if target.is_king and kingdom is not None and kingdom.out_of_game and target.kingdom_id == kingdom.kingdom_id:
+        # The King of an out-of-game Kingdom (contract of the soul) is back among the living: his realm is in the game again.
+        kingdom.out_of_game = False
+        kingdom.final_report_sent = False
     caster.merit_tally.resurrection_bless_casts += 1
     return CastExecutionResult(request, applied=True)
 
