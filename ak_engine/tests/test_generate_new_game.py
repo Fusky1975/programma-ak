@@ -1017,3 +1017,121 @@ def test_initial_mercenary_bands_are_composed_of_the_race_their_unit_type_belong
             assert army.race is expected, f"seed {seed}: {army.army_type} band has race {army.race}"
             checked += expected is not None
     assert checked > 0
+
+
+# -- User 2026-11-27: the turn-0 start of every King -----------------------------------------------------------------------
+
+import itertools  # noqa: E402
+
+from ak_engine.models.temper import Temper  # noqa: E402
+
+_START_ALIGNMENTS = [Alignment.GOOD, Alignment.NEUTRAL, Alignment.EVIL, Alignment.DRUID, Alignment.PAGAN, Alignment.DIVINE, Alignment.UNDEAD]
+
+
+def _auto_world(seed: int, king_count: int):
+    """A world with Kings of every alignment and temper, Homes auto-placed as the GM interface does."""
+
+    state = GameState()
+    setups = []
+    for kid in range(1, king_count + 1):
+        race = _KING_RACES[(kid + seed) % 4]
+        alignment = _START_ALIGNMENTS[(kid + seed) % len(_START_ALIGNMENTS)]
+        temper = list(Temper)[(kid * 3 + seed) % 4]
+        state.kingdoms[kid] = KingdomState(kid, f"K{kid}", race, alignment, HexCoord(0, 0))
+        state.leaders[kid] = LeaderState(
+            kid, kid, f"King{kid}", HexCoord(0, 0), is_king=True, race=race, alignment=alignment, temper=temper
+        )
+        setups.append(KingSetup(leader_id=kid, race=race, home_coord=None))
+    return generate_new_game(PascalRandom(seed), state, setups)
+
+
+def _tier_counts(world: GameState, home: HexCoord):
+    bounds = MapBounds(world.board_width, world.board_height)
+    taxes = [world.provinces[n].tax for n in neighbors(home, bounds) if n in world.provinces]
+    return sum(1 for t in taxes if t >= 7), sum(1 for t in taxes if 3 <= t < 7)
+
+
+def test_every_king_starts_next_to_a_rich_and_a_prosperous_province():
+    for seed, king_count in ((1, 12), (2, 2), (3, 7), (4, 10), (5, 5), (6, 12), (7, 9), (8, 3)):
+        world = _auto_world(seed, king_count)
+        for kingdom in world.kingdoms.values():
+            rich, prosperous = _tier_counts(world, kingdom.home_province)
+            assert rich >= 1 and prosperous >= 1, (seed, kingdom.kingdom_id, rich, prosperous)
+
+
+def test_every_king_starts_with_a_hero_of_his_alignment_and_another_of_his_temper():
+    seen_alignments = set()
+    for seed, king_count in ((1, 12), (2, 7), (3, 12), (4, 10), (5, 11)):
+        world = _auto_world(seed, king_count)
+        for kid, kingdom in world.kingdoms.items():
+            king = world.leaders[kid]
+            heroes = [h for h in world.leaders.values() if h.kingdom_id == kid and not h.is_king]
+            assert len(heroes) == COMPANIONS_PER_KING
+            seen_alignments.add(king.alignment)
+            if king.alignment is Alignment.DIVINE:
+                continue  # rulebook [2.2]: a Divine King's Heroes are Good (see the next test)
+            assert any(
+                a.alignment is king.alignment and b.temper is king.temper for a, b in itertools.permutations(heroes, 2)
+            ), (seed, kid, king.alignment, king.temper, [(h.alignment, h.temper) for h in heroes])
+    assert Alignment.UNDEAD in seen_alignments and Alignment.DIVINE in seen_alignments
+
+
+def test_a_divine_kings_heroes_are_good_and_one_has_his_temper_an_undead_kings_are_undead_and_evil_or_pagan():
+    for seed in range(1, 9):
+        world = _auto_world(seed, 12)
+        for kid, kingdom in world.kingdoms.items():
+            king = world.leaders[kid]
+            heroes = sorted((h for h in world.leaders.values() if h.kingdom_id == kid and not h.is_king), key=lambda h: h.leader_id)
+            if king.alignment is Alignment.DIVINE:
+                assert [h.alignment for h in heroes] == [Alignment.GOOD, Alignment.GOOD]
+                assert any(h.temper is king.temper for h in heroes)
+            if king.alignment is Alignment.UNDEAD:
+                assert heroes[0].alignment is Alignment.UNDEAD and heroes[1].alignment in (Alignment.EVIL, Alignment.PAGAN)
+                assert heroes[1].temper is king.temper
+
+
+def test_the_other_hero_is_one_or_two_places_from_the_kings_alignment_on_the_real_scale():
+    from ak_engine.models.alignment import ALIGNMENT_ORDINAL
+
+    checked = Counter()
+    for seed in range(1, 9):
+        world = _auto_world(seed, 12)
+        for kid, kingdom in world.kingdoms.items():
+            king = world.leaders[kid]
+            if king.alignment in (Alignment.DIVINE, Alignment.UNDEAD):
+                continue
+            heroes = sorted((h for h in world.leaders.values() if h.kingdom_id == kid and not h.is_king), key=lambda h: h.leader_id)
+            first, second = heroes
+            assert first.alignment is king.alignment
+            distance = abs(ALIGNMENT_ORDINAL[second.alignment] - ALIGNMENT_ORDINAL[king.alignment])
+            assert 1 <= distance <= 2, (seed, kid, king.alignment, second.alignment)
+            assert second.alignment not in (Alignment.DIVINE, Alignment.UNDEAD)  # there are no Divine or Undead heroes here
+            checked[king.alignment] += 1
+    assert set(checked) == {Alignment.GOOD, Alignment.DRUID, Alignment.NEUTRAL, Alignment.PAGAN, Alignment.EVIL}
+
+
+def test_a_druidic_kings_other_hero_is_at_most_pagan_and_an_evil_kings_at_most_neutral():
+    from ak_engine.models.alignment import ALIGNMENT_ORDINAL
+
+    allowed = {
+        Alignment.DRUID: {Alignment.GOOD, Alignment.NEUTRAL, Alignment.PAGAN},
+        Alignment.EVIL: {Alignment.PAGAN, Alignment.NEUTRAL},
+        Alignment.GOOD: {Alignment.DRUID, Alignment.NEUTRAL},
+        Alignment.NEUTRAL: {Alignment.GOOD, Alignment.DRUID, Alignment.PAGAN, Alignment.EVIL},
+        Alignment.PAGAN: {Alignment.NEUTRAL, Alignment.DRUID, Alignment.EVIL},
+    }
+    for seed in range(1, 9):
+        world = _auto_world(seed, 12)
+        for kid in world.kingdoms:
+            king = world.leaders[kid]
+            if king.alignment in allowed:
+                second = max((h for h in world.leaders.values() if h.kingdom_id == kid and not h.is_king), key=lambda h: h.leader_id)
+                assert second.alignment in allowed[king.alignment], (seed, kid, king.alignment, second.alignment)
+
+
+def test_the_heroes_aptitudes_are_rolled_for_the_alignment_they_end_up_with():
+    # Re-rolled with the alignment, not left from the first roll: every hero's skill table exists and is filled.
+    world = _auto_world(3, 12)
+    for h in world.leaders.values():
+        if h.kingdom_id is not None and not h.is_king:
+            assert h.skills is not None and any(h.skills.pair_for_ability(a)[0] > 0 for a in Ability)
