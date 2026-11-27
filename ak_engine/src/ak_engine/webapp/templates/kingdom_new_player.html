@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Assegna un nuovo giocatore -- {{ kingdom.name }} -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('turns_hub', slug=meta.slug) }}">&larr; Turns</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Assegna un nuovo giocatore a {{ kingdom.name }}</h2>
+  <p>This Kingdom is out of the game: its King died with his soul sold, and there was no heir. A new player takes it over
+    as it stands &mdash; its lands, armies, Heroes and treasury wait for him &mdash; and makes his King from scratch, standing
+    in the Home province ({{ kingdom.home_province.x }}, {{ kingdom.home_province.y }}) and finding the dead King's treasures.
+    The Kingdom keeps its race ({{ kingdom.race|display_name }}); the new King's alignment may be no further than
+    {{ alignment_steps }} steps from any of the Kingdom's characters.</p>
+
+  <form method="post" action="{{ url_for('kingdom_new_player_assign', slug=meta.slug, kingdom_id=kingdom.kingdom_id) }}">
+    <div class="inline">
+      <label for="name">King's Name</label>
+      <input type="text" id="name" name="name" required>
+
+      <label for="alignment">Alignment</label>
+      <select id="alignment" name="alignment" required>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}">{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="sex">Sex</label>
+      <select id="sex" name="sex" required>
+        {% for sex in sexes %}
+          <option value="{{ sex.name }}">{{ sex.value }} &mdash; {{ sex|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="temper">Temper</label>
+      <select id="temper" name="temper" required>
+        {% for temper in tempers %}
+          <option value="{{ temper.name }}">{{ temper|display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <p>
+      <strong>Starting Talents</strong> &mdash; rulebook [2.1]: distribute exactly {{ max_talent_points }} ability
+      points, at most {{ max_points_per_ability }} in any one Ability. Kings automatically get +1 Melee, Archery
+      and Sage on top of this, regardless of choice.
+    </p>
+    <div class="talent-grid">
+      {% for ability in abilities %}
+        <label for="talent_{{ ability.name }}">{{ ability|display_name }}
+          <input type="number" id="talent_{{ ability.name }}" name="talent_{{ ability.name }}" min="0" max="{{ max_points_per_ability }}" value="0">
+        </label>
+      {% endfor %}
+    </div>
+
+    <button type="submit">Assegna un nuovo giocatore</button>
+  </form>
+</div>
+
+{% endblock %}
