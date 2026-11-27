@@ -8279,3 +8279,194 @@ def test_the_wish_can_name_the_monsters_own_treasure():
         result = execute_search(state, LEADER_ID, _wish_request("wand of fireball"), random.Random(0))
 
     assert result.quest_treasure is Treasure.WAND_FIREBALL and feature.looted is True
+
+
+# -- Stage 3, batch 3: the four Explorer quests and the pact of the Undead ----------------------------------------------
+
+from ak_engine.turn.search_execution import explorer_quest_done, select_quest_terrain  # noqa: E402
+
+
+def _explorer_world(reply, *, width=4, height=3, explored=None, explorer=True):
+    state = _state_with_leader()
+    state.board_width, state.board_height = width, height
+    kingdom = _with_kingdom(state, 0)
+    explored = explored or {}
+    for x in range(width):
+        for y in range(height):
+            terrain = Terrain.FOREST if (x, y) in ((1, 1), (2, 2)) else Terrain.PLAINS
+            province = ProvinceState(HexCoord(x, y), terrain, Race.HUMAN)
+            province.explored_percent_by_kingdom[1] = explored.get((x, y), 0)
+            state.provinces[HexCoord(x, y)] = province
+    feature = _slave_feature(coord=HexCoord(1, 1), treasure=Treasure.WAND_FIREBALL)
+    state.add_feature(feature)
+    raw = [0] * 31
+    raw[Ability.EXPLORER.value * 2] = 1 if explorer else 0
+    state.leaders[LEADER_ID].skills = SkillTable(raw_values=raw)
+    state.leaders[LEADER_ID].location = feature.coord
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=reply
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel"):
+        execute_search(state, LEADER_ID, _talk_request(1, Maneuver.MELEE), ScriptedRandom([0.9] * 20))
+    return state, feature
+
+
+ALL_2 = {(x, y): 2 for x in range(4) for y in range(3)}
+
+
+def test_circumnavigation_needs_two_percent_in_some_province_of_every_longitude():
+    state, feature = _explorer_world(MonsterTalkReply.R_CIRCNAV, explored={(0, 0): 2, (1, 1): 2, (2, 0): 5})
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_CIRCNAV, 1) is False  # column 3 never explored
+
+    state.provinces[HexCoord(3, 2)].explored_percent_by_kingdom[1] = 2
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_CIRCNAV, 1) is True
+    state.provinces[HexCoord(3, 2)].explored_percent_by_kingdom[1] = 1
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_CIRCNAV, 1) is False
+
+
+def test_the_two_poles_need_two_percent_in_the_northernmost_and_the_southernmost_rows():
+    state, feature = _explorer_world(MonsterTalkReply.R_2POLES, explored={(0, 0): 2})
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_2POLES, 1) is False  # north only
+
+    state.provinces[HexCoord(2, 2)].explored_percent_by_kingdom[1] = 3
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_2POLES, 1) is True
+
+
+def test_one_terrain_needs_one_percent_in_every_province_of_it():
+    state, feature = _explorer_world(MonsterTalkReply.R_1TERR, explored={(1, 1): 1})
+    assert feature.quest_terrain in (Terrain.FOREST, Terrain.PLAINS)
+    state.features[1].quest_terrain = Terrain.FOREST
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_1TERR, 1) is False  # (2,2) is forest too
+
+    state.provinces[HexCoord(2, 2)].explored_percent_by_kingdom[1] = 1
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_1TERR, 1) is True
+
+
+def test_the_terrain_asked_is_a_land_terrain_of_the_world_and_stable():
+    state, feature = _explorer_world(MonsterTalkReply.R_1TERR)
+    state.provinces[HexCoord(0, 0)].terrain = Terrain.SEA
+
+    chosen = select_quest_terrain(state, feature)
+
+    assert chosen in (Terrain.FOREST, Terrain.PLAINS) and select_quest_terrain(state, feature) is chosen
+
+
+def test_exploring_all_needs_a_hundred_percent_of_the_lair_province_and_its_neighbours():
+    state, feature = _explorer_world(MonsterTalkReply.R_EXPALL, explored={(1, 1): 100})
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_EXPALL, 1) is False
+
+    from ak_engine.turn.movement import MapBounds, neighbors
+
+    for coord in neighbors(HexCoord(1, 1), MapBounds(4, 3)):
+        state.provinces[coord].explored_percent_by_kingdom[1] = 100
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_EXPALL, 1) is True
+    state.provinces[HexCoord(1, 1)].explored_percent_by_kingdom[1] = 99
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_EXPALL, 1) is False
+
+
+def test_the_other_kingdoms_exploring_does_not_count():
+    state, feature = _explorer_world(MonsterTalkReply.R_CIRCNAV, explored=ALL_2)
+
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_CIRCNAV, 1) is True
+    assert explorer_quest_done(state, feature, MonsterTalkReply.R_CIRCNAV, 2) is False
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [MonsterTalkReply.R_CIRCNAV, MonsterTalkReply.R_2POLES, MonsterTalkReply.R_1TERR, MonsterTalkReply.R_EXPALL],
+)
+def test_an_explorer_quest_needs_the_explorer_ability_then_the_exploration_then_the_honor_roll(reply):
+    full = {(x, y): 100 for x in range(4) for y in range(3)}
+    state, feature = _explorer_world(reply, explored=full, explorer=False)
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+    assert result.quest_notes == (QuestNote.NOT_QUALIFIED,)  # not an Explorer
+
+    state, feature = _explorer_world(reply, explored={})
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+    assert result.quest_notes == (QuestNote.SERVICE_NOT_PERFORMED,) and feature.pending_deal_leader_id == LEADER_ID
+
+    state, feature = _explorer_world(reply, explored=full)
+    with _honored() as roll:
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+    assert "bonus" not in roll.call_args.kwargs
+    assert result.quest_fulfilled is reply and result.quest_treasure is Treasure.WAND_FIREBALL
+
+
+def test_only_a_king_can_make_the_pact_of_the_undead_and_it_asks_no_roll():
+    state, feature = _quest_state(MonsterTalkReply.R_JUNDEAD, king=False)
+    refused = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+    assert refused.quest_notes == (QuestNote.KING_ONLY,) and state.leaders[LEADER_ID].undead_pact is False
+
+    state, feature = _quest_state(MonsterTalkReply.R_JUNDEAD, king=True)
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored") as roll:
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert not roll.called
+    assert result.quest_fulfilled is MonsterTalkReply.R_JUNDEAD and state.leaders[LEADER_ID].undead_pact is True
+    assert Treasure.WAND_FIREBALL in {item.treasure for item in state.items_held_by(LEADER_ID)}
+
+
+# -- Stage 3, batch 3: the monster that wants a victim (R_SACH) ------------------------------------------------------------
+
+
+def _sacrifice_world(*, companion_king=False, companion_searches=True, companion_where=None):
+    state, feature = _quest_state(MonsterTalkReply.R_SACH)
+    friend = state.leaders[30]
+    friend.kingdom_id = 1  # of the fulfiller's own Kingdom
+    friend.location = companion_where or LOCATION
+    friend.is_king = companion_king
+    if companion_searches:
+        state.idle_searches_this_phase = {30: 1}
+    return state, feature
+
+
+def test_the_victim_is_a_hero_of_the_same_kingdom_searching_the_same_feature_with_no_plan():
+    state, feature = _sacrifice_world()
+
+    with _honored():
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_fulfilled is MonsterTalkReply.R_SACH and result.quest_treasure is Treasure.WAND_FIREBALL
+    assert 30 not in state.leaders and 30 in state.dead_leaders  # devoured
+    assert 31 in state.leaders  # the other rival was not brought
+
+
+def test_a_monster_that_wants_a_victim_is_not_fulfilled_with_nobody_brought():
+    state, feature = _sacrifice_world(companion_searches=False)
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.SERVICE_NOT_PERFORMED,) and 30 in state.leaders
+    assert feature.pending_deal_leader_id == LEADER_ID
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [dict(companion_where=HexCoord(9, 9)), dict(companion_searches=False)],
+)
+def test_a_character_who_is_elsewhere_or_not_searching_is_no_companion(kwargs):
+    state, feature = _sacrifice_world(**kwargs)
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.SERVICE_NOT_PERFORMED,) and 30 in state.leaders
+
+
+def test_a_king_brought_as_the_victim_does_not_taste_like_a_hero_and_is_spared():
+    state, feature = _sacrifice_world(companion_king=True)
+
+    result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(0))
+
+    assert result.quest_notes == (QuestNote.NOT_HERO,) and 30 in state.leaders
+    assert feature.pending_deal_leader_id == LEADER_ID
+
+
+def test_the_victim_is_devoured_even_when_the_monster_then_breaks_its_word():
+    state, feature = _sacrifice_world()
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=False):
+        result = execute_search(state, LEADER_ID, _fulfill_request(1, Maneuver.MELEE), random.Random(1))
+
+    assert QuestNote.BETRAYED in result.quest_notes and result.quest_fulfilled is None
+    assert 30 not in state.leaders  # the sacrifice is made before the test and not undone
+    assert feature.treasure is Treasure.WAND_FIREBALL

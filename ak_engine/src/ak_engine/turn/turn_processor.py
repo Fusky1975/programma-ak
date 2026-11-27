@@ -331,6 +331,7 @@ from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, 
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.sickness import apply_sickness
 from ak_engine.turn.spy_cover import compute_cover_ability
+from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, _has_spy_super_sleuth, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.command_experience import award_sage_practice_experience
@@ -418,6 +419,22 @@ class MultiAttackerMoveResult:
     battle: MultiAttackerBattle
     movement_points_spent: int
     new_location: HexCoord | None
+
+
+def _idle_searches_in(entries) -> dict[int, int]:
+    """``{leader id: feature number}`` for each character whose order this phase is a Search with no Encounter Plan."""
+
+    idle: dict[int, int] = {}
+    for tl, _segment_index, phase in entries:
+        if phase.action is not ActionCode.SEARCH:
+            continue
+        try:
+            request = decode_search_phase(phase)
+        except Exception:  # noqa: BLE001 -- a malformed order is dispatched (and reported) later, not here
+            continue
+        if not request.tactics:
+            idle[tl.leader.leader_id] = request.feature_id
+    return idle
 
 
 def run_turn(
@@ -622,6 +639,7 @@ def run_turn(
         # for a leader's own standing Patrol intercepting their own queued
         # order this phase instead of a mid-chase filter).
         action_this_phase_by_leader = {tl.leader.leader_id: phase.action for tl, _segment_index, phase in entries}
+        state.idle_searches_this_phase = _idle_searches_in(entries)
         results.extend(_continue_active_pursuits(active_pursuits, label, state, rng, action_this_phase_by_leader))
         results.extend(_continue_active_move_chases(active_move_chases, label, state, board_width, explorer_skill, rng))
 
@@ -1081,7 +1099,11 @@ def run_turn(
     # same real turn boundary, rather than synchronously inside
     # GameState.remove_leader() itself. See that method's own docstring
     # for the full reasoning.
+    state.idle_searches_this_phase = {}
     note_quest_visits(state)  # a hero who ended the turn in his quest's province (chases, retreats, ...)
+    # A King who made the pact of the Undead is gone by the end of the turn; the heir comes next, as for any King.
+    for pact_king in [leader for leader in state.leaders.values() if leader.undead_pact]:
+        state.remove_leader(pact_king.leader_id)
     state.install_pending_royal_heirs()
     deliver_squire_items(state)  # the Heir is in place: a dead King's squire reaches him
     state.turn_number += 1

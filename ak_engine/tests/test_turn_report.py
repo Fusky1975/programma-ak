@@ -20042,3 +20042,38 @@ def test_the_artifact_asked_for_is_named_in_the_offer_and_in_the_payment():
         )
         assert "Amulet of Doom" in offer and "lost relic" not in offer
         assert "Amulet of Doom" in paid and "lost relic" not in paid
+
+
+def test_the_terrain_wanted_is_named_in_the_offer_and_in_the_payment():
+    from ak_engine.report.turn_report import render_guardian_quest_fulfilled, render_guardian_talk_offer
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    for terrain, plural in ((Terrain.FOREST, "forests"), (Terrain.PLAINS, "plains")):
+        offer = " ".join(
+            render_guardian_talk_offer(
+                "Pascal", "the Sphinx", MonsterTalkReply.R_1TERR, province_name="Plains", treasure_name="Wand of Fireball",
+                feature_name="Pyramid", rng=random.Random(4), terrain=terrain,
+            )
+        )
+        paid = " ".join(
+            render_guardian_quest_fulfilled(
+                "Pascal", "the Sphinx", MonsterTalkReply.R_1TERR, treasure_name="Wand of Fireball", feature_name="Pyramid",
+                king_name="Fusky", possessive="his", rng=random.Random(4), terrain=terrain,
+            )
+        )
+        assert terrain.name.lower().rstrip("s") in offer.lower() and "⟦" not in offer + paid and "rugged" not in offer + paid
+        assert plural in paid, paid
+
+
+def test_the_monster_that_is_brought_a_king_says_he_did_not_taste_like_a_hero():
+    from ak_engine.turn.encounter import MonsterTalkReply
+    from ak_engine.turn.search_execution import QuestNote
+
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX,
+        quest_notes=(QuestNote.NOT_HERO,), quest_reply=MonsterTalkReply.R_SACH,
+    )
+
+    text = " ".join(describe_search(result, state=_quest_note_state(), character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+
+    assert "did not taste like a Hero" in text and "go away!" in text.lower()

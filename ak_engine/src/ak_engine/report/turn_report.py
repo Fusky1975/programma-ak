@@ -13573,6 +13573,17 @@ _TALK_OFFER_PLACEHOLDERS: dict[str, str] = {
 }
 
 
+def _terrain_in_text(text: str, terrain: Terrain | None) -> str:
+    """``⟦CTRL-H:terrain-2⟧`` of ``MTALK.X2``: the terrain a monster of ``R_1TERR`` wants mapped ("...every plains province",
+    "I have visited plains all over the world" -- the text adds its own "s" after the marker in some places)."""
+
+    if terrain is None:
+        return text
+    name = TERRAIN_NAME[terrain].lower()
+    plural = name if name.endswith("s") else name + "s"
+    return text.replace("⟦CTRL-H:terrain-2⟧s", plural).replace("⟦CTRL-H:terrain-2⟧", name)
+
+
 def render_guardian_quest_fulfilled(
     character_name: str,
     monster_name: str,
@@ -13585,6 +13596,7 @@ def render_guardian_quest_fulfilled(
     rng: random.Random,
     target_name: str | None = None,
     required_name: str | None = None,
+    terrain: Terrain | None = None,
 ) -> list[str]:
     """The story of a fulfilled agreement: what the character did (``FULFILL.X2``, SAY.PAS ``_LSpake``) and then the
     monster's reply that hands over the reward (``MACCEPT.X2``, ``_MFulf``) -- for the old monster of ``R_SLAVE`` it
@@ -13610,6 +13622,7 @@ def render_guardian_quest_fulfilled(
             text = text.replace("⟦CTRL-C:quest-character⟧", target_name)
         if required_name is not None:
             text = text.replace("⟦CTRL-T:treasure-2⟧", required_name)
+        text = _terrain_in_text(text, terrain)
         for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
             text = text.replace(marker, placeholder)
         rendered = render(text, values, rng=rng).strip()
@@ -13635,6 +13648,8 @@ def render_quest_fulfill_notes(
             text = render_quest_service_not_performed(monster_name, rng)
         elif note is QuestNote.KING_ONLY:
             text = render_quest_fled_in_fear(character_name, monster_name, rng)
+        elif note is QuestNote.NOT_HERO:
+            text = render_quest_hero_not_tasty(monster_name, rng)
         elif note is QuestNote.NO_PRICE:
             text = render_quest_insufficient_price(monster_name, rng)
         elif note is QuestNote.NOT_QUALIFIED:
@@ -13666,6 +13681,7 @@ def render_guardian_talk_offer(
     target_name: str | None = None,
     price: int | None = None,
     required_name: str | None = None,
+    terrain: Terrain | None = None,
 ) -> list[str]:
     """Two lines: that the character spoke with the guardian, then the
     guardian's own offer (``MONSTER_TALK_OFFER_TEXT[reply]``), with the
@@ -13677,6 +13693,7 @@ def render_guardian_talk_offer(
         text = text.replace("⟦CTRL-C:quest-character⟧", target_name)
     if required_name is not None:
         text = text.replace("⟦CTRL-T:treasure-2⟧", required_name)
+    text = _terrain_in_text(text, terrain)
     for marker, placeholder in _TALK_OFFER_PLACEHOLDERS.items():
         text = text.replace(marker, placeholder)
     text = text.replace("FU-lfill", "Fulfill").replace("# gold", f"{price} gold" if price is not None else "a hefty sum in gold")
@@ -13905,6 +13922,7 @@ def _describe_search_lines(
                 rng=rng,
                 target_name=_quest_target_name(state, result.quest_target_leader_id),
                 required_name=TREASURE_NAME[result.quest_required_treasure] if result.quest_required_treasure is not None else None,
+                terrain=result.quest_terrain,
             )
         )
     if result.quest_notes:
@@ -13950,6 +13968,7 @@ def _describe_search_lines(
                 target_name=_quest_target_name(state, result.quest_target_leader_id),
                 price=result.quest_price,
                 required_name=TREASURE_NAME[result.quest_required_treasure] if result.quest_required_treasure is not None else None,
+                terrain=result.quest_terrain,
             )
         )
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.

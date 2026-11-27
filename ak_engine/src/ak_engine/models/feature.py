@@ -142,7 +142,7 @@ from enum import Enum
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.magic_feature import MagicFeature
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.power import Power
 from ak_engine.models.treasure import Treasure
@@ -286,6 +286,8 @@ class Feature:
     # The magic item a monster wants brought to it (``MonsterTalkReply.R_REGAIN``: its clan's lost artifact;
     # ``R_TRADE``: the one it would rather have than its own treasure) -- the "treasure-2" of ``MTALK.X2``.
     quest_required_treasure: Treasure | None = None
+    # The terrain a monster of ``MonsterTalkReply.R_1TERR`` wants mapped in every province of its kind.
+    quest_terrain: Terrain | None = None
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
     # PSYCHIC_MAGE's own "will sense whether the monster intends to keep
     # its end of the bargain" perk (`models/office.py OFFICE_TITLE_

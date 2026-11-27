@@ -575,7 +575,7 @@ from ak_engine.turn.discovery_effects import (
     holds_bow_of_elven_kings,
     holds_monster_command_item_for,
 )
-from ak_engine.turn.movement import hex_distance_wrapped
+from ak_engine.turn.movement import MapBounds, hex_distance_wrapped, neighbors
 from ak_engine.turn.encounter import (
     FULFILL_VISIT_BONUS,
     FULFILL_WISH_BONUS,
@@ -990,6 +990,7 @@ class QuestNote(Enum):
     SERVICE_NOT_PERFORMED = "service_not_performed"  # _LFTryAg: the hero did not do what the monster asked
     KING_ONLY = "king_only"  # _LFKOnly: only a King can sell his soul
     NO_PRICE = "no_price"  # _LFNoPri: the Kingdom cannot pay the price
+    NOT_HERO = "not_hero"  # _LFHero: the one brought to be devoured is not a Hero
     NOT_QUALIFIED = "not_qualified"  # _LFNQual: the hero has not the skill the monster asks for
     BETRAYED = "betrayed"  # the monster does not keep its word and attacks (_LHaHa / _LWGrr, _LPrDie)
 
@@ -1193,6 +1194,7 @@ class SearchExecutionResult:
     quest_target_leader_id: int | None = None
     quest_visit_coord: HexCoord | None = None  # the province a travel quest sends the hero to
     quest_required_treasure: Treasure | None = None  # the item a monster of Regain/Trade wants brought
+    quest_terrain: Terrain | None = None  # the terrain a monster of R_1TERR wants mapped
     quest_price: int | None = None  # the gold a monster that sells its treasure asks (``MonsterTalkReply.R_SELL``)
     quest_reply: MonsterTalkReply | None = None  # the quest the notes above are about
     guardian_talk_treasure: Treasure | None = None
@@ -1897,6 +1899,84 @@ def closest_world_item(state: GameState, feature: Feature, wished: str) -> tuple
     )
 
 
+EXPLORER_QUESTS = frozenset(
+    {
+        MonsterTalkReply.R_CIRCNAV,
+        MonsterTalkReply.R_2POLES,
+        MonsterTalkReply.R_1TERR,
+        MonsterTalkReply.R_EXPALL,
+    }
+)
+
+
+def select_quest_terrain(state: GameState, feature: Feature) -> Terrain | None:
+    """The terrain a monster of ``R_1TERR`` wants mapped: one of the land terrains the world has, picked
+    deterministically per (monster, feature). ``None`` if the world has no land province."""
+
+    if feature.guardian_monster is None:
+        return None
+    terrains = sorted({p.terrain for p in state.provinces.values() if p.terrain is not Terrain.SEA}, key=lambda t: t.value)
+    if not terrains:
+        return None
+    return terrains[(feature.guardian_monster.value * len(terrains) + feature.feature_id) % len(terrains)]
+
+
+def explorer_quest_done(state: GameState, feature: Feature, reply: MonsterTalkReply, kingdom_id: int | None) -> bool:
+    """Whether the Kingdom has explored what a monster of Explorer asks (``AKGEN_reverse_engineering_report (3).md``
+    SS77): in every longitude at least one province at 2% or more (``R_CIRCNAV``); at 2% or more somewhere in the
+    northernmost row and somewhere in the southernmost (``R_2POLES``); at 1% or more in every province of the terrain
+    asked (``R_1TERR``); 100% in the province of the lair and in all those around it (``R_EXPALL``)."""
+
+    if kingdom_id is None:
+        return False
+
+    def explored(coord: HexCoord) -> int:
+        province = state.provinces.get(coord)
+        return province.explored_percent_by_kingdom.get(kingdom_id, 0) if province is not None else 0
+
+    if reply is MonsterTalkReply.R_CIRCNAV:
+        return all(
+            any(explored(coord) >= 2 for coord in state.provinces if coord.x == column) for column in range(state.board_width)
+        )
+    if reply is MonsterTalkReply.R_2POLES:
+        if not state.provinces:
+            return False
+        north = min(coord.y for coord in state.provinces)
+        south = max(coord.y for coord in state.provinces)
+        return any(explored(c) >= 2 for c in state.provinces if c.y == north) and any(
+            explored(c) >= 2 for c in state.provinces if c.y == south
+        )
+    if reply is MonsterTalkReply.R_1TERR:
+        wanted = [coord for coord, province in state.provinces.items() if province.terrain is feature.quest_terrain]
+        return feature.quest_terrain is not None and bool(wanted) and all(explored(coord) >= 1 for coord in wanted)
+    # R_EXPALL
+    if feature.coord not in state.provinces:
+        return False
+    around = [feature.coord, *neighbors(feature.coord, MapBounds(state.board_width, state.board_height))]
+    return all(explored(coord) >= 100 for coord in around if coord in state.provinces)
+
+
+def _sacrificial_companion(state: GameState, leader: LeaderState, feature: Feature) -> tuple[LeaderState | None, bool]:
+    """For the monster that wants a victim (``MonsterTalkReply.R_SACH``): who accompanies the fulfiller -- a character of
+    his Kingdom, in the same place, who Searches this same feature in this same phase with no Encounter Plan. Returns
+    the Hero to be devoured (the lowest-numbered one) and whether anyone at all accompanied; a King brought along is
+    no victim ("That one did not taste like a Hero!")."""
+
+    companions = sorted(
+        (
+            other
+            for other in state.leaders.values()
+            if other.leader_id != leader.leader_id
+            and other.kingdom_id == leader.kingdom_id
+            and other.location == leader.location
+            and state.idle_searches_this_phase.get(other.leader_id) == feature.feature_id
+        ),
+        key=lambda other: other.leader_id,
+    )
+    hero = next((other for other in companions if not other.is_king), None)
+    return hero, bool(companions)
+
+
 def _held_item_of(state: GameState, leader_id: int, treasure: Treasure | None) -> ItemInstance | None:
     if treasure is None:
         return None
@@ -1989,6 +2069,12 @@ _MODELLED_QUESTS = frozenset(
         MonsterTalkReply.R_REGAIN,
         MonsterTalkReply.R_TRADE,
         MonsterTalkReply.R_WISH,
+        MonsterTalkReply.R_JUNDEAD,
+        MonsterTalkReply.R_CIRCNAV,
+        MonsterTalkReply.R_2POLES,
+        MonsterTalkReply.R_1TERR,
+        MonsterTalkReply.R_EXPALL,
+        MonsterTalkReply.R_SACH,
     }
 )
 
@@ -4169,6 +4255,8 @@ def _resolve_search_encounter_body(
             )
             feature.psychic_mage_sensed_fulfill_honor = sensed_fulfill_honor
         give_quest_item(state, leader_id, feature)
+        if reply is MonsterTalkReply.R_1TERR and feature.quest_terrain is None:
+            feature.quest_terrain = select_quest_terrain(state, feature)
         if reply in (MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_TRADE) and feature.quest_required_treasure is None:
             feature.quest_required_treasure = select_required_treasure(state, feature)
         if reply is MonsterTalkReply.R_VISIT and feature.quest_visit_coord is None:
@@ -4200,6 +4288,7 @@ def _resolve_search_encounter_body(
             quest_target_leader_id=feature.quest_target_leader_id,
             quest_visit_coord=feature.quest_visit_coord,
             quest_required_treasure=feature.quest_required_treasure,
+            quest_terrain=feature.quest_terrain,
             quest_price=sell_price(feature) if reply is MonsterTalkReply.R_SELL else None,
         )
 
@@ -4261,6 +4350,15 @@ def _resolve_search_encounter_body(
             note_quest_visits(state, leader_id)
             if feature.quest_visit_coord is not None and not feature.quest_visit_done:
                 return _quest_requirement_unmet(QuestNote.SERVICE_NOT_PERFORMED, reply)
+        elif reply is MonsterTalkReply.R_SACH:
+            victim, anyone = _sacrificial_companion(state, leader, feature)
+            if victim is None:
+                return _quest_requirement_unmet(QuestNote.NOT_HERO if anyone else QuestNote.SERVICE_NOT_PERFORMED, reply)
+        elif reply in EXPLORER_QUESTS:
+            if effective_skill_level(state, leader, Ability.EXPLORER) < 1:
+                return _quest_requirement_unmet(QuestNote.NOT_QUALIFIED, reply)
+            if not explorer_quest_done(state, feature, reply, leader.kingdom_id):
+                return _quest_requirement_unmet(QuestNote.SERVICE_NOT_PERFORMED, reply)
         elif reply in (MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_TRADE):
             if _held_item_of(state, leader_id, feature.quest_required_treasure) is None:
                 return _quest_requirement_unmet(QuestNote.NO_PRICE, reply)
@@ -4283,7 +4381,7 @@ def _resolve_search_encounter_body(
         elif reply is MonsterTalkReply.R_MATE:
             if not _kingdom_knows_another_lair_of(state, feature, leader.kingdom_id):
                 return _quest_requirement_unmet(QuestNote.SERVICE_NOT_PERFORMED, reply)
-        elif reply is MonsterTalkReply.R_SOUL and not leader.is_king:
+        elif reply in (MonsterTalkReply.R_SOUL, MonsterTalkReply.R_JUNDEAD) and not leader.is_king:
             return _quest_requirement_unmet(QuestNote.KING_ONLY, reply)
 
         feature.pending_deal_leader_id = None
@@ -4292,9 +4390,11 @@ def _resolve_search_encounter_body(
         feature.psychic_mage_sensed_fulfill_honor = None
         silver_tongue_holder = resolve_office_holder(state, Office.DIPLOMAT)
         caster_is_silver_tongue = silver_tongue_holder is not None and silver_tongue_holder.leader_id == leader_id
+        if reply is MonsterTalkReply.R_SACH:
+            state.remove_leader(victim.leader_id)  # devoured first: a betrayal does not bring him back
         if reply is MonsterTalkReply.R_DRAIN:
             drain_half_the_soul(leader, rng)  # before the test: a betrayal does not give the soul back
-        if reply in (MonsterTalkReply.R_SOUL, MonsterTalkReply.R_MATE):
+        if reply in (MonsterTalkReply.R_SOUL, MonsterTalkReply.R_MATE, MonsterTalkReply.R_JUNDEAD):
             honored = True  # the compiled Fulfill makes no honor roll for these
         elif sensed_fulfill_honor is not None:
             honored = sensed_fulfill_honor
@@ -4339,6 +4439,8 @@ def _resolve_search_encounter_body(
         _close_quest_item(state, leader_id, feature, reply)
         if reply is MonsterTalkReply.R_SOUL:
             leader.soul_sold = True
+        if reply is MonsterTalkReply.R_JUNDEAD:
+            leader.undead_pact = True  # gone by the end of the turn (turn_processor), his heir keeps the treasures
         if reply is MonsterTalkReply.R_SELL:
             state.kingdoms[leader.kingdom_id].treasury -= sell_price(feature)
         if reply is MonsterTalkReply.R_MATE:
@@ -4354,6 +4456,7 @@ def _resolve_search_encounter_body(
             quest_treasure=treasure,
             quest_target_leader_id=feature.quest_target_leader_id,
             quest_required_treasure=feature.quest_required_treasure,
+            quest_terrain=feature.quest_terrain,
         )
         outcome.guardian_monster = feature.guardian_monster
         return outcome
