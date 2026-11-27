@@ -84,6 +84,26 @@
   </form>
 </div>
 
+{% if not leader.is_king %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Cost per turn</h2>
+  <p class="hex-map-legend-note">The gold his Kingdom pays this Hero every turn (the "Pay" column of the CHARACTERS report). Normally worked out from how much he likes his King; set a value here to fix it by hand.</p>
+  <form method="post" action="{{ url_for('leader_pay_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="pay">Cost per turn (gold)</label><br>
+      <input type="number" id="pay" name="pay" min="0" max="999" value="{{ pay_now }}" style="width: 6em;">
+      <button type="submit">Set cost</button>
+      {% if leader.pay_override is not none %}
+        <button type="submit" name="reset" value="1" formnovalidate>Back to automatic ({{ pay_automatic }})</button>
+      {% endif %}
+      <br><span class="hex-map-legend-note">
+        {% if leader.pay_override is not none %}Fixed by hand; the automatic cost would be {{ pay_automatic }}.{% else %}Automatic cost.{% endif %}
+      </span>
+    </p>
+  </form>
+</div>
+{% endif %}
+
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Spell Effects</h2>
   <p class="hex-map-legend-note">Lasting marks real casts leave on this Hero/King -- normally set by turn processing itself, exposed here for the GM to set up a scenario directly or correct by hand.</p>

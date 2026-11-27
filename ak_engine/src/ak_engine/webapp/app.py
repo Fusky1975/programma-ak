@@ -251,6 +251,22 @@ def _optional_enum(cls, raw: str):
     return cls[raw] if raw else None
 
 
+def _leader_pay_for_editor(state, leader) -> tuple[int, int]:
+    """``(what the Hero costs per turn now, what he would cost with no hand-set value)`` -- a King costs nothing."""
+
+    from ak_engine.turn.expenses import leader_pay
+    from ak_engine.turn.leader_queries import find_king_of_kingdom
+
+    king = find_king_of_kingdom(state, leader.kingdom_id) if leader.kingdom_id is not None else None
+    now = leader_pay(state, leader, king)
+    override, leader.pay_override = leader.pay_override, None
+    try:
+        automatic = leader_pay(state, leader, king)
+    finally:
+        leader.pay_override = override
+    return now, automatic
+
+
 def _parse_sex_field(form) -> Sex | None:
     """The King-creation forms' Sex select (M / F / N): ``None`` when the field is absent or empty (a client that
     predates it); ``ValueError`` with a user-facing message for anything else that is not a ``Sex``."""
@@ -1865,6 +1881,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             merit_tally_fields=MERIT_TALLY_FIELDS,
             race_title_races=list(RACE_TITLE_OFFICE),
             race_name=RACE_NAME,
+            pay_now=_leader_pay_for_editor(state, leader)[0],
+            pay_automatic=_leader_pay_for_editor(state, leader)[1],
             error=request.args.get("error"),
         )
 
@@ -1937,6 +1955,33 @@ def create_app(games_root: Path | None = None) -> Flask:
         leader.sex = sex
         leader.kingdom_id = kingdom_id
         leader.location = HexCoord(x, y)
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>/pay")
+    def leader_pay_save(slug: str, leader_id: int):
+        """Sets (or, with the reset button, clears) the cost per turn of one Hero: the gold his Kingdom pays him each turn."""
+
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        if "reset" in request.form:
+            leader.pay_override = None
+        else:
+            raw = request.form.get("pay", "").strip()
+            try:
+                pay = int(raw)
+            except ValueError:
+                return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error="The cost per turn must be a whole number."))
+            if pay < 0 or pay > 999:
+                return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error="The cost per turn must be between 0 and 999 gold."))
+            leader.pay_override = pay
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
