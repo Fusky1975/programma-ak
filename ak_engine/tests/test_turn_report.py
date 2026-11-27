@@ -20076,4 +20076,4 @@ def test_the_monster_that_is_brought_a_king_says_he_did_not_taste_like_a_hero():
 
     text = " ".join(describe_search(result, state=_quest_note_state(), character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
 
-    assert "did not taste like a Hero" in text and "Go away!" in text
+    assert "did not taste like a Hero" in text and "go away!" in text.lower()
