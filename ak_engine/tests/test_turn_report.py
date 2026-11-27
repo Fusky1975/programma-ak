@@ -268,7 +268,7 @@ from ak_engine.report.turn_report import (
     render_spell_fizzled_in_combat,
     render_spell_cast_failed,
     render_cargo_boarded,
-    render_sensed_magic_items,
+    render_sensed_magic_item,
     render_defend,
     render_defend_reinforcement,
     render_disband_unit,
@@ -2873,27 +2873,26 @@ def test_describe_cargo_boarded_returns_empty_with_no_boarded_armies():
 # every Move but never actually shown in any report.
 
 
-def test_render_sensed_magic_items():
-    result = render_sensed_magic_items("Merlin", ["Platinum Wand"], ScriptedRandom([]))
-    assert result == "As the realm's own Arch-Mage, Merlin senses the presence of the Platinum Wand nearby, though not precisely where."
+def test_render_sensed_magic_item_uses_the_original_wand_sentence():
+    # SAY.PAS `_LPWand`, as in the real SE3 reports ("The Platinum Wand senses the Cloak of Stealth in Cretacia.").
+    result = render_sensed_magic_item("Cloak of Stealth", "Cretacia", ScriptedRandom([]))
+    assert result == "The Platinum Wand senses the Cloak of Stealth in Cretacia."
 
 
-def test_render_sensed_magic_items_joins_multiple_names():
-    result = render_sensed_magic_items("Merlin", ["Platinum Wand", "Ivory Rod"], ScriptedRandom([]))
-    assert "Platinum Wand and Ivory Rod" in result
-
-
-def test_describe_sensed_magic_items_renders_a_line_when_present():
+def test_describe_sensed_magic_items_renders_one_sentence_per_item_with_the_province_name():
+    state = GameState()
+    state.add_province(ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, name="Cretacia"))
     result = MoveExecutionResult(
         moved=True, battle_report=None, exploration=None, movement_points_spent=1,
-        new_location=HexCoord(3, 9), sensed_magic_items=[Treasure.ABILITY_TACTICAL],
+        new_location=HexCoord(3, 9), sensed_magic_items=[Treasure.ABILITY_TACTICAL, Treasure.WAND_FIREBALL],
     )
 
-    lines = describe_sensed_magic_items(result, character_name="Merlin", rng=ScriptedRandom([]))
+    lines = describe_sensed_magic_items(result, state, character_name="Merlin", rng=ScriptedRandom([]))
 
-    assert len(lines) == 1
-    assert "Merlin" in lines[0]
-    assert TREASURE_NAME[Treasure.ABILITY_TACTICAL] in lines[0]
+    assert lines == [
+        f"The Platinum Wand senses the {TREASURE_NAME[Treasure.ABILITY_TACTICAL]} in Cretacia.",
+        f"The Platinum Wand senses the {TREASURE_NAME[Treasure.WAND_FIREBALL]} in Cretacia.",
+    ]
 
 
 def test_describe_sensed_magic_items_empty_list_renders_nothing():
@@ -2904,7 +2903,7 @@ def test_describe_sensed_magic_items_empty_list_renders_nothing():
         new_location=HexCoord(3, 9), sensed_magic_items=[],
     )
 
-    lines = describe_sensed_magic_items(result, character_name="Merlin", rng=ScriptedRandom([]))
+    lines = describe_sensed_magic_items(result, GameState(), character_name="Merlin", rng=ScriptedRandom([]))
 
     assert lines == []
 
@@ -2915,7 +2914,7 @@ def test_describe_sensed_magic_items_none_renders_nothing():
         new_location=HexCoord(3, 9), sensed_magic_items=None,
     )
 
-    lines = describe_sensed_magic_items(result, character_name="Merlin", rng=ScriptedRandom([]))
+    lines = describe_sensed_magic_items(result, GameState(), character_name="Merlin", rng=ScriptedRandom([]))
 
     assert lines == []
 
@@ -9509,15 +9508,16 @@ def test_describe_search_leader_killed_appends_mortally_wounded():
     ]
 
 
-def test_describe_search_leader_won_renders_only_the_opening_line():
-    # No sourced "you defeated the guardian" sentence exists -- see
-    # describe_search()'s own docstring.
+def test_describe_search_leader_won_tells_the_guardians_death_after_the_opening_line():
+    # Real SE3 reports tell the guardian's death ("The Chimera dropped to the ground, fatally pierced.") right after
+    # the fight; the earlier "no sourced sentence exists" note was wrong.
     result = SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0] * 10)
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
-    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+    assert lines[0] == "Aldric approached the Ancient Ruins, intending to root out its mysteries."
+    assert len(lines) == 2 and lines[1][0].isupper()
 
 
 def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
@@ -9570,7 +9570,7 @@ def test_describe_search_renders_a_fizzled_monster_cast_using_the_guardians_own_
 
 def test_describe_search_ice_suspend_immobilized_guardian_renders_before_win():
     result = SearchExecutionResult(
-        accepted=True, combat_resolved=True, winner="leader", feature_looted=True, ice_suspend_immobilized=True
+        accepted=True, combat_resolved=True, winner="leader", feature_looted=False, ice_suspend_immobilized=True
     )
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
@@ -9603,7 +9603,7 @@ def test_describe_search_ice_suspend_immobilized_false_renders_no_extra_line():
     # nothing extra -- same shape as test_describe_search_leader_won_
     # renders_only_the_opening_line above, just spelled out explicitly
     # for this new field.
-    result = SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
+    result = SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=False)
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
@@ -10818,7 +10818,7 @@ def test_describe_search_squeeze_hits_narrated_for_a_leader_win():
         accepted=True,
         combat_resolved=True,
         winner="leader",
-        feature_looted=True,
+        feature_looted=False,
         squeeze_hits=(3, 2),
     )
     rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
@@ -10861,7 +10861,7 @@ def test_describe_search_melee_swings_narrated_in_chronological_order_both_direc
         accepted=True,
         combat_resolved=True,
         winner="leader",
-        feature_looted=True,
+        feature_looted=False,
         melee_swings=(
             MeleeSwing(attacker="a", hit=True, damage=5),
             MeleeSwing(attacker="b", hit=False, damage=0),
@@ -10904,7 +10904,7 @@ def test_describe_search_melee_swings_narrated_after_squeeze_hits():
         accepted=True,
         combat_resolved=True,
         winner="leader",
-        feature_looted=True,
+        feature_looted=False,
         squeeze_hits=(3,),
         melee_swings=(MeleeSwing(attacker="a", hit=True, damage=2),),
     )
@@ -15680,6 +15680,19 @@ def test_describe_imperial_office_report_announces_a_newly_won_title():
     assert "Ivory Rod" in lines[top_index + 2]
 
 
+def test_the_arch_mages_platinum_wand_paragraph_uses_the_holders_pronoun_as_the_real_reports_do():
+    # Real SE3 report: "While studying his spells, Guerin looked up to see that an incorporeal Platinum Wand ...".
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.office_title_change_notices = {Office.MAGE: 1}
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)  # a spell wand: the office's minimum point
+
+    text = "\n".join(describe_imperial_office_report(state, 1))
+
+    assert "While studying his spells, Aldric looked up to see that an incorporeal Platinum Wand" in text
+    assert "floating in the air in front of Aldric." in text
+
+
 def test_describe_imperial_office_report_says_nothing_for_an_unchanged_title_holder():
     state = _armies_state()
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
@@ -18126,6 +18139,25 @@ def test_the_battle_is_told_right_after_the_move_that_started_it_in_the_heros_le
     assert text.count("ATTACKING ARMY") == 1
 
 
+def test_a_squire_tells_the_heros_battle_in_the_third_person_never_as_i():
+    # Found in a playtester's bundle: "From: Gridley, Squire to Bouticca" read "I commanded a host of loyal soldiers".
+    from ak_engine.report.turn_report import _letter_paragraphs, _layout_units, record_battle_narratives
+
+    state, battle_coord = _block_state()
+    _report, results = _fought_battle(state, battle_coord)
+    record_battle_narratives(state, results, random.Random(5))
+
+    paragraphs = _letter_paragraphs(
+        [results[0]], state, random.Random(1), random.Random(2), "Tlazolteotl", "his", False, _layout_units(state),
+        ability_names=None, board_width=None, narrator=lambda entries: ["Tlazolteotl moved into Border Fort."],
+        battle_blocks=state.battle_blocks,
+    )
+    flat = re.sub(r"\s*\n\s*", " ", "\n".join(paragraphs))
+
+    assert "ATTACKING ARMY" in flat
+    assert not re.search(r"\bI (commanded|led|marched|stood|was)\b|was I\b|\bmy\b", flat)
+
+
 def test_a_later_phase_of_the_same_letter_comes_after_the_battle():
     from ak_engine.report.turn_report import _letter_paragraphs, _layout_units, record_battle_narratives
 
@@ -19332,6 +19364,8 @@ def test_render_battlefield_discovery_lists_the_fallen_by_type():
 
     assert line.startswith("Aldric discovered also that Ancient Valley has been the site of terrible battles.")
     assert line.endswith("2 Average Bowmen and 1 Veteran Legion.")
+    # the second sentence starts with a capital ("battles. Brave and intrepid soldiers ...", not "battles. brave")
+    assert re.search(r"battles\. [A-Z]", line)
 
 
 def test_describe_turn_results_tells_which_soldiers_fell_on_a_battlefield_the_explore_uncovered():
@@ -20245,3 +20279,37 @@ def test_render_battlefield_discovery_names_the_fallen_armies_by_their_order_num
     )
 
     assert line.endswith("2 Average Legion (167th, 28th) and 1 Veteran Axemen (56th).")
+
+
+# -- Playtester bundle, 2026-11-27: a Search won against a guardian told the guardian's death and the treasure --
+
+
+def test_describe_search_win_tells_the_guardians_death_the_sacked_treasure_and_each_treasure_secured():
+    # Real SE3 report: "The Chimera dropped to the ground, fatally pierced.  I sacked the treasure room of the Chimera.
+    # I walked over to a mound of treasure and secured the Huge Hoard of Gold.  I found 38 gold in the treasure."
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="leader", feature_looted=True, guardian_monster=Monster.GI_WORM,
+        gold_found=38, treasures_taken=(Treasure.GOLD_HOARD_HUGE,),
+    )
+
+    lines = describe_search(
+        result, character_name="Berserk", feature_name="Crypt", rng=ScriptedRandom([0.1] * 60, choice_indices=[0] * 60)
+    )
+
+    text = " ".join(lines)
+    assert text.index("Giant Worm") >= 0
+    assert re.search(r"The Giant Worm .*(mortally|fatally|died|fell)", text) or "mortally" in text
+    treasure_line = re.search(r"(bagged|secured) the Huge Hoard of Gold", text)
+    assert treasure_line is not None
+    assert treasure_line.start() < text.index("38 gold")
+
+
+def test_describe_search_win_over_a_fleeing_guardian_tells_no_death():
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="leader", feature_looted=True, monster_fled=True,
+        guardian_monster=Monster.GI_WORM, gold_found=19,
+    )
+
+    text = " ".join(describe_search(result, character_name="Berserk", feature_name="Crypt", rng=ScriptedRandom([0.1] * 60, choice_indices=[0] * 60)))
+
+    assert "mortally" not in text and "fatally" not in text

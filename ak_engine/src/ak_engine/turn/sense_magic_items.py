@@ -6,16 +6,14 @@ quoted in ``models/office.py OFFICE_PERK_DESCRIPTION``, Phase 103):
 the same province: whenever you move into a province, it will tell you
 which magic items are present, but not where they are."
 
-**No world-gen "item lying unclaimed in a province" concept exists in
-this project** (``models/item.py`` module docstring, Phase 140): every
-``ItemInstance`` either has an ``owner_leader_id`` (carried by a leader)
-or is ``None`` ("unowned," with no coordinate of its own -- the real
-Pascal feature-guarded encoding was deliberately left unmodeled). So,
-as built here, "magic items present in a province" can only mean items
-currently carried by *other* leaders standing in that same province --
-the perk's own "other magic items" wording already excludes the
-sensing leader's own inventory, so this isn't a narrowing beyond the
-source text.
+**What counts as "present in the province" (2026-11-27)**: the real
+reports (``SE3__T8.K1``) show the Wand naming an item right next to the
+Special Place that holds it ("a Volcanic Tunnel (#101) ... Legend says the
+Cloak of Stealth is hidden here. ... The Platinum Wand senses the Cloak of
+Stealth in Cretacia."), so the treasure still lying in an unlooted
+Feature of the province counts, found or not. So do the magic items carried
+by *other* leaders standing there (the perk's own "other magic items"
+wording excludes the sensing leader's own inventory).
 
 **Excluded treasure categories**: ``GOLD_HOARD`` (a gold-value tier,
 not a magic item), ``QUEST_ITEM`` (scenario-tracking flags), ``SENTINEL``
@@ -23,12 +21,8 @@ not a magic item), ``QUEST_ITEM`` (scenario-tracking flags), ``SENTINEL``
 never-referenced ordinals) -- every other ``TreasureCategory`` reads as
 a genuine magic item (``models/treasure.py``'s own category table).
 
-**Deliberately no narrative rendering**: this returns a plain
-``list[Treasure]``, not a report string. ``report/turn_report.py`` has
-no real ``.X2`` template for this perk (unlike, say, ``render_take_
-items()``'s own item-list narrative) -- the same "pure mechanic, no
-narrative" scope Phase 489 (Imperial Defender) already established for
-an Office perk with no sourced prose to render.
+The report tells each item with the original sentence (``SAY.PAS _LPWand``:
+"The Platinum Wand senses the \\ in @.").
 """
 
 from __future__ import annotations
@@ -57,9 +51,10 @@ def sense_magic_items_in_province(state: GameState, leader_id: int, province: He
     per-consumer ``resolve_office_holder()`` lookup convention (Phase
     488/489) rather than requiring every future caller to duplicate it.
 
-    Otherwise returns every *other* leader's magic item currently in
-    ``province`` -- ``[]``, not ``None``, when the Arch-Mage senses
-    nothing (a real, empty result, distinct from "not the Arch-Mage").
+    Otherwise returns the magic treasure of every unlooted Feature in
+    ``province``, then every *other* leader's magic item currently there --
+    ``[]``, not ``None``, when the Arch-Mage senses nothing (a real, empty
+    result, distinct from "not the Arch-Mage").
     """
 
     mage_holder = resolve_office_holder(state, Office.MAGE)
@@ -67,6 +62,12 @@ def sense_magic_items_in_province(state: GameState, leader_id: int, province: He
         return None
 
     sensed: list[Treasure] = []
+    for feature in state.features.values():
+        if feature.coord != province or feature.looted or feature.treasure is None:
+            continue
+        if TREASURE_CATEGORY.get(feature.treasure) in _NON_MAGIC_CATEGORIES:
+            continue
+        sensed.append(feature.treasure)
     for item in state.items.values():
         if item.owner_leader_id is None or item.owner_leader_id == leader_id:
             continue

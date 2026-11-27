@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.monster import Monster
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
@@ -84,3 +86,36 @@ def test_senses_multiple_genuine_magic_items_at_once():
 
     assert sensed is not None
     assert set(sensed) == {wand.treasure, book.treasure}
+
+
+def _feature(feature_id: int, coord: HexCoord, treasure: Treasure | None, *, looted: bool = False) -> Feature:
+    return Feature(
+        feature_id=feature_id, coord=coord, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE, treasure=treasure,
+        looted=looted,
+    )
+
+
+def test_senses_the_magic_treasure_lying_in_a_feature_of_the_province_found_or_not():
+    # Real SE3 reports: "Legend says the Cloak of Stealth is hidden here. ... The Platinum Wand senses the Cloak of
+    # Stealth in Cretacia."
+    state = _state_with_mage()
+    state.add_feature(_feature(1, HOME, Treasure.AMULET_ANTI_WHITE))  # nobody has discovered it
+
+    assert sense_magic_items_in_province(state, MAGE_ID, HOME) == [Treasure.AMULET_ANTI_WHITE]
+
+
+def test_ignores_a_looted_feature_a_gold_hoard_and_a_feature_elsewhere():
+    state = _state_with_mage()
+    state.add_feature(_feature(1, HOME, Treasure.AMULET_ANTI_WHITE, looted=True))
+    state.add_feature(_feature(2, HOME, Treasure.GOLD_HOARD_LARGE))
+    state.add_feature(_feature(3, ELSEWHERE, Treasure.AMULET_ANTI_NECROMANCY))
+
+    assert sense_magic_items_in_province(state, MAGE_ID, HOME) == []
+
+
+def test_senses_feature_treasure_before_the_items_other_leaders_carry():
+    state = _state_with_mage()
+    state.add_item(Treasure.AMULET_ANTI_NECROMANCY, owner_leader_id=OTHER_ID)
+    state.add_feature(_feature(1, HOME, Treasure.AMULET_ANTI_WHITE))
+
+    assert sense_magic_items_in_province(state, MAGE_ID, HOME) == [Treasure.AMULET_ANTI_WHITE, Treasure.AMULET_ANTI_NECROMANCY]
