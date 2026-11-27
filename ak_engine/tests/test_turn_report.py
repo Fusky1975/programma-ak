@@ -349,6 +349,7 @@ from ak_engine.report.turn_report import (
     render_kill_enemy_berserk_onset,
     render_monster_description,
     render_practice_already_maxed,
+    render_quest_visit_done,
     render_practice_tutored,
     render_practice_advanced_ability_granted,
     render_practice_army_trained,
@@ -19935,3 +19936,109 @@ def test_the_travel_quest_names_the_province_to_go_to():
     text = " ".join(describe_search(result, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
 
     assert "go to Mongu, charm a mermaid" in text and "a distant province" not in text
+
+
+def test_each_travel_quest_has_its_own_done_sentence():
+    from ak_engine.models.treasure import Treasure
+
+    expected = {
+        Treasure.QUEST_SNOW_QUEST: "found the raging volcano and threw in the Cosmic Snowball",
+        Treasure.QUEST_SAPPH_RING: "cast it into the lake",
+        Treasure.QUEST_LUCKY_PENNY: "tossed it into the well",
+        Treasure.QUEST_GODS_QUEST: "wrote down descriptions of all these bizarre gods",
+        Treasure.QUEST_MERMAID_AMULET: "charmed a comely mermaid",
+    }
+    for item, fragment in expected.items():
+        line = render_quest_visit_done("Pascal", item, "Mongu", "his", random.Random(1))
+        assert line.startswith("While Pascal was in Mongu, Pascal ") and fragment in line, line
+        assert not any(mark in line for mark in ("\\", "⟦", "{", "}", "<", ">"))
+
+
+def test_the_journey_is_told_in_the_phase_in_which_the_hero_arrived():
+    from ak_engine.models.treasure import Treasure
+    from ak_engine.turn.plan_dispatch import NoOpResult
+    from ak_engine.models.enums import ActionCode
+
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Fusky", Race.ORCISH, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(78, 1, "Pascal", HexCoord(9, 4), sex=Sex.FEMALE))
+    state.provinces[HexCoord(9, 4)] = ProvinceState(HexCoord(9, 4), Terrain.PLAINS, Race.HUMAN, name="Mongu")
+    state.quest_visits.append((78, Treasure.QUEST_SNOW_QUEST, HexCoord(9, 4), "P2"))
+
+    arrived = PhaseDispatchResult(78, 0, "P2", ActionCode.LMOVE, NoOpResult(action=ActionCode.LMOVE), None)
+    other = PhaseDispatchResult(78, 0, "P3", ActionCode.LMOVE, NoOpResult(action=ActionCode.LMOVE), None)
+
+    in_that_phase = describe_turn_results([arrived], state, random.Random(2), board_width=20)
+    in_another_phase = describe_turn_results([other], state, random.Random(2), board_width=20)
+
+    assert any("While Pascal was in Mongu" in line and "Cosmic Snowball" in line for line in in_that_phase)
+    assert not any("Cosmic Snowball" in line for line in in_another_phase)
+
+
+def test_the_monsters_refusals_for_the_price_and_the_skill():
+    from ak_engine.turn.encounter import MonsterTalkReply
+    from ak_engine.turn.search_execution import QuestNote
+
+    state = _quest_note_state()
+    for note, reply, fragment in (
+        (QuestNote.NO_PRICE, MonsterTalkReply.R_SELL, "asking price"),
+        (QuestNote.NOT_QUALIFIED, MonsterTalkReply.R_WFREE, "skill"),
+    ):
+        result = SearchExecutionResult(
+            accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX, quest_notes=(note,), quest_reply=reply
+        )
+        text = " ".join(describe_search(result, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+        assert fragment in text and "Go away!" in text, text
+
+
+def test_a_broken_word_for_a_sale_is_the_take_what_i_want_line_and_for_a_drain_the_mockery():
+    from ak_engine.turn.encounter import MonsterTalkReply
+    from ak_engine.turn.search_execution import QuestNote
+
+    state = _quest_note_state()
+    for reply, fragment in ((MonsterTalkReply.R_SELL, "always"), (MonsterTalkReply.R_TRADE, "always"), (MonsterTalkReply.R_DRAIN, "tricked")):
+        result = SearchExecutionResult(
+            accepted=True, combat_resolved=False, guardian_monster=Monster.SPHINX,
+            quest_notes=(QuestNote.BETRAYED,), quest_reply=reply,
+        )
+        text = " ".join(describe_search(result, state=state, character_name="Pascal", feature_name="Pyramid", rng=random.Random(2), leader_id=78))
+        assert text.rstrip().endswith('!"') and "Now," in text, text  # the open quote of the taunt is closed by the threat
+        if reply is MonsterTalkReply.R_DRAIN:
+            assert "tricked" in text or "deceived" in text, text
+        else:
+            assert "thank you" in text and ("always" in text or "wrest" in text), text
+
+
+def test_the_seller_names_its_price_in_the_offer():
+    from ak_engine.report.turn_report import render_guardian_talk_offer
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    offer = " ".join(
+        render_guardian_talk_offer(
+            "Pascal", "the Sphinx", MonsterTalkReply.R_SELL, province_name="Plains", treasure_name="Wand of Fireball",
+            feature_name="Pyramid", rng=random.Random(4), price=23,
+        )
+    )
+
+    assert "23 gold" in offer and "hefty" not in offer
+
+
+def test_the_artifact_asked_for_is_named_in_the_offer_and_in_the_payment():
+    from ak_engine.report.turn_report import render_guardian_quest_fulfilled, render_guardian_talk_offer
+    from ak_engine.turn.encounter import MonsterTalkReply
+
+    for reply in (MonsterTalkReply.R_REGAIN, MonsterTalkReply.R_TRADE):
+        offer = " ".join(
+            render_guardian_talk_offer(
+                "Pascal", "the Sphinx", reply, province_name="Plains", treasure_name="Wand of Fireball",
+                feature_name="Pyramid", rng=random.Random(4), required_name="Amulet of Doom",
+            )
+        )
+        paid = " ".join(
+            render_guardian_quest_fulfilled(
+                "Pascal", "the Sphinx", reply, treasure_name="Wand of Fireball", feature_name="Pyramid",
+                king_name="Fusky", possessive="his", rng=random.Random(4), required_name="Amulet of Doom",
+            )
+        )
+        assert "Amulet of Doom" in offer and "lost relic" not in offer
+        assert "Amulet of Doom" in paid and "lost relic" not in paid

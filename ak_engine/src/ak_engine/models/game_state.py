@@ -2130,6 +2130,10 @@ class GameState:
     # RUMORS.PAS Set_Intel). Filled by `turn/spy_watch.py`, cleared with the other per-turn
     # report scratch lists.
     spy_watches: list[tuple[int, HexCoord, str]] = field(default_factory=list)
+    # Travel quests completed this turn, for the report (``FUVIS.X2``): ``(hero, the quest item he carried, the
+    # province, the label of the phase in which he got there -- "" if only found at the end of the turn)``.
+    # Filled by ``turn/search_execution.py note_quest_visits()``, cleared with the other per-turn scratch.
+    quest_visits: list[tuple[int, Treasure, HexCoord, str]] = field(default_factory=list)
     # (spy leader id, province) pairs whose military/characters report was already made this
     # turn: "Una volta per turno di gioco, la spia farà anche un rapporto concernente le forze
     # militari e i personaggi" ([3.14]).
@@ -2762,6 +2766,7 @@ class GameState:
         # Rumors are only ever read to be told in the report of the turn that produced them.
         self.rumors.clear()
         self.spy_watches.clear()
+        self.quest_visits.clear()
         self.spy_force_reports.clear()
         self.sunk_cargo_events.clear()
         self.battle_narratives_by_kingdom.clear()

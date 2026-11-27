@@ -283,6 +283,9 @@ class Feature:
     # quest asks nothing of the journey.
     quest_visit_coord: HexCoord | None = None
     quest_visit_done: bool = False
+    # The magic item a monster wants brought to it (``MonsterTalkReply.R_REGAIN``: its clan's lost artifact;
+    # ``R_TRADE``: the one it would rather have than its own treasure) -- the "treasure-2" of ``MTALK.X2``.
+    quest_required_treasure: Treasure | None = None
     # 2026-11-20 bug fix, user-confirmed via a deep audit: Office.
     # PSYCHIC_MAGE's own "will sense whether the monster intends to keep
     # its end of the bargain" perk (`models/office.py OFFICE_TITLE_

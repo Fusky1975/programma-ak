@@ -1819,7 +1819,7 @@ def run_leader_plan(
                     if rumor.phase_label is None and rumor.leader_id == leader.leader_id:
                         rumor.phase_label = label
                 note_spy_watch(state, leader.leader_id, phase, result)
-                note_quest_visits(state, leader.leader_id)
+                note_quest_visits(state, leader.leader_id, label)
             except Exception as exc:  # noqa: BLE001 -- intentionally broad, see docstring
                 results.append(PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, None, exc))
                 continue
