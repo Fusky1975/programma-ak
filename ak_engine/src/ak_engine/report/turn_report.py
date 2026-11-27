@@ -1420,6 +1420,7 @@ from ak_engine.turn.battle_luck import (
 )
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import (
+    SPELL_EFFECT_NOT_MODELED_REASON,
     CastExecutionResult,
     WAND_PERSONAL_COMBAT_ONLY_SPELLS,
     WAND_USED_IMPROPERLY_REASON,
@@ -5305,6 +5306,7 @@ def describe_cast(
     real_terrain_name: str | None = None,
     army_names: list[str] | None = None,
     feature_name: str | None = None,
+    tell_failure: bool = True,
 ) -> str | None:
     """Compose Cast's own turn-report line from an already-computed
     ``CastExecutionResult``, the same ``describe_*`` composition pattern
@@ -5328,7 +5330,8 @@ def describe_cast(
     (Phase 603)**: this used to also claim "a fizzled roll" belongs in
     that same silent bucket -- ``SFAIL.X`` (``render_spell_cast_
     failed()`` below) is real, sourced text for exactly that scenario,
-    so the claim was wrong on its own terms. It stays unwired here for
+    so the claim was wrong on its own terms. (**Superseded 2026-11-27**: it is wired now -- see the failure branch
+    above; ``_roll_cast_success()`` does have a probabilistic "spell failed" roll.) It stayed unwired for
     a different, concrete reason: every ``reason=`` string this
     module's own ``turn/cast_execution.py`` ever sets is a deterministic
     validity check (bad target, wrong terrain, not co-located, etc.) --
@@ -5421,7 +5424,14 @@ def describe_cast(
             treasure = _WAND_SPELL_TO_TREASURE.get(result.request.spell)
             if treasure is not None:
                 return render_wand_used_improperly(caster_name, TREASURE_NAME[treasure], rng)
-        return None
+        if result.reason == SPELL_EFFECT_NOT_MODELED_REASON or not tell_failure:
+            return None  # one of the spells this project does not execute: nothing happened to tell
+        # 2026-11-27 (a played turn: two Charms cast on a freed Hero left no trace): every other Cast that did not
+        # take effect -- a failed roll, a target not there, one that already commands armies, no casts left this
+        # turn -- is told the way the original tells it (``_SFail`` = SFAIL.X, "<Vitello> attempted a Charm spell,
+        # but bungled it."), so the player knows the order was carried out and did nothing. (The GM's processing
+        # log says why.)
+        return render_spell_cast_failed(caster_name, SPELL_NAME[result.request.spell], rng)
     spell = result.request.spell
     if spell is Spell.SKELETAL_ARMY:
         return render_skeletal_army_outcome(caster_name, result.skeletal_army_raised, rng)
@@ -5919,6 +5929,7 @@ def describe_use_mi(
             real_terrain_name=real_terrain_name,
             army_names=army_names,
             feature_name=feature_name,
+            tell_failure=False,  # a wand that did nothing stays silent (SFAIL.X is the Cast Spell action's own text)
         )
     if result.ability_boosted is not None and book_name is not None and ability_name is not None:
         return render_skill_book_read(caster_name, book_name, ability_name, rng)

@@ -189,6 +189,23 @@ def _processing_log_leader_label(state: GameState, leader_id: int) -> tuple[str,
     return kingdom_label, f"{leader.name} (#{leader_id})"
 
 
+def _order_outcome_note(result: object) -> str:
+    """For the GM's log: an order that was carried out but did nothing -- a Cast with ``applied`` false -- says why (the
+    spell, its target and the reason), which the players' own reports tell only as "bungled it"."""
+
+    if getattr(result, "applied", None) is not False:
+        return ""
+    request = getattr(result, "request", None)
+    spell = getattr(request, "spell", None)
+    target = getattr(request, "target", None)
+    what = getattr(spell, "name", None)
+    detail = f" -- {what}" if what else ""
+    if what and target is not None:
+        detail += f" on #{target}"
+    reason = getattr(result, "reason", None)
+    return f" (had no effect{detail}: {reason})" if reason else f" (had no effect{detail})"
+
+
 def format_turn_processing_log(results: list[PhaseDispatchResult], state: GameState) -> list[str]:
     """2026-11-18 (user-requested): one line per real ``run_turn()``
     dispatch attempt (every ``PhaseDispatchResult``, in the exact order
@@ -225,6 +242,8 @@ def format_turn_processing_log(results: list[PhaseDispatchResult], state: GameSt
         kingdom_label, leader_label = _processing_log_leader_label(state, entry.leader_id)
         action_label = entry.action.name if isinstance(entry.action, ActionCode) else "(none)"
         status = "OK" if entry.error is None else f"ERROR: {entry.error}"
+        if entry.error is None:
+            status += _order_outcome_note(entry.result)
         lines.append(f"{kingdom_label} / {leader_label} / {entry.phase_label} / {action_label}: {status}")
     return lines
 

@@ -338,3 +338,31 @@ def test_process_and_save_current_turn_also_saves_a_processing_log(tmp_path):
 
     lines = load_turn_processing_log(game_dir(tmp_path, meta.slug), 1)
     assert lines is not None
+
+
+def test_the_processing_log_says_why_a_cast_had_no_effect():
+    from ak_engine.models.enums import Spell
+    from ak_engine.turn.cast_decode import CastRequest
+    from ak_engine.turn.cast_execution import CastExecutionResult
+
+    state = _generated_state()
+    leader_id = next(iter(state.leaders))
+    request = CastRequest(spell=Spell.CHARM, target=59)
+    results = [
+        PhaseDispatchResult(leader_id, 0, "P2", ActionCode.CAST, CastExecutionResult(request, applied=True), None),
+        PhaseDispatchResult(
+            leader_id, 0, "P3", ActionCode.CAST, CastExecutionResult(request, applied=False, reason="not co-located"), None
+        ),
+        PhaseDispatchResult(
+            leader_id, 0, "P4", ActionCode.CAST, CastExecutionResult(request, applied=False, reason="spell failed"), None
+        ),
+    ]
+
+    lines = format_turn_processing_log(results, state)
+
+    applied = next(line for line in lines if "/ P2 /" in line)
+    not_there = next(line for line in lines if "/ P3 /" in line)
+    fizzled = next(line for line in lines if "/ P4 /" in line)
+    assert applied.endswith(": OK")
+    assert not_there.endswith(": OK (had no effect -- CHARM on #59: not co-located)")
+    assert fizzled.endswith(": OK (had no effect -- CHARM on #59: spell failed)")

@@ -1202,6 +1202,8 @@ WAND_PERSONAL_COMBAT_ONLY_SPELLS = frozenset(
 # other reason this module ever sets stays correctly silent, per that
 # function's own docstring) without duplicating the literal string.
 WAND_USED_IMPROPERLY_REASON = "the item doesn't work because it was used improperly"
+# The reason of a Cast of one of the spells this project does not execute: nothing happened, so nothing is reported.
+SPELL_EFFECT_NOT_MODELED_REASON = "spell effect not modeled"
 
 
 def execute_cast(
@@ -1319,7 +1321,7 @@ def execute_cast(
     elif spell in WAND_PERSONAL_COMBAT_ONLY_SPELLS and wand_skill_level is not None:
         return CastExecutionResult(request, applied=False, reason=WAND_USED_IMPROPERLY_REASON)
     else:
-        return CastExecutionResult(request, applied=False, reason="spell effect not modeled")
+        return CastExecutionResult(request, applied=False, reason=SPELL_EFFECT_NOT_MODELED_REASON)
 
     if result.applied:
         _award_cast_experience(state, leader_id, spell, rng)
