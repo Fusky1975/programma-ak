@@ -452,3 +452,27 @@ def test_a_kingdom_in_the_game_is_never_marked_as_having_had_its_last_report():
     assert 1 in outcome.letter_reports
     assert state.kingdoms[1].out_of_game is False and state.kingdoms[1].final_report_sent is False
     assert not any("thy soul was sold" in line for line in outcome.letter_reports[1])
+
+
+def test_a_kingdom_taken_over_by_a_new_player_gets_its_reports_again():
+    from ak_engine.models.enums import Ability
+    from ak_engine.models.sex import Sex
+    from ak_engine.models.temper import Temper
+    from ak_engine.turn.succession import assign_new_player
+
+    state = _base_state()
+    state.add_kingdom(KingdomState(2, "Elfland", Race.ELVEN, Alignment.GOOD, HexCoord(3, 3)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Elwë", location=HexCoord(3, 3), is_king=True, soul_sold=True, alignment=Alignment.GOOD))
+    state.remove_leader(2)
+    process_turn(state, [], board_width=BOARD_WIDTH, rng=random.Random(1))  # the last report
+    assert 2 not in process_turn(state, [], board_width=BOARD_WIDTH, rng=random.Random(2)).letter_reports
+
+    result = assign_new_player(
+        state, 2, name="Newcomer", temper=Temper.BRAVE, sex=Sex.MALE, alignment=Alignment.GOOD,
+        talent_allocation={Ability.WHITE: 2, Ability.DRUID: 2},
+    )
+    outcome = process_turn(state, [], board_width=BOARD_WIDTH, rng=random.Random(3))
+
+    assert result.applied is True
+    assert 2 in outcome.letter_reports
+    assert not any("thy soul was sold" in line for line in outcome.letter_reports[2])

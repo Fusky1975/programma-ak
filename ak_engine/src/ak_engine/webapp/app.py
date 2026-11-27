@@ -76,7 +76,12 @@ from ak_engine.webapp.players import (
 from ak_engine.parser.gw_world import DiplomaticRelation, parse_gw_leaders
 from ak_engine.turn.diplomacy import set_relation
 from ak_engine.turn.kingdom_bridge import sync_leaders_from_gw_world
-from ak_engine.turn.succession import create_king
+from ak_engine.turn.succession import (
+    NEW_PLAYER_ALIGNMENT_STEPS,
+    assign_new_player,
+    create_king,
+    new_player_alignments,
+)
 from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.turn.exploration import FIND_MINES_TAX_CAP
 from ak_engine.turn.plan_dispatch import SUPPORTED_ACTIONS
@@ -742,6 +747,75 @@ def create_app(games_root: Path | None = None) -> Flask:
             )
         save_game(root, slug, state)
         return redirect(url_for("world_setup", slug=slug))
+
+    @app.get("/games/<slug>/turns/kingdoms/<int:kingdom_id>/new-player")
+    def kingdom_new_player(slug: str, kingdom_id: int):
+        """"Assegna un nuovo giocatore": a Kingdom that is out of the game (its King died with his soul sold) gets a new
+        player, who makes his King from scratch."""
+
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is None or not kingdom.out_of_game:
+            return redirect(url_for("turns_hub", slug=slug, error="That Kingdom is not out of the game."))
+        return render_template(
+            "kingdom_new_player.html",
+            meta=meta,
+            kingdom=kingdom,
+            alignments=new_player_alignments(state, kingdom_id),
+            alignment_steps=NEW_PLAYER_ALIGNMENT_STEPS,
+            tempers=list(Temper),
+            sexes=list(Sex),
+            abilities=list(Ability),
+            max_talent_points=MAX_TALENT_POINTS,
+            max_points_per_ability=MAX_POINTS_PER_ABILITY,
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/turns/kingdoms/<int:kingdom_id>/new-player")
+    def kingdom_new_player_assign(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is None or not kingdom.out_of_game:
+            return redirect(url_for("turns_hub", slug=slug, error="That Kingdom is not out of the game."))
+
+        def _form_error(message: str):
+            return redirect(url_for("kingdom_new_player", slug=slug, kingdom_id=kingdom_id, error=message))
+
+        name = request.form.get("name", "").strip()
+        if not name:
+            return _form_error("Please enter the new King's name.")
+        try:
+            temper = Temper[request.form.get("temper", "")]
+            sex = Sex[request.form.get("sex", "")]
+            alignment = Alignment[request.form.get("alignment", "")]
+        except KeyError:
+            return _form_error("Please choose a valid Temper, Sex and alignment.")
+        talent_allocation: dict[Ability, int] = {}
+        for ability in Ability:
+            raw_points = request.form.get(f"talent_{ability.name}", "0").strip()
+            try:
+                points = int(raw_points) if raw_points else 0
+            except ValueError:
+                return _form_error("Talent points must be whole numbers.")
+            if points:
+                talent_allocation[ability] = points
+
+        result = assign_new_player(
+            state, kingdom_id, name=name, temper=temper, sex=sex, alignment=alignment, talent_allocation=talent_allocation
+        )
+        if not result.applied:
+            message = result.reason or "couldn't assign a new player"
+            return _form_error(message[0].upper() + message[1:])
+        save_game(root, slug, state)
+        return redirect(url_for("turns_hub", slug=slug))
 
     @app.get("/games/<slug>/provinces/<int:x>/<int:y>/kingdoms/new")
     def province_kingdom_new(slug: str, x: int, y: int):

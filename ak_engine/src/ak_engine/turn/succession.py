@@ -113,9 +113,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.alignment import Alignment
+from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import SkillTable, trailing_skill_value_for_alignment
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
@@ -302,4 +302,106 @@ def create_king(
     heir.skills = SkillTable(raw_values=raw_values)
     heir.is_royal_heir = False
 
+    return KingCreationResult(applied=True)
+
+
+# -- A new player takes over a Kingdom that is out of the game ------------------------------------------------------------
+
+NEW_PLAYER_ALIGNMENT_STEPS = 2
+_PLAYABLE_KING_ALIGNMENTS = (
+    Alignment.DIVINE,
+    Alignment.GOOD,
+    Alignment.DRUID,
+    Alignment.NEUTRAL,
+    Alignment.PAGAN,
+    Alignment.EVIL,
+    Alignment.UNDEAD,
+)
+
+
+def new_player_alignments(state: GameState, kingdom_id: int) -> list[Alignment]:
+    """The alignments a new player may give the King of a Kingdom he takes over: no further than two steps (on the real
+    scale, ``ALIGNMENT_ORDINAL``) from any of the Kingdom's characters -- the original's standby text: "You may choose an
+    alignment that is no further than two steps removed from any of your characters" -- and never Divine or Undead if
+    another King already is (rulebook [2.1]: one of each per game). A Kingdom with no character left goes by its own
+    alignment."""
+
+    kingdom = state.kingdoms[kingdom_id]
+    reference = [
+        leader.alignment
+        for leader in state.leaders.values()
+        if leader.kingdom_id == kingdom_id and not leader.is_king and leader.alignment is not None
+    ] or [kingdom.alignment]
+    taken = {
+        other.alignment
+        for other in state.leaders.values()
+        if other.is_king and other.kingdom_id != kingdom_id and other.alignment in (Alignment.DIVINE, Alignment.UNDEAD)
+    }
+    return [
+        alignment
+        for alignment in _PLAYABLE_KING_ALIGNMENTS
+        if alignment not in taken
+        and any(abs(ALIGNMENT_ORDINAL[alignment] - ALIGNMENT_ORDINAL[ref]) <= NEW_PLAYER_ALIGNMENT_STEPS for ref in reference)
+    ]
+
+
+def assign_new_player(
+    state: GameState,
+    kingdom_id: int,
+    *,
+    name: str,
+    temper: Temper,
+    sex: Sex,
+    alignment: Alignment,
+    talent_allocation: dict[Ability, int],
+) -> KingCreationResult:
+    """A new player takes over a Kingdom that is out of the game (``KingdomState.out_of_game``: its King died with his soul
+    sold). The original offered such a realm to a new player, who "may start your King character from scratch, choosing 4
+    new abilities for your King, and also his name, gender and temper" and an alignment within two steps of the
+    Kingdom's characters. The new King is made like a starting one (rulebook [2.1]: four points, at most two to a Talent,
+    the automatic bonuses) -- the dead King's own skills do not limit him -- and stands in the Kingdom's Home province under
+    the same leader number, so he finds the dead King's treasures. The realm is back in the game: its lands, armies and
+    Heroes were waiting, and reports go to it again."""
+
+    from ak_engine.worldgen.king_talent import MAX_POINTS_PER_ABILITY, MAX_TALENT_POINTS, build_king_skill_table
+
+    kingdom = state.kingdoms.get(kingdom_id)
+    if kingdom is None:
+        return KingCreationResult(applied=False, reason="Kingdom not found")
+    if not kingdom.out_of_game:
+        return KingCreationResult(applied=False, reason="this Kingdom is still in the game")
+    if kingdom_id in state.leaders:
+        return KingCreationResult(applied=False, reason="this Kingdom already has a King")
+    if not name.strip():
+        return KingCreationResult(applied=False, reason="please enter the new King's name")
+    if alignment not in new_player_alignments(state, kingdom_id):
+        return KingCreationResult(
+            applied=False,
+            reason=f"{alignment.name.title()} is not allowed: no further than {NEW_PLAYER_ALIGNMENT_STEPS} steps from "
+            "the Kingdom's characters, and only one Divine and one Undead King per game",
+        )
+    total = sum(talent_allocation.values())
+    if total != MAX_TALENT_POINTS:
+        return KingCreationResult(applied=False, reason=f"must assign exactly {MAX_TALENT_POINTS} Talent points")
+    if any(points < 0 or points > MAX_POINTS_PER_ABILITY for points in talent_allocation.values()):
+        return KingCreationResult(applied=False, reason=f"no more than {MAX_POINTS_PER_ABILITY} points per Talent")
+    forbidden = Ability.NECROMANCY if alignment is Alignment.DIVINE else Ability.WHITE if alignment is Alignment.UNDEAD else None
+    if forbidden is not None and talent_allocation.get(forbidden, 0) > 0:
+        return KingCreationResult(applied=False, reason=f"a King of this alignment cannot invest in {forbidden.name}")
+
+    state.leaders[kingdom_id] = LeaderState(
+        leader_id=kingdom_id,
+        kingdom_id=kingdom_id,
+        name=name.strip(),
+        location=kingdom.home_province,
+        skills=build_king_skill_table(talent_allocation, alignment),
+        is_king=True,
+        temper=temper,
+        sex=sex,
+        alignment=alignment,
+        race=kingdom.race,
+    )
+    kingdom.alignment = alignment
+    kingdom.out_of_game = False
+    kingdom.final_report_sent = False
     return KingCreationResult(applied=True)

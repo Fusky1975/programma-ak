@@ -24,6 +24,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.webapp.app import MERIT_TALLY_FIELDS, create_app, display_name
 from ak_engine.webapp.games import create_game, game_dir, list_games, open_game, save_game
+from ak_engine.turn.succession import new_player_alignments
 from ak_engine.webapp.moves_compose import kingdom_leaders_for_compose
 
 
@@ -9946,3 +9947,90 @@ def test_turns_hub_says_a_kingdom_is_out_of_the_game_instead_of_asking_for_its_m
     assert response.data.count(b"Out of the game") == 1
     assert response.data.count(b"Not uploaded") == len(state.kingdoms) - 1
     assert b"Compose Manually" in response.data  # the other Kingdoms still offer it
+
+
+# -- "Assegna un nuovo giocatore": a new player takes over a Kingdom that is out of the game ----------------------------
+
+
+def _game_with_an_out_of_game_kingdom(tmp_path, client):
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    state.leaders[2].soul_sold = True
+    state.remove_leader(2)  # the King of Kingdom 2 dies with his soul sold
+    save_game(tmp_path, meta.slug, state)
+    return meta
+
+
+def _new_player_form(**overrides):
+    data = {"name": "Newcomer", "alignment": "NEUTRAL", "sex": "FEMALE", "temper": "BRAVE", "talent_WHITE": "2", "talent_DRUID": "1", "talent_EXPLORER": "1"}
+    data.update(overrides)
+    return data
+
+
+def test_turns_hub_offers_the_new_player_button_only_for_the_kingdom_out_of_the_game(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_an_out_of_game_kingdom(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert response.status_code == 200
+    assert response.data.count(b"Assegna un nuovo giocatore") == 1
+    assert f"/turns/kingdoms/2/new-player".encode() in response.data
+
+
+def test_the_new_player_page_lists_the_alignments_and_the_talent_fields(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_an_out_of_game_kingdom(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/kingdoms/2/new-player")
+
+    assert response.status_code == 200
+    assert b"Assegna un nuovo giocatore" in response.data
+    assert b'name="talent_WHITE"' in response.data and b'name="alignment"' in response.data
+
+
+def test_the_new_player_page_of_a_kingdom_in_the_game_redirects_to_the_hub(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_an_out_of_game_kingdom(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/kingdoms/1/new-player", follow_redirects=True)
+
+    assert response.status_code == 200 and b"not out of the game" in response.data
+
+
+def test_assigning_a_new_player_puts_the_kingdom_back_in_the_game(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_an_out_of_game_kingdom(tmp_path, client)
+    _, before = open_game(tmp_path, meta.slug)
+    offered = new_player_alignments(before, 2)
+    alignment = "NEUTRAL" if Alignment.NEUTRAL in offered else offered[0].name
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/kingdoms/2/new-player", data=_new_player_form(alignment=alignment), follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.kingdoms[2].out_of_game is False
+    king = state.leaders[2]
+    assert king.name == "Newcomer" and king.is_king and king.alignment.name == alignment
+    assert b"Assegna un nuovo giocatore" not in response.data  # no button left: the Kingdom is in the game
+    assert b"Not uploaded" in response.data  # and it is asked for its moves again
+
+
+def test_a_bad_new_player_form_is_refused_with_a_message_and_changes_nothing(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_an_out_of_game_kingdom(tmp_path, client)
+
+    for bad in (
+        _new_player_form(name=""),
+        _new_player_form(temper="NOPE"),
+        _new_player_form(talent_WHITE="x"),
+        _new_player_form(talent_WHITE="1"),  # 3 points, not 4
+        _new_player_form(talent_WHITE="3", talent_DRUID="1", talent_EXPLORER="0"),
+    ):
+        response = client.post(f"/games/{meta.slug}/turns/kingdoms/2/new-player", data=bad, follow_redirects=True)
+        assert response.status_code == 200 and b"error-banner" in response.data, bad
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.kingdoms[2].out_of_game is True and 2 not in state.leaders

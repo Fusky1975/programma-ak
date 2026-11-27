@@ -47,7 +47,7 @@
             </td>
           {% elif kingdom.out_of_game %}
             <td class="status-warning">Out of the game (the King died with his soul sold: no heir)</td>
-            <td></td>
+            <td><a class="button" href="{{ url_for('kingdom_new_player', slug=meta.slug, kingdom_id=kingdom_id) }}">Assegna un nuovo giocatore</a></td>
           {% else %}
             <td class="status-warning">Not uploaded</td>
             <td><a class="button" href="{{ url_for('turns_compose', slug=meta.slug, kingdom_id=kingdom_id) }}">Compose Manually</a></td>
