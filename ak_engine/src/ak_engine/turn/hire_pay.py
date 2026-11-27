@@ -195,6 +195,8 @@ def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) 
     surcharge" term -- see module docstring's own Phase 984 addendum for
     the real-sample evidence this exclusion is based on.
 
+    ``hero.pay_override`` (the GM's own hand-set cost per turn, GM interface "Edit Heroes") beats every rule below.
+
     **Undead fixed pay, sourced directly from the user (2026-10-25,
     confirmed as a fixed rule via an explicit follow-up question rather
     than assumed from phrasing)**: an Undead-aligned Hero always costs
@@ -206,6 +208,9 @@ def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) 
     byproduct of the liking formula finally landing on 1 for some other
     reason.
     """
+
+    if hero.pay_override is not None:
+        return hero.pay_override  # fixed by hand by the GM (Edit Heroes)
 
     if hero.alignment is Alignment.UNDEAD:
         return 1

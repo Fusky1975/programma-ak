@@ -255,3 +255,41 @@ def test_roll_rare_alignment_exception_succeeds_under_the_threshold():
 def test_roll_rare_alignment_exception_fails_at_or_above_the_threshold():
     rng = ScriptedRandom([0.15])
     assert roll_rare_alignment_exception(rng) is False
+
+
+def test_a_pay_fixed_by_hand_beats_every_rule_even_the_undead_fixed_one():
+    from ak_engine.models.alignment import Alignment
+    from ak_engine.models.game_state import GameState, LeaderState
+    from ak_engine.models.map import HexCoord
+    from ak_engine.turn.hire_pay import required_pay
+
+    state = GameState()
+    king = LeaderState(1, 1, "King", HexCoord(0, 0), is_king=True)
+    undead = LeaderState(2, 1, "Wight", HexCoord(0, 0), alignment=Alignment.UNDEAD)
+    assert required_pay(state, undead, king) == 1
+
+    undead.pay_override = 6
+    assert required_pay(state, undead, king) == 6
+    undead.pay_override = 0
+    assert required_pay(state, undead, king) == 0  # zero is a real cost
+    undead.pay_override = None
+    assert required_pay(state, undead, king) == 1
+
+
+def test_the_end_of_turn_payment_takes_the_pay_fixed_by_hand():
+    from ak_engine.models.alignment import Alignment
+    from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+    from ak_engine.models.map import HexCoord
+    from ak_engine.models.race import Race
+    from ak_engine.turn.expenses import apply_turn_maintenance
+
+    state = GameState()
+    kingdom = KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0))
+    kingdom.treasury = 100
+    state.add_kingdom(kingdom)
+    state.add_leader(LeaderState(1, 1, "King", HexCoord(0, 0), is_king=True, alignment=Alignment.GOOD))
+    state.add_leader(LeaderState(2, 1, "Hero", HexCoord(0, 0), alignment=Alignment.GOOD, pay_override=13))
+
+    results = apply_turn_maintenance(state)
+
+    assert results[1].debited == 13 and kingdom.treasury == 87

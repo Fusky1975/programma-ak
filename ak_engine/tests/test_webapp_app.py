@@ -9840,3 +9840,94 @@ def test_a_hand_typed_charm_target_saves_even_for_a_hero_elsewhere(tmp_path):
     response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, headers={"X-Requested-With": "fetch"})
 
     assert response.status_code == 200 and response.get_json()["ok"] is True
+
+
+# -- Edit Heroes: the cost per turn of a Hero ----------------------------------------------------------------------
+
+
+def _hero_of_kingdom_one(tmp_path, client, meta):
+    client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "Paid Hero", "race": "HUMAN", "kingdom_id": "1", "location_x": "0", "location_y": "0"},
+    )
+    _, state = open_game(tmp_path, meta.slug)
+    return max(state.leaders)
+
+
+def test_leader_edit_offers_the_cost_per_turn_of_a_hero_but_not_of_a_king(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    hero_id = _hero_of_kingdom_one(tmp_path, client, meta)
+
+    hero_page = client.get(f"/games/{meta.slug}/leaders/{hero_id}")
+    king_page = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert b"Cost per turn" in hero_page.data and b"Set cost" in hero_page.data and b"Automatic cost." in hero_page.data
+    assert b"Back to automatic" not in hero_page.data
+    assert b"Set cost" not in king_page.data  # a King costs nothing
+
+
+def test_the_cost_per_turn_can_be_set_by_hand_and_the_kingdom_pays_it(tmp_path):
+    from ak_engine.turn.expenses import compute_leader_maintenance, leader_pay
+    from ak_engine.turn.leader_queries import find_king_of_kingdom
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    hero_id = _hero_of_kingdom_one(tmp_path, client, meta)
+    _, before = open_game(tmp_path, meta.slug)
+    maintenance_before = compute_leader_maintenance(before, 1)
+    automatic = leader_pay(before, before.leaders[hero_id], find_king_of_kingdom(before, 1))
+
+    response = client.post(f"/games/{meta.slug}/leaders/{hero_id}/pay", data={"pay": "9"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[hero_id].pay_override == 9
+    assert leader_pay(state, state.leaders[hero_id], find_king_of_kingdom(state, 1)) == 9
+    assert compute_leader_maintenance(state, 1) == maintenance_before - automatic + 9
+    assert b"Fixed by hand" in response.data and b"Back to automatic" in response.data and b'value="9"' in response.data
+
+
+def test_the_cost_per_turn_can_go_back_to_automatic(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    hero_id = _hero_of_kingdom_one(tmp_path, client, meta)
+    client.post(f"/games/{meta.slug}/leaders/{hero_id}/pay", data={"pay": "9"})
+
+    client.post(f"/games/{meta.slug}/leaders/{hero_id}/pay", data={"reset": "1", "pay": "9"})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[hero_id].pay_override is None
+
+
+def test_a_cost_of_zero_is_a_real_cost_not_automatic(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    hero_id = _hero_of_kingdom_one(tmp_path, client, meta)
+
+    client.post(f"/games/{meta.slug}/leaders/{hero_id}/pay", data={"pay": "0"})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[hero_id].pay_override == 0
+
+
+def test_a_bad_cost_per_turn_is_refused_with_a_message_and_changes_nothing(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    hero_id = _hero_of_kingdom_one(tmp_path, client, meta)
+
+    for bad in ("", "abc", "-1", "1000", "2.5"):
+        response = client.post(f"/games/{meta.slug}/leaders/{hero_id}/pay", data={"pay": bad}, follow_redirects=True)
+        assert response.status_code == 200 and b"cost per turn must be" in response.data, bad
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[hero_id].pay_override is None
+
+
+def test_the_cost_per_turn_of_a_missing_hero_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/leaders/999/pay", data={"pay": "3"}, follow_redirects=True)
+
+    assert response.status_code == 200 and b"Hero not found" in response.data

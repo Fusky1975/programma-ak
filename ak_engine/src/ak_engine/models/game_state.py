@@ -1167,6 +1167,9 @@ class LeaderState:
     # True once a King has made the pact of the Undead (``MonsterTalkReply.R_JUNDEAD``): by the end of the turn he is gone
     # for good and his heir inherits his treasures.
     undead_pact: bool = False
+    # The cost per turn the GM fixed for this Hero by hand (Edit Heroes); ``None`` = the automatic cost
+    # (``turn/hire_pay.py required_pay()``, from how much he likes the King).
+    pay_override: int | None = None
     # Phase 260: models/sex.py's own Sex -- "confirmed absent" since
     # Phases 195/217/230, now given its first real writer
     # (turn/succession.py create_king()). None = not recorded, the same
