@@ -405,7 +405,12 @@ from ak_engine.worldgen.initial_armies import (
     whale_budget,
 )
 from ak_engine.worldgen.internal_magical_locations import resolve_power, resolve_visible_location
-from ak_engine.worldgen.king_home_placement import choose_king_home, king_is_naval, second_recruit_slot
+from ak_engine.worldgen.king_home_placement import (
+    choose_king_home,
+    ensure_home_wealth,
+    king_is_naval,
+    second_recruit_slot,
+)
 from ak_engine.worldgen.leader_placement import (
     COMPANIONS_PER_KING,
     draw_mercenary_relocation_coordinate,
@@ -679,6 +684,17 @@ def generate_new_game(
         for coord in placed_coords:
             tax_grid[coord] = recompute_tax(coord, grid[coord], grid, bounds, bounds.height - 1, rng, race)
 
+    # User 2026-11-27: every King starts with at least one Rich and one Prosperous province next to his Home --
+    # whatever the special-race taxes just recomputed above did to the neighbourhood the Home was chosen on.
+    ensure_home_wealth(
+        king_homes,
+        grid,
+        tax_grid,
+        bounds,
+        rng,
+        protected=frozenset(coord for coords in special_race_placements.values() for coord in coords),
+    )
+
     # Phase 797 (backlog #22, land-side half): the ordinary-humanoid-
     # province first recruit slot, `COASTFLEET.md`'s own real terrain-
     # weighted table. Run right after race_grid reflects every special-
@@ -796,6 +812,7 @@ def generate_new_game(
     for king in kings:
         king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
         king_alignment = game_state.kingdoms[king_kingdom_id].alignment
+        king_temper = game_state.leaders[king.leader_id].temper
         home_coord = home_coord_by_king[king.leader_id]
         for companion_index in range(COMPANIONS_PER_KING):
             hero_id = next(unused_hero_ids, None)
@@ -824,6 +841,19 @@ def generate_new_game(
                 else:
                     alignment = Alignment.EVIL if rng.irand() % 2 == 0 else Alignment.PAGAN
                 skills = roll_skill_and_aptitude_table(hero_id, alignment, rng)
+            elif king_alignment is Alignment.DIVINE:
+                # Rulebook [2.2]: "i Re Divini hanno Eroi Buoni".
+                if alignment is not Alignment.GOOD:
+                    alignment = Alignment.GOOD
+                    skills = roll_skill_and_aptitude_table(hero_id, alignment, rng)
+            elif companion_index == 0 and alignment is not king_alignment:
+                # User 2026-11-27: of the two Heroes a King starts with, one has the King's own alignment (rulebook
+                # [2.2]: "un Eroe di allineamento uguale al loro"); the aptitudes follow the alignment, so re-rolled.
+                alignment = king_alignment
+                skills = roll_skill_and_aptitude_table(hero_id, alignment, rng)
+            # ... and the other has the King's own temper (user 2026-11-27).
+            if companion_index == 1 and king_temper is not None:
+                temper = king_temper
             game_state.add_leader(
                 LeaderState(
                     leader_id=hero_id,

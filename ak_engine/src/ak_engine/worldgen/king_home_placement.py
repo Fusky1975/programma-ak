@@ -67,6 +67,10 @@ MIN_HOME_DISTANCE = 3
 # from there (worldgen has no business depending on a report-layer
 # helper), just the same project-original number.
 RICH_PROVINCE_MIN_TAX = 7
+# Rulebook [1.1]: Rich 7-10 tax, Prosperous 3-6, Poor 0-2.
+PROSPEROUS_PROVINCE_MIN_TAX = 3
+RICH_TAX_RANGE = (7, 10)
+PROSPEROUS_TAX_RANGE = (3, 6)
 
 _HUMANOID_RACES: frozenset[Race] = frozenset({Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH})
 _HOME_CANDIDATE_TERRAINS: tuple[Terrain, ...] = (Terrain.PLAINS, Terrain.JUNGLE, Terrain.FOREST, Terrain.MTNS)
@@ -91,6 +95,22 @@ def _has_exactly_one_rich_neighbor(coord: HexCoord, tax_grid: dict[HexCoord, int
 
     rich_neighbors = sum(1 for neighbor in neighbors(coord, bounds) if tax_grid.get(neighbor, 0) >= RICH_PROVINCE_MIN_TAX)
     return rich_neighbors == 1
+
+
+def _land_neighbors(coord: HexCoord, grid: dict[HexCoord, Terrain], bounds: MapBounds) -> list[HexCoord]:
+    return [n for n in neighbors(coord, bounds) if grid.get(n) is not None and grid[n] is not Terrain.SEA]
+
+
+def _neighbor_wealth(
+    coord: HexCoord, grid: dict[HexCoord, Terrain], tax_grid: dict[HexCoord, int], bounds: MapBounds
+) -> tuple[int, int]:
+    """``(Rich, Prosperous)`` land neighbours of ``coord`` (user 2026-11-27: every King starts with at least one of each
+    next to his Home)."""
+
+    taxes = [tax_grid.get(n, 0) for n in _land_neighbors(coord, grid, bounds)]
+    rich = sum(1 for tax in taxes if tax >= RICH_PROVINCE_MIN_TAX)
+    prosperous = sum(1 for tax in taxes if PROSPEROUS_PROVINCE_MIN_TAX <= tax < RICH_PROVINCE_MIN_TAX)
+    return rich, prosperous
 
 
 def eligible_home_coords(
@@ -158,13 +178,107 @@ def choose_king_home(
             "No eligible King Home province found (terrain/race/distance"
             f"{'/sea-adjacency' if naval else ''} constraints) -- map too small or too crowded."
         )
+    # A Home needs room for a Rich and a Prosperous neighbour: as many land neighbours as the map allows (4, else 3, else 2).
+    for min_land in (4, 3, 2):
+        roomy = [c for c in candidates if len(_land_neighbors(c, grid, bounds)) >= min_land]
+        if roomy:
+            candidates = roomy
+            break
     if tax_grid is not None:
-        rich_neighbor_candidates = eligible_home_coords(
-            grid, race_grid, bounds, taken_homes, naval=naval, tax_grid=tax_grid
+        # Preference ladder (best first), each rung only if it leaves a candidate: exactly one Rich neighbour and
+        # at least one Prosperous (the earlier rule plus the 2026-11-27 one), at least one of each, exactly one Rich.
+        rungs = (
+            lambda c: (lambda w: w[0] == 1 and w[1] >= 1)(_neighbor_wealth(c, grid, tax_grid, bounds)),
+            lambda c: (lambda w: w[0] >= 1 and w[1] >= 1)(_neighbor_wealth(c, grid, tax_grid, bounds)),
+            lambda c: _has_exactly_one_rich_neighbor(c, tax_grid, bounds),
         )
-        if rich_neighbor_candidates:
-            candidates = rich_neighbor_candidates
+        for accepts in rungs:
+            preferred = [c for c in candidates if accepts(c)]
+            if preferred:
+                candidates = preferred
+                break
     return candidates[rng.irand() % len(candidates)]
+
+
+def ensure_home_wealth(
+    homes: list[HexCoord],
+    grid: dict[HexCoord, Terrain],
+    tax_grid: dict[HexCoord, int],
+    bounds: MapBounds,
+    rng: PascalRandom,
+    *,
+    protected: frozenset[HexCoord] = frozenset(),
+) -> list[HexCoord]:
+    """Guarantees every King's Home at least one Rich and at least one Prosperous neighbouring province (user
+    2026-11-27), whatever the later special-race placements did to the taxes the Home was chosen on: a Home still
+    short of either gets the best-taxed ordinary neighbouring land province raised into it (a Rich tax 7-10, a
+    Prosperous 3-6). Never touches a Home, a ``protected`` province (a special-race one: its tax sizes its army) or a
+    province another Home already counts on (Homes are at least ``MIN_HOME_DISTANCE`` apart, so their neighbourhoods do
+    not overlap). Returns the Homes that could not be satisfied (too few ordinary neighbours), normally none."""
+
+    home_set = frozenset(homes)
+    unsatisfied: list[HexCoord] = []
+
+    def satisfied(taxes: list[int]) -> bool:
+        return any(t >= RICH_PROVINCE_MIN_TAX for t in taxes) and any(
+            PROSPEROUS_PROVINCE_MIN_TAX <= t < RICH_PROVINCE_MIN_TAX for t in taxes
+        )
+
+    def settle(counted: list[HexCoord], modifiable: list[HexCoord]) -> bool:
+        """Raises/lowers the fewest, cheapest ``modifiable`` neighbours so the ``counted`` ones hold a Rich and a
+        Prosperous; True if it could (or already did)."""
+
+        if satisfied([tax_grid.get(n, 0) for n in counted]):
+            return True
+        moves: list[tuple[int, HexCoord, str, int]] = []  # (cost, coord, tier, nominal tax)
+        for n in sorted(modifiable, key=lambda n: (-tax_grid.get(n, 0), n.x, n.y)):
+            old = tax_grid.get(n, 0)
+            if old < RICH_PROVINCE_MIN_TAX:
+                moves.append((RICH_TAX_RANGE[0] - old, n, "rich", RICH_TAX_RANGE[0]))
+            if old < PROSPEROUS_PROVINCE_MIN_TAX:
+                moves.append((PROSPEROUS_TAX_RANGE[0] - old, n, "pros", PROSPEROUS_TAX_RANGE[0]))
+            elif old >= RICH_PROVINCE_MIN_TAX:
+                moves.append((old - PROSPEROUS_TAX_RANGE[1], n, "pros", PROSPEROUS_TAX_RANGE[1]))
+
+        def outcome(changes: list[tuple[int, HexCoord, str, int]]) -> list[int]:
+            taxes = {n: tax_grid.get(n, 0) for n in counted}
+            for _cost, n, _tier, nominal in changes:
+                taxes[n] = nominal
+            return list(taxes.values())
+
+        # The cheapest one change, else the cheapest two changes (on two different provinces), that settle the Home.
+        singles = [[m] for m in moves if m[1] in counted and satisfied(outcome([m]))]
+        pairs = [
+            [a, b]
+            for ai, a in enumerate(moves)
+            for b in moves[ai + 1 :]
+            if a[1] != b[1] and satisfied(outcome([a, b]))
+        ]
+        if singles:
+            best = min(singles, key=lambda c: (c[0][0], c[0][1].x, c[0][1].y))
+        elif pairs:
+            best = min(pairs, key=lambda c: (c[0][0] + c[1][0], c[0][1].x, c[0][1].y, c[1][1].x, c[1][1].y))
+        else:
+            return False
+        for _cost, n, tier, _nominal in best:
+            low, high = RICH_TAX_RANGE if tier == "rich" else PROSPEROUS_TAX_RANGE
+            tax_grid[n] = low + rng.irand() % (high - low + 1)
+        return True
+
+    for home in homes:
+        land = _land_neighbors(home, grid, bounds)
+        around = [n for n in neighbors(home, bounds) if n in grid]
+        free_land = [n for n in land if n not in home_set and n not in protected]
+        free_around = [n for n in around if n not in home_set and n not in protected]
+        # Land first; then the sea around too; as a last resort a special-race province (its army grows with its tax).
+        if (
+            settle(land, free_land)
+            or settle(around, free_around)
+            or settle(around, [n for n in around if n not in home_set])
+        ):
+            continue
+        unsatisfied.append(home)
+    return unsatisfied
 
 
 def second_recruit_slot(terrain: Terrain, rng: PascalRandom, *, naval: bool, king_race: Race | None = None) -> ArmyType:
