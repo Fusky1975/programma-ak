@@ -297,3 +297,17 @@ def test_a_mercenary_band_does_not_follow_an_independent_hero():
     state.add_army(band)
 
     assert _full_plan(state, band).leader_destinations == {}
+
+
+def test_a_defeated_free_hero_stays_where_he_fell_until_the_turn_is_over():
+    # User ruling 2026-11-27: an independent Hero beaten in a battle does not run off at once -- he can still be
+    # Charmed or met later in the same turn, and only then may decide to wander. His armies retreat without him.
+    state = _state()
+    state.add_leader(LeaderState(7, None, "Drago", FIELD))
+    infantry = _army(state, 1, ArmyType.BOWMEN, commander=7)
+
+    plan = _full_plan(state, infantry)
+
+    assert plan.leader_destinations == {}
+    assert plan.leaders_alone == set()
+    assert plan.commander_after[1] is None

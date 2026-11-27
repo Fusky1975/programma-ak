@@ -122,6 +122,8 @@ class ExploreResult:
     # the armies lying in this province's graveyard (type and rank -- a risen skeleton is "identical to
     # the dead army"), when this Explore uncovered it; empty otherwise.
     battlefield_fallen: list[tuple[ArmyType, Quality]] = field(default_factory=list)
+    # The fallen armies' own numbers, parallel to ``battlefield_fallen`` (``None`` where unknown).
+    battlefield_fallen_army_ids: list[int | None] = field(default_factory=list)
 
 
 EXPLORATION_CAP = 100

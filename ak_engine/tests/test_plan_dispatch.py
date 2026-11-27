@@ -3382,8 +3382,8 @@ def test_dispatch_explore_uncovers_a_battlefield_and_tells_which_soldiers_fell()
     # have fallen in the province" -- certain once the Kingdom has explored 100%.
     location = HexCoord(3, 9)
     state, _army_id = _state_with_army(location, {})
-    state.record_battle_death(location, ArmyType.BOWMEN, Quality.AVERAGE, 2)
-    state.record_battle_death(location, ArmyType.LEGION, Quality.VETERAN, 2)
+    state.record_battle_death(location, ArmyType.BOWMEN, Quality.AVERAGE, 2, army_id=28)
+    state.record_battle_death(location, ArmyType.LEGION, Quality.VETERAN, 2, army_id=167)
     phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[0])
 
     result = dispatch_phase(
@@ -3391,6 +3391,7 @@ def test_dispatch_explore_uncovers_a_battlefield_and_tells_which_soldiers_fell()
     )  # Plains 50 x 2 = 100%
 
     assert result.battlefield_fallen == [(ArmyType.BOWMEN, Quality.AVERAGE), (ArmyType.LEGION, Quality.VETERAN)]
+    assert result.battlefield_fallen_army_ids == [28, 167]  # told by order number too
     assert state.battle_graveyard[location]  # learning of the dead does not raise them
 
 

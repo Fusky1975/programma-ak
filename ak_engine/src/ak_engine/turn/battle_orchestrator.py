@@ -207,7 +207,11 @@ from ak_engine.turn.cast_execution import (
     is_illusory_fog_affected_air_unit,
     quality_one_level_down,
 )
-from ak_engine.turn.challenge_execution import resolve_challenge_combat
+from ak_engine.turn.challenge_execution import (
+    ChallengeCombatOutcome,
+    award_combat_cast_experience,
+    resolve_challenge_combat,
+)
 from ak_engine.turn.combat import Quality, direct_destruction_probability
 from ak_engine.turn.diplomacy import is_attackable_at
 from ak_engine.turn.discovery_effects import (
@@ -234,7 +238,7 @@ from ak_engine.turn.encounter import (
     weapon_offensive_hit_multiplier,
 )
 from ak_engine.turn.command_experience import award_battle_command_experience
-from ak_engine.turn.experience import add_experience
+from ak_engine.turn.experience import add_experience, record_experience
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.merit_points import battle_quality_points
@@ -320,6 +324,12 @@ class BattleReport:
     duel_loser_fled: bool = False
     # "succeeded" / "failed": a Cowardly commander's excuse for refusing the duel (see _DuelOutcome.bluff).
     duel_bluff: str | None = None
+    # Who volunteered the challenge, the personal combat as it was fought, the skill/aptitude rises it earned and
+    # what the winner took from the slain (see ``_DuelOutcome``) -- for the report's account of the duel.
+    duel_challenger_side: str | None = None
+    duel_combat: ChallengeCombatOutcome | None = None
+    duel_experience: list[tuple[int, Ability, str]] = field(default_factory=list)
+    duel_looted_item_ids: list[int] = field(default_factory=list)
     # Phase 231 -- GENERAL INTELLIGENCE REPORT's own raw material
     # (`report/turn_report.py record_battle_world_events()`). Both are
     # already computed locally in `fight_battle()` for its own
@@ -1579,6 +1589,15 @@ def _plan_retreat_destinations(
 
     for leader_id, members in contingents.items():
         leader = state.leaders[leader_id]
+        if leader.kingdom_id is None:
+            # A defeated free Hero (no Kingdom) does not run off during the battle: he stays in the
+            # province until the turn is over and only then may decide to wander elsewhere (user ruling
+            # 2026-11-27: he can still be Charmed, challenged or met later in the same turn). His
+            # armies, if any, retreat without him.
+            for army in members:
+                alone.append(army)
+                plan.commander_after[army.army_id] = None
+            continue
         leader_friendly = friendly(leader.kingdom_id) if leader.kingdom_id is not None else None
         best: tuple[int, HexCoord, list[ArmyState], dict[int, int]] | None = None
         for candidate in retreat_candidates(province_coord, bounds, invaded_from(members[0])):
@@ -1710,6 +1729,16 @@ class _DuelOutcome:
     # saved his troops' strength (BLUFF.X); "failed" = "couldn't think of a good excuse" (_BNoEx).
     # None for every other outcome.
     bluff: str | None = None
+    # Who volunteered the challenge ("attacker" / "defender"); None when no personal duel was triggered
+    # (or the duel was only estimated, with no real challenge behind it).
+    challenger_side: str | None = None
+    # The personal combat as fought -- set only when it was really resolved (``use_real_duel_combat``) --
+    # so the report can tell it (``report/turn_report.py describe_battle()``).
+    combat: ChallengeCombatOutcome | None = None
+    # The skill/aptitude rises the two fighters earned in it: (leader id, ability, "skill" | "aptitude").
+    experience: list[tuple[int, Ability, str]] = field(default_factory=list)
+    # The items the winner took from the slain loser (filled by ``_resolve_duel_death``).
+    looted_item_ids: list[int] = field(default_factory=list)
 
 
 def _commander_combatant(
@@ -1912,6 +1941,27 @@ def _challenged_commander_flees(
 # demoralization penalty." See `_maybe_fight_duel()`'s own Phase 898
 # addendum for the full derivation.
 COWARD_BLUFF_AVOID_DEMORALIZATION_CHANCE = 2 / 3
+
+
+def _award_duel_experience(
+    attacker_leader: LeaderState | None,
+    defender_leader: LeaderState | None,
+    combat_result: ChallengeCombatOutcome,
+    rng: random.Random,
+) -> None:
+    """Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own Melee/Archery rows -- "evento di
+    mischia/duello qualificante"/"evento di tiro riuscito" -- Melee: a landed hit; Archery: an attempted
+    shot, a miss counts too (rulebook [3.13] "per tattica tentata", user decision 2026-11-23, Archery
+    only), credited once per encounter per side, independent of who wins. The garrison-commander
+    fallback (``None`` leader) has no LeaderState to credit and is skipped."""
+
+    for side, leader in (("a", attacker_leader), ("b", defender_leader)):
+        if leader is None:
+            continue
+        if any(swing.hit for swing in combat_result.melee_swings if swing.attacker == side):
+            add_experience(leader, Ability.MELEE, 10, rng)
+        if any(shot.shooter == side for shot in combat_result.fire_arrow_shots):
+            add_experience(leader, Ability.ARCHERY, 10, rng)
 
 
 def _maybe_fight_duel(
@@ -2148,6 +2198,7 @@ def _maybe_fight_duel(
 
     attacker_sep: list[SearchTactic] = []
     defender_sep: list[SearchTactic] = []
+    challenger_side: str | None = None
     attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
     defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)
 
@@ -2177,6 +2228,7 @@ def _maybe_fight_duel(
         attacker_plan = [t if isinstance(t, SearchTactic) else SearchTactic(t) for t in duel_maneuvers]
         attacker_challenges = _commander_challenges(state, attacker_commander, attacker_plan)
         defender_challenges = _commander_challenges(state, defender_commander, defender_sep)
+        challenger_side = "attacker" if attacker_challenges else "defender"
         if not (attacker_challenges or defender_challenges):
             # Phase 1043: both commanders are real, so keep their ids (Marshal/Admiral merit reads them)
             # even though no *personal duel* was triggered.
@@ -2202,9 +2254,11 @@ def _maybe_fight_duel(
                         responder_side,
                         loser_fled=True,
                         bluff="succeeded",
+                        challenger_side=challenger_side,
                     )
                 outcome = _flee_demoralization(responder_side)
                 outcome.bluff = "failed" if may_bluff else None
+                outcome.challenger_side = challenger_side
                 return outcome
     elif duel_maneuvers:
         first_tactic = duel_maneuvers[0]
@@ -2212,6 +2266,8 @@ def _maybe_fight_duel(
         if first_maneuver is Maneuver.FLEE:
             return _flee_demoralization("attacker")
 
+    combat_result: ChallengeCombatOutcome | None = None
+    experience_log: list[tuple[int, Ability, str]] = []
     if use_real_duel_combat and state is not None:
         # Efficiency (Phase 1193): one shared office-holder cache for
         # both sibling Combatants built in this one call -- see
@@ -2231,35 +2287,24 @@ def _maybe_fight_duel(
         # bidirectional Cast-timing agency Phase 674 already built for
         # Challenge/Pursue -- previously the defender was purely
         # passive in a real-combat Duel, regardless of its own plan.
-        combat_result = resolve_challenge_combat(
-            tactics, attacker_leader, attacker_combatant, defender_leader, defender_combatant, state, rng,
-            target_tactics=defender_sep,
-        )
-        # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
-        # Melee/Archery rows -- "evento di mischia/duello qualificante"/
-        # "evento di tiro riuscito" -- Melee: a landed hit; Archery: an attempted shot, a miss counts too (rulebook [3.13] "per tattica tentata", user decision 2026-11-23, Archery only), credited once per
-        # encounter per side, independent of who wins. Dormant today
-        # (this whole block only runs when a production caller opts into
-        # `use_real_duel_combat=True`, which none do -- see this
-        # function's own Phase 675 addendum), wired anyway for when it's
-        # eventually flipped on. The garrison-commander fallback (`None`
-        # leader) has no LeaderState to credit and is skipped.
-        if attacker_leader is not None:
-            if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
-                add_experience(attacker_leader, Ability.MELEE, 10, rng)
-            if any(s.shooter == "a" for s in combat_result.fire_arrow_shots):
-                add_experience(attacker_leader, Ability.ARCHERY, 10, rng)
-        if defender_leader is not None:
-            if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
-                add_experience(defender_leader, Ability.MELEE, 10, rng)
-            if any(s.shooter == "b" for s in combat_result.fire_arrow_shots):
-                add_experience(defender_leader, Ability.ARCHERY, 10, rng)
+        # Every skill/aptitude rise the two fighters earn below (casts, Melee, Archery) is collected so the
+        # report can tell it ("Fusky's experience raised his skill in Melee.").
+        with record_experience() as experience_log:
+            combat_result = resolve_challenge_combat(
+                tactics, attacker_leader, attacker_combatant, defender_leader, defender_combatant, state, rng,
+                target_tactics=defender_sep,
+            )
+            _award_duel_experience(attacker_leader, defender_leader, combat_result, rng)
+            award_combat_cast_experience(state, combat_result.cast_successes, rng)
         # `combat_result.winner is None` also covers a successful Charm/
         # Augur-Combat flee (`combat_result.fled`) -- see this function's
         # own Phase 291 addendum for why that's read as "no duel
         # occurred" rather than a new demoralization outcome.
         if combat_result.winner is None:
-            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, None)
+            return _DuelOutcome(
+                attacker_commander.leader_id, defender_commander.leader_id, None,
+                challenger_side=challenger_side, combat=combat_result, experience=list(experience_log),
+            )
         attacker_wins_duel = combat_result.winner == "a"
     else:
         attacker_strength = sum(u.effective_strength for u in attacker_commander_units)
@@ -2279,7 +2324,10 @@ def _maybe_fight_duel(
         if unit.source_id in demoralized_by_id:
             target_list[index] = demoralized_by_id[unit.source_id]
 
-    return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, loser_side, loser_died=True)
+    return _DuelOutcome(
+        attacker_commander.leader_id, defender_commander.leader_id, loser_side, loser_died=True,
+        challenger_side=challenger_side, combat=combat_result, experience=list(experience_log),
+    )
 
 
 def _resolve_duel_death(
@@ -2324,7 +2372,7 @@ def _resolve_duel_death(
 
     state.remove_leader(loser_id)
     if winner_id is not None and winner_id in state.leaders:
-        loot_defeated_leader(state, winner_id=winner_id, loser_id=loser_id)
+        duel.looted_item_ids = [item.item_id for item in loot_defeated_leader(state, winner_id=winner_id, loser_id=loser_id)]
 
     replacements = [
         state.leaders[leader_id]
@@ -2411,7 +2459,7 @@ def _apply_pursuit(
         destroyed_army = state.armies[army_id]
         state.record_battle_death(
             destroyed_army.location, destroyed_army.army_type, destroyed_army.quality, destroyed_army.kingdom_id,
-            was_skeletal=destroyed_army.is_skeletal,
+            was_skeletal=destroyed_army.is_skeletal, army_id=army_id,
         )
         state.remove_army(army_id)
     return destroyed_ids
@@ -3518,6 +3566,10 @@ def fight_battle(
         duel_loser_side=duel.loser_side,
         duel_loser_fled=duel.loser_fled,
         duel_bluff=duel.bluff,
+        duel_challenger_side=duel.challenger_side,
+        duel_combat=duel.combat,
+        duel_experience=duel.experience,
+        duel_looted_item_ids=duel.looted_item_ids,
         province_coord=province_coord,
         attacker_kingdom_id=attacker_kingdom_id,
         defender_kingdom_id=defender_kingdom_id,
@@ -3680,11 +3732,17 @@ def fight_battle(
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif attacker_clean_swept:
             report.destroyed_army_ids.append(army.army_id)
-            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
+            state.record_battle_death(
+                province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal,
+                army_id=army.army_id,
+            )
             state.remove_army(army.army_id)
         elif rng.random() < direct_destruction_probability_by_army_id.get(army.army_id, 0.0):
             report.destroyed_army_ids.append(army.army_id)
-            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
+            state.record_battle_death(
+                province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal,
+                army_id=army.army_id,
+            )
             state.remove_army(army.army_id)
         else:
             _roll_army_quality(
@@ -3725,11 +3783,17 @@ def fight_battle(
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif defender_clean_swept:
             report.destroyed_army_ids.append(army.army_id)
-            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
+            state.record_battle_death(
+                province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal,
+                army_id=army.army_id,
+            )
             state.remove_army(army.army_id)
         elif rng.random() < direct_destruction_probability_by_army_id.get(army.army_id, 0.0):
             report.destroyed_army_ids.append(army.army_id)
-            state.record_battle_death(province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal)
+            state.record_battle_death(
+                province_coord, army.army_type, army.quality, army.kingdom_id, was_skeletal=army.is_skeletal,
+                army_id=army.army_id,
+            )
             state.remove_army(army.army_id)
         else:
             _roll_army_quality(

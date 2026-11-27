@@ -767,6 +767,10 @@ def dispatch_phase(
         result.battlefield_fallen = discover_battlefield(
             state, province.coord, exploration.new_percent, rng if rng is not None else random.Random()
         )
+        if result.battlefield_fallen:
+            result.battlefield_fallen_army_ids = [
+                entry.army_id for entry in state.battle_graveyard.get(province.coord, [])
+            ]
         reveal_adjacent_provinces(state, province, kingdom_id, MapBounds(board_width, state.board_height))
         result.discovered_features = exploration.discovered_features
         # Phase 256: Chancellor Merit Points ("+2 per Special Place
@@ -1363,7 +1367,7 @@ def _skeletal_army_returns_to_its_grave(state: GameState, army: ArmyState) -> No
     play and goes back to the province's graveyard (user ruling 2026-11-24), where another
     successful Skeletal Armies spell can raise it again."""
 
-    state.record_battle_death(army.location, army.army_type, army.quality, army.kingdom_id)
+    state.record_battle_death(army.location, army.army_type, army.quality, army.kingdom_id, army_id=army.army_id)
     # It goes back to a grave it already left: not a fresh battle death, so it can be raised again at
     # once (the "units that died this very turn" wait only applies to battle casualties).
     state.battle_graveyard[army.location][-1].death_turn = -1

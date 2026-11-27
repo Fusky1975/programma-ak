@@ -1598,6 +1598,9 @@ class GraveyardEntry:
     # turni precedenti" ([4.2.5]), and only entries from earlier turns are exposed to the ~10%/turn
     # decomposition. -1 (the default, for hand-built entries) reads as "long ago".
     death_turn: int = -1
+    # The destroyed army's own number (its "167th Legion" ordinal), so an Explore that uncovers the
+    # battlefield can name the fallen by order number. ``None`` for hand-built entries and old saves.
+    army_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -2437,6 +2440,7 @@ class GameState:
         kingdom_id: int | None,
         *,
         was_skeletal: bool = False,
+        army_id: int | None = None,
     ) -> None:
         """Appends one ``GraveyardEntry`` for a genuine battle death at ``coord`` -- see
         module docstring for exactly which destruction sites call this.
@@ -2451,7 +2455,8 @@ class GameState:
             quality = Quality(max(Quality.DEPLETED.value, quality.value - 1))
         self.battle_graveyard.setdefault(coord, []).append(
             GraveyardEntry(
-                army_type, quality, kingdom_id, death_seq=self.graveyard_death_counter, death_turn=self.turn_number
+                army_type, quality, kingdom_id, death_seq=self.graveyard_death_counter, death_turn=self.turn_number,
+                army_id=army_id,
             )
         )
         self.graveyard_death_counter += 1

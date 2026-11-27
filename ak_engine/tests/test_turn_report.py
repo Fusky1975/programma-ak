@@ -20146,3 +20146,101 @@ def test_describe_turn_results_tells_every_cast_that_did_nothing_whatever_its_sp
     entries = [PhaseDispatchResult(1, 0, "P0", ActionCode.USE_MI, wand, None)]
     lines = describe_turn_results(entries, state, random.Random(4))
     assert len(lines) == 1 and "Charm" in lines[0]
+
+
+# -- 2026-11-27: the duel of the two Supreme Commanders before a battle is told, fight and all ----------------
+
+
+def _duel_report(**overrides):
+    from ak_engine.models.enums import Ability
+    from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
+
+    fields = dict(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commander_leader_id=1,
+        defender_commander_leader_id=2,
+        duel_challenger_side="attacker",
+        duel_loser_side="defender",
+        duel_combat=ChallengeCombatOutcome(
+            winner="a",
+            melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5), MeleeSwing(attacker="b", hit=False, damage=0)),
+        ),
+        duel_experience=[(1, Ability.MELEE, "skill")],
+    )
+    fields.update(overrides)
+    return BattleReport(**fields)
+
+
+def _duel_state():
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=None, name="Clarambald", location=HexCoord(0, 0)))
+    return state
+
+
+def _duel_lines(report, state, viewer_kingdom_id=1):
+    return _flat(describe_battle(
+        report, attacker_name="Attackia", defender_name="Defendia", province_name="the Dolphin Sea", state=state,
+        destination_names={}, rng=ScriptedRandom([0.1] * 200, choice_indices=[0] * 200), viewer_kingdom_id=viewer_kingdom_id,
+    ))
+
+
+def test_describe_battle_tells_the_duel_the_challenge_the_answer_the_fight_and_the_death():
+    state = _duel_state()
+    report = _duel_report()
+    state.remove_leader(2)  # the duel killed the defender
+
+    text = " ".join(_duel_lines(report, state))
+
+    assert "Aldric stepped forward and challenged Clarambald (#2) to honorable combat." in text
+    assert "Clarambald accepted the challenge to honorable combat." in text
+    assert "Aldric assailed Clarambald and inflicted 5 damage points." in text  # the swings of the fight
+    assert "Clarambald assailed Aldric and missed." in text
+    assert "Clarambald was mortally wounded." in text
+    assert text.index("challenged") < text.index("accepted") < text.index("mortally") < text.index("disheartened")
+
+
+def test_describe_battle_tells_the_readers_own_fighter_what_the_duel_taught_him_but_not_the_opponents():
+    state = _duel_state()
+    state.remove_leader(2)
+    report = _duel_report()
+
+    own = " ".join(_duel_lines(report, state, viewer_kingdom_id=1))
+    other = " ".join(_duel_lines(report, state, viewer_kingdom_id=2))
+
+    assert "Aldric's experience raised his skill in Meleeing." in own
+    assert "experience raised" not in other
+
+
+def test_describe_battle_tells_a_refused_duel_with_the_challenge_and_the_refusal():
+    state = _duel_state()
+    report = _duel_report(duel_combat=None, duel_loser_fled=True)
+
+    text = " ".join(_duel_lines(report, state))
+
+    assert "Aldric stepped forward and challenged Clarambald (#2) to honorable combat." in text
+    assert "Clarambald declined to enter combat." in text
+    assert "accepted" not in text
+
+
+def test_describe_battle_leaves_the_cowards_excuse_to_tell_the_challenge_itself():
+    state = _duel_state()
+    report = _duel_report(duel_combat=None, duel_loser_fled=True, duel_bluff="succeeded")
+
+    text = " ".join(_duel_lines(report, state))
+
+    assert "stepped forward and challenged" not in text
+    assert "strode forward and challenged" not in text
+
+
+def test_render_battlefield_discovery_names_the_fallen_armies_by_their_order_number():
+    line = render_battlefield_discovery(
+        "Aldric",
+        "Ancient Valley",
+        [(ArmyType.LEGION, Quality.AVERAGE), (ArmyType.LEGION, Quality.AVERAGE), (ArmyType.AXEMEN, Quality.VETERAN)],
+        ScriptedRandom([0.1] * 20, choice_indices=[0] * 10),
+        army_ids=[167, 28, 56],
+    )
+
+    assert line.endswith("2 Average Legion (167th, 28th) and 1 Veteran Axemen (56th).")

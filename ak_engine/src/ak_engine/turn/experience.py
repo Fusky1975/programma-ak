@@ -97,6 +97,9 @@ duplicated into this shared formula.
 from __future__ import annotations
 
 import random
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from ak_engine.models.enums import Ability
@@ -132,7 +135,33 @@ class ExperienceOutcome:
     new_credit: int
 
 
+# While a ``record_experience()`` block is open, every skill/aptitude rise ``add_experience()`` grants is
+# appended here as ``(leader_id, ability, "skill" | "aptitude")`` so a narrator (a battle duel) can tell
+# "X's experience raised his skill in Melee" (SAY.PAS ``_LExper``/``_LRApt``).
+_EXPERIENCE_LOG: ContextVar[list[tuple[int, Ability, str]] | None] = ContextVar("experience_log", default=None)
+
+
+@contextmanager
+def record_experience() -> Iterator[list[tuple[int, Ability, str]]]:
+    """Collects the skill/aptitude rises granted by ``add_experience()`` inside the ``with`` block."""
+
+    log: list[tuple[int, Ability, str]] = []
+    token = _EXPERIENCE_LOG.set(log)
+    try:
+        yield log
+    finally:
+        _EXPERIENCE_LOG.reset(token)
+
+
 def add_experience(leader: LeaderState, ability: Ability, base_points: int, rng: random.Random) -> ExperienceOutcome:
+    outcome = _add_experience(leader, ability, base_points, rng)
+    log = _EXPERIENCE_LOG.get()
+    if log is not None and (outcome.skill_rose or outcome.aptitude_rose):
+        log.append((leader.leader_id, ability, "skill" if outcome.skill_rose else "aptitude"))
+    return outcome
+
+
+def _add_experience(leader: LeaderState, ability: Ability, base_points: int, rng: random.Random) -> ExperienceOutcome:
     """Applies one real ``Add_Experience`` call to ``leader``'s own
     ``ability`` -- see module docstring for the full sourced formula.
 

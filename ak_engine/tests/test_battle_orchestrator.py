@@ -4196,7 +4196,8 @@ def test_maybe_fight_duel_cast_charm_success_is_read_as_no_duel_occurring():
     defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
     attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
     defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
-    rng = ScriptedRandom([0.1])  # the cast's own success roll -- Charm needs no further roll
+    # the cast's own success roll -- Charm needs no further roll -- and the two draws of the school experience
+    rng = ScriptedRandom([0.1, 0.5, 0.5])
 
     outcome = _maybe_fight_duel(
         attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
@@ -4327,12 +4328,17 @@ def test_maybe_fight_duel_cast_fireball_kill_demoralizes_the_loser():
     ):
         outcome = _maybe_fight_duel(
             attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
-            ScriptedRandom([]), state=state, use_real_duel_combat=True,
+            ScriptedRandom([0.5, 0.5]),  # the school experience of the Fireball that came off
+            state=state, use_real_duel_combat=True,
             duel_maneuvers=[SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)],
         )
 
     assert outcome.loser_side == "defender"
     assert defender_units[0].effective_strength == 10.0 * 0.75
+    # The report tells the duel: who volunteered it and the fight itself.
+    assert outcome.challenger_side == "attacker"
+    assert outcome.combat is not None and outcome.combat.winner == "a"
+    assert outcome.combat.cast_successes == ((501, Ability.ELEMENTAL),)
 
 
 def test_maybe_fight_duel_cast_control_undead_ineligible_against_a_garrison_commander_target():
@@ -4436,6 +4442,44 @@ def test_fight_battle_with_real_duel_combat_reports_a_loser_side():
     assert report.attacker_commander_leader_id == 501
     assert report.defender_commander_leader_id == 502
     assert report.duel_loser_side == "defender"
+
+
+def test_fight_battle_carries_the_duel_to_the_report_and_the_report_tells_it():
+    # 2026-11-27: the duel of the two Supreme Commanders used to leave nothing behind but "disheartened by
+    # his death"; now the challenge, the answer and every swing reach the narrative.
+    from ak_engine.report.turn_report import describe_battle
+
+    state = build_state()
+    state.armies[101].commanded_by = 501
+    state.armies[201].commanded_by = 502
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="Aldric", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9))
+    )
+    state.add_leader(
+        LeaderState(502, kingdom_id=None, name="Borin", location=FIELD, skills=_skills_with(Ability.MELEE, 0, 9))
+    )
+    state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)  # the attacker challenges
+    rng = ScriptedRandom(
+        [0.1, 0.5, 0.9, 0.1, 0.5] + [0.5, 0.5] + [0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0]
+    )
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng,
+        use_real_duel_combat=True,
+    )
+
+    assert report.duel_challenger_side == "attacker"
+    assert report.duel_combat is not None and report.duel_combat.winner == "a"
+    assert [swing.attacker for swing in report.duel_combat.melee_swings][:2] == ["a", "b"]
+    text = " ".join(
+        describe_battle(
+            report, attacker_name="Attackia", defender_name="Defendia", province_name="the Plain", state=state,
+            destination_names={}, rng=ScriptedRandom([0.1] * 400, choice_indices=[0] * 400), viewer_kingdom_id=1,
+        )
+    )
+    assert "Aldric stepped forward and challenged Borin (#502) to honorable combat." in text
+    assert "Borin accepted the challenge to honorable combat." in text
+    assert "mortally wounded" in text
 
 
 # -- Phase 675: duel_maneuvers/target_tactics default from each side's own
@@ -6234,6 +6278,32 @@ def test_a_defeated_attacker_retreats_to_its_origin_with_its_commander():
     assert state.armies[101].commanded_by == 7
     assert state.leaders[7].location == origin
     assert report.leader_retreat_destination_coord == {7: origin}
+    assert report.leaders_retreated_alone == []
+
+
+@patch("ak_engine.turn.battle_orchestrator._resolve_duel_death", new=lambda *args, **kwargs: None)
+def test_a_defeated_free_hero_stays_in_the_province_until_the_turn_is_over():
+    # User ruling 2026-11-27: an independent Hero who loses a battle is still in the province afterwards (he can be
+    # Charmed or challenged later in the same turn); only at the end of the turn may he decide to wander.
+    origin = HexCoord(0, 1)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    state.add_leader(LeaderState(1, 1, "King", origin))
+    state.add_leader(LeaderState(8, None, "Drago", FIELD))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, None, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=8))
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        attacker_origin=origin, rng=random.Random(1),
+    )
+
+    assert report.conquered
+    assert state.leaders[8].location == FIELD  # he did not run off
+    assert report.leader_retreat_destination_coord == {}
     assert report.leaders_retreated_alone == []
 
 

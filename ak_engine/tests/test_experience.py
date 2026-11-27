@@ -7,7 +7,7 @@ from __future__ import annotations
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import LeaderState
 from ak_engine.models.kingdom import SkillTable
-from ak_engine.turn.experience import EXPERIENCE_CREDIT_RISE_THRESHOLD, add_experience
+from ak_engine.turn.experience import EXPERIENCE_CREDIT_RISE_THRESHOLD, add_experience, record_experience
 
 from _helpers import ScriptedRandom
 
@@ -150,3 +150,33 @@ def test_add_experience_shares_the_credit_counter_across_abilities():
     assert result.new_skill == 3
     assert leader.skills.pair_for_ability(Ability.MELEE) == (0, 0)  # never touched
     assert leader.experience_credit == 8  # 96 + 12 (this call's own gain) - 100
+
+
+def test_record_experience_collects_the_skill_rises_granted_inside_the_block_only():
+    leader = _leader(skill=1, aptitude=3)
+    outside = _leader(skill=1, aptitude=3)
+
+    add_experience(outside, Ability.MELEE, 100, ScriptedRandom([]))  # before the block: not recorded
+    with record_experience() as log:
+        add_experience(leader, Ability.MELEE, 100, ScriptedRandom([]))  # the sentinel raises the skill outright
+        add_experience(leader, Ability.ARCHERY, 10, ScriptedRandom([0.3, 0.1]))  # 12 credit: no rise
+    add_experience(outside, Ability.MELEE, 100, ScriptedRandom([]))  # after the block: not recorded
+
+    assert log == [(1, Ability.MELEE, "skill")]
+
+
+def test_award_combat_cast_experience_credits_the_school_only_to_a_caster_with_skill():
+    from ak_engine.models.game_state import GameState
+    from ak_engine.turn.challenge_execution import award_combat_cast_experience
+
+    state = GameState()
+    skilled = _leader(skill=2, aptitude=3, credit=0)
+    unskilled = _leader(skill=0, aptitude=3, credit=0)
+    unskilled.leader_id = 2
+    state.add_leader(skilled)
+    state.add_leader(unskilled)
+
+    award_combat_cast_experience(state, ((1, Ability.MELEE), (2, Ability.MELEE)), ScriptedRandom([0.3, 0.1]))
+
+    assert skilled.experience_credit == 12  # round(10 * (1 + 0.3 - 0.1))
+    assert unskilled.experience_credit == 0  # "skill 0 stays excluded"
