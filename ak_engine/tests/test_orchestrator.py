@@ -426,3 +426,29 @@ def test_process_turn_wires_final_standings_once_an_emperor_exists():
 
     assert outcome.final_standings is not None
     assert outcome.final_standings.standings == (1,)
+
+
+def test_a_kingdom_whose_king_sold_his_soul_gets_one_last_report_and_then_none():
+    state = _base_state()
+    state.add_kingdom(KingdomState(2, "Elfland", Race.ELVEN, Alignment.GOOD, HexCoord(3, 3)))
+    state.add_leader(LeaderState(30, kingdom_id=2, name="Elwë", location=HexCoord(3, 3), is_king=True, soul_sold=True))
+    state.remove_leader(30)  # the King dies: no heir, the Kingdom is out of the game
+
+    first = process_turn(state, [], board_width=BOARD_WIDTH, rng=random.Random(1))
+    second = process_turn(state, [], board_width=BOARD_WIDTH, rng=random.Random(2))
+
+    assert 30 not in state.leaders and state.kingdoms[2].out_of_game is True
+    assert 2 in first.letter_reports
+    assert any("thy soul was sold" in line for line in first.letter_reports[2])
+    assert state.kingdoms[2].final_report_sent is True
+    assert 2 not in second.letter_reports and 1 in second.letter_reports  # the others keep their reports
+
+
+def test_a_kingdom_in_the_game_is_never_marked_as_having_had_its_last_report():
+    state = _base_state()
+
+    outcome = process_turn(state, [], board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert 1 in outcome.letter_reports
+    assert state.kingdoms[1].out_of_game is False and state.kingdoms[1].final_report_sent is False
+    assert not any("thy soul was sold" in line for line in outcome.letter_reports[1])

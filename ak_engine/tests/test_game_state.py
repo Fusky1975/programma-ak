@@ -725,3 +725,38 @@ def test_board_width_and_height_default_to_normal_map_bounds():
     state = GameState()
     assert state.board_width == 30
     assert state.board_height == 15
+
+
+# -- The contract of the soul: no heir ------------------------------------------------------------------------------
+
+
+def test_a_king_who_sold_his_soul_leaves_no_heir_and_his_kingdom_is_out_of_the_game():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", FIELD, is_king=True, soul_sold=True))
+
+    state.remove_leader(1)
+    state.install_pending_royal_heirs()
+
+    assert 1 in state.dead_leaders and 1 not in state.leaders
+    assert state.pending_king_successions == set()
+    assert state.kingdoms[1].out_of_game is True
+
+
+def test_an_ordinary_king_still_has_his_heir_and_his_kingdom_stays_in_the_game():
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", FIELD, is_king=True))
+
+    state.remove_leader(1)
+    state.install_pending_royal_heirs()
+
+    assert state.leaders[1].is_royal_heir is True
+    assert state.kingdoms[1].out_of_game is False
+
+
+def test_a_hero_who_sold_nothing_dying_never_puts_a_kingdom_out_of_the_game():
+    state = make_state()
+    state.add_leader(LeaderState(2, 1, "Hero", FIELD, soul_sold=True))  # a flag no Hero can really have
+
+    state.remove_leader(2)
+
+    assert state.kingdoms[1].out_of_game is False

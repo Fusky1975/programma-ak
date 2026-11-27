@@ -4535,3 +4535,29 @@ def test_a_skeletal_army_that_dies_returns_to_the_grave_one_quality_level_lower(
         Quality.VETERAN,
         Quality.DEPLETED,  # already at the floor
     ]
+
+
+def test_resurrecting_the_dead_king_of_an_out_of_game_kingdom_brings_his_realm_back_into_the_game():
+    state = build_state()
+    kingdom = state.kingdoms[1]
+    kingdom.out_of_game = True
+    kingdom.final_report_sent = True
+    state.dead_leaders[78] = LeaderState(78, 1, "Old King", LOCATION, is_king=True, soul_sold=True)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True and state.leaders[78].is_king is True
+    assert kingdom.out_of_game is False and kingdom.final_report_sent is False
+    assert state.leaders[78].soul_sold is True  # the contract still stands
+
+
+def test_resurrecting_an_ordinary_hero_leaves_an_out_of_game_kingdom_as_it_is():
+    state = build_state()
+    state.kingdoms[1].out_of_game = True
+    state.dead_leaders[78] = LeaderState(78, 1, "Fallen Hero", LOCATION)
+    request = CastRequest(spell=Spell.RESURRECTION, target=78)
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert state.kingdoms[1].out_of_game is True
