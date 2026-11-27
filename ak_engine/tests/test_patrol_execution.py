@@ -18,7 +18,7 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, EncounterCombatResult, MeleeSwing
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, EncounterCombatResult, FireArrowShot, MeleeSwing
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.patrol_execution import _leader_combatant, execute_patrol, find_patrol_target
@@ -675,6 +675,29 @@ def test_execute_patrol_landed_melee_hit_credits_the_patroller():
         )
 
     mock_add_experience.assert_any_call(patroller, Ability.MELEE, 10, ANY)
+
+
+def test_execute_patrol_fire_arrow_shot_credits_both_sides_archery_independently():
+    # Archery: an attempted shot counts, a miss too (rulebook [3.13], user decision 2026-11-23).
+    state = _base_state()
+    patroller = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME)
+    target = LeaderState(2, kingdom_id=2, name="Intruder", location=HOME)
+    state.add_leader(patroller)
+    state.add_leader(target)
+
+    with patch("ak_engine.turn.patrol_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.patrol_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="a",
+            fire_arrow_shots=(FireArrowShot(shooter="a", hit=False, damage=0), FireArrowShot(shooter="b", hit=True, damage=2)),
+        )
+        execute_patrol(
+            state, 1, _melee_request(2), ScriptedRandom([0.5]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+        )
+
+    mock_add_experience.assert_any_call(patroller, Ability.ARCHERY, 10, ANY)
+    mock_add_experience.assert_any_call(target, Ability.ARCHERY, 10, ANY)
 
 
 def test_execute_patrol_landed_melee_hit_credits_the_target_independently():
