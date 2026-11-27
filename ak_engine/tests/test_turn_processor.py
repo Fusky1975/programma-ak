@@ -4196,3 +4196,47 @@ def test_a_same_kingdom_trail_also_acts_right_after_its_target():
     order = _order_same_kingdom_pursuits_after_their_target(entries, [0, 1], {10: ORIGIN, 20: ORIGIN})
 
     assert order == [1, 0]  # the trailed leader moves first, the trailer follows
+
+
+def test_a_king_who_made_the_pact_of_the_undead_is_gone_at_the_end_of_the_turn_and_his_heir_keeps_his_treasures():
+    from ak_engine.models.treasure import Treasure
+
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Old King", location=HexCoord(5, 5), is_king=True, undead_pact=True))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="Hero", location=HexCoord(6, 6)))
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=10)
+
+    run_turn([], state, board_width=BOARD_WIDTH)
+
+    heir = state.leaders[10]  # the Royal Heir takes the same place, with the dead King's treasures
+    assert heir.is_royal_heir is True and heir.undead_pact is False
+    assert 10 in state.dead_leaders and state.dead_leaders[10].undead_pact is True
+    assert [item.treasure for item in state.items_held_by(10)] == [Treasure.WAND_FIREBALL]
+    assert 20 in state.leaders  # nobody else is touched
+
+
+def test_run_turn_registers_the_characters_who_search_with_no_encounter_plan_in_each_phase():
+    from ak_engine.models.feature import Feature, FeatureType
+    from ak_engine.models.monster import Monster
+    from ak_engine.turn import turn_processor
+
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(5, 5)))
+    state.add_feature(Feature(feature_id=7, coord=HexCoord(5, 5), kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    search = PlanPhase(label="P0", action=ActionCode.SEARCH, obj=7, extra=[0])
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 0, (), {"P0": search})]))
+    seen = []
+    real = turn_processor._idle_searches_in
+
+    def spy(entries):
+        found = real(entries)
+        seen.append(dict(found))
+        return found
+
+    with patch.object(turn_processor, "_idle_searches_in", spy):
+        run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
+
+    assert seen[0] == {10: 7}  # P0: a Search of feature 7 with no tactics
+    assert state.idle_searches_this_phase == {}  # cleared at the end of the turn

@@ -1164,6 +1164,9 @@ class LeaderState:
     # True once a King has signed the contract of the soul (``MonsterTalkReply.R_SOUL``): "Never again can the King
     # practice White Magic".
     soul_sold: bool = False
+    # True once a King has made the pact of the Undead (``MonsterTalkReply.R_JUNDEAD``): by the end of the turn he is gone
+    # for good and his heir inherits his treasures.
+    undead_pact: bool = False
     # Phase 260: models/sex.py's own Sex -- "confirmed absent" since
     # Phases 195/217/230, now given its first real writer
     # (turn/succession.py create_king()). None = not recorded, the same
@@ -2134,6 +2137,10 @@ class GameState:
     # province, the label of the phase in which he got there -- "" if only found at the end of the turn)``.
     # Filled by ``turn/search_execution.py note_quest_visits()``, cleared with the other per-turn scratch.
     quest_visits: list[tuple[int, Treasure, HexCoord, str]] = field(default_factory=list)
+    # While a phase of the turn is carried out: the characters who Search a feature in it with no Encounter Plan at all,
+    # as ``{leader id: feature number}`` -- the trusting companion a monster that wants a sacrifice
+    # (``MonsterTalkReply.R_SACH``) is brought. Set by ``turn/turn_processor.py run_turn()`` at the start of each phase.
+    idle_searches_this_phase: dict[int, int] = field(default_factory=dict)
     # (spy leader id, province) pairs whose military/characters report was already made this
     # turn: "Una volta per turno di gioco, la spia farà anche un rapporto concernente le forze
     # militari e i personaggi" ([3.14]).
