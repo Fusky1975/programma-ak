@@ -115,3 +115,14 @@ def test_build_hex_map_size_grows_with_the_boards_own_extent():
         large.add_province(ProvinceState(HexCoord(x, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
 
     assert build_hex_map(large).width > build_hex_map(small).width
+
+
+def test_build_hex_map_tooltip_names_the_province_with_its_report_code():
+    # A playtester looking for "Kalabo (#1203)" from a report could not find it on the map: no name was shown.
+    state = GameState()
+    state.add_province(ProvinceState(HexCoord(12, 3), Terrain.JUNGLE, Race.MERMISH, owner_kingdom_id=None, name="Kalabo"))
+
+    cell = build_hex_map(state).cells[0]
+
+    assert cell.title.startswith("Kalabo (#1203)")
+    assert "Jungle" in cell.title and "Merman" in cell.title

@@ -146,8 +146,10 @@ def build_hex_map(state: GameState, *, size: float = HEX_SIZE) -> HexMap:
 
         homes_here = home_coords.get(coord, [])
         feature_ids_here = features_by_coord.get(coord, [])
+        # The province's name too (and its 4-digit code, as the reports print it: "Kalabo (#1203)"), so a place read in a
+        # report can be found on the map.
         title_parts = [
-            f"({coord.x}, {coord.y})",
+            f"{province.name} (#{coord.x:02d}{coord.y:02d})" if province.name else f"({coord.x}, {coord.y})",
             TERRAIN_LABEL.get(province.terrain, province.terrain.name),
             RACE_NAME.get(province.race, province.race.name),
             owner.name if owner is not None else "Unowned",
