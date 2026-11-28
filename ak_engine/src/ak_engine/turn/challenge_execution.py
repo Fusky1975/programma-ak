@@ -1576,7 +1576,15 @@ def _resolve_personal_combat_cast_inner(
     return None
 
 
-def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random.Random) -> str | None:
+def _consume_bonus_attacks(
+    attacker: Combatant,
+    defender: Combatant,
+    rng: random.Random,
+    *,
+    melee_swings: list[MeleeSwing] | None = None,
+    side: str = "a",
+    mark: "Callable[[str], None] | None" = None,
+) -> str | None:
     """Psychic Blast's/Ice Suspension's own "bonus attack rounds" -- free,
     unanswered Melee swings, resolved immediately after the CAST tactic
     that granted them (same convention as ``turn/search_execution.py``'s
@@ -1586,18 +1594,25 @@ def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random
     resolve_target_cast()`` calls this with the target playing
     ``attacker`` when *its* own Cast granted the bonus, flipping the
     ``"a"`` result back to the outer convention itself.
+
+    Each free swing is logged in ``melee_swings`` (``side`` is the attacker's own label, ``"a"``/``"b"``) so the report
+    can tell it, and ``mark("bonus")`` is called first so the report puts it after the spell that granted it.
     """
 
+    if attacker.bonus_unanswered_attacks > 0 and mark is not None:
+        mark("bonus")
     while attacker.bonus_unanswered_attacks > 0:
         attacker.bonus_unanswered_attacks -= 1
-        damage = roll_melee_attack(
+        raw_damage = roll_melee_attack(
             rng,
             damage_range=attacker.melee_damage_range,
             hit_chance_multiplier=defender.defensive_hit_multiplier,
             skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
             skill_hit_bonus=melee_skill_hit_bonus(effective_melee_skill(attacker), effective_melee_skill(defender)),
         )
-        damage = max(0, damage - attacker.melee_damage_dealt_reduction)
+        damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction)
+        if melee_swings is not None:
+            melee_swings.append(MeleeSwing(attacker=side, hit=raw_damage > 0, damage=damage))
         defender.hit_points -= damage
         if defender.hit_points <= 0:
             return "a"
@@ -2574,7 +2589,7 @@ def resolve_challenge_combat(
             return "b"
         if outcome == "b":
             return "a"
-        bonus_winner = _consume_bonus_attacks(target, caster, rng)
+        bonus_winner = _consume_bonus_attacks(target, caster, rng, melee_swings=melee_swings, side="b", mark=_mark)
         return "b" if bonus_winner == "a" else None
 
     def _resolve_melee_round(*, is_last_tactic: bool) -> tuple[bool, str | None]:
@@ -2986,7 +3001,7 @@ def resolve_challenge_combat(
                 return _outcome(fled=True)
             if outcome in ("a", "b"):
                 return _outcome(winner=outcome)
-            bonus_winner = _consume_bonus_attacks(caster, target, rng)
+            bonus_winner = _consume_bonus_attacks(caster, target, rng, melee_swings=melee_swings, side="a", mark=_mark)
             if bonus_winner is not None:
                 return _outcome(winner=bonus_winner)
             if target_cast_at_melee is not None:

@@ -3593,19 +3593,23 @@ def _resolve_search_encounter_body(
         # per call, not once per bonus round.
         skill_difference_bonus = max(0, effective_melee_skill(attacker) - effective_melee_skill(defender))
         skill_hit_bonus = melee_skill_hit_bonus(effective_melee_skill(attacker), effective_melee_skill(defender))
+        if attacker.bonus_unanswered_attacks > 0:
+            _mark("bonus")  # the free swings come after the spell that granted them
         while attacker.bonus_unanswered_attacks > 0:
             attacker.bonus_unanswered_attacks -= 1
-            damage = roll_melee_attack(
+            raw_damage = roll_melee_attack(
                 rng,
                 damage_range=attacker.melee_damage_range,
                 hit_chance_multiplier=defender.defensive_hit_multiplier,
                 skill_difference_bonus=skill_difference_bonus,
                 skill_hit_bonus=skill_hit_bonus,
             )
-            damage = max(0, damage - attacker.melee_damage_dealt_reduction)
+            damage = max(0, raw_damage - attacker.melee_damage_dealt_reduction)
+            melee_swings.append(MeleeSwing(attacker="a" if attacker is leader_combatant else "b", hit=raw_damage > 0, damage=damage))
             defender.hit_points -= damage
             if defender.hit_points <= 0:
-                return _outcome_from(EncounterCombatResult(winner=("a" if defender_is_monster else "b"), rounds=0))
+                # Handed back with everything told so far (the spells, the swings), like a decided melee.
+                return _finish_melee_outcome(EncounterCombatResult(winner=("a" if defender_is_monster else "b"), rounds=0))
         return None
 
     def _resolve_cast(tactic, *, caster_is_leader: bool, is_first_tactic: bool = False) -> SearchExecutionResult | None:

@@ -20552,3 +20552,25 @@ def test_describe_encounter_combat_says_when_the_damage_dissolved_a_spell():
     lines = describe_encounter_combat(result, a_leader_id=1, a_name="Fusky", b_name="Constantine", rng=rng)
 
     assert lines[-1] == "Constantine's spell was disrupted by the event."
+
+
+def test_describe_encounter_combat_tells_the_free_swings_after_the_spell_that_granted_them():
+    from ak_engine.turn.challenge_execution import CombatCastEvent
+
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        cast_events=(CombatCastEvent("A", "B", Spell.ICE_SUSPEND, True, 0, 0),),
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=4), MeleeSwing(attacker="a", hit=False, damage=0)),
+        round_markers=(
+            ("round", None, None, 0, 0, 0, 0),
+            ("bonus", None, None, 1, 0, 0, 0),
+        ),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0] * 30)
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Andrea", b_name="Lakes", rng=rng)
+
+    assert "Ice Suspension" in lines[0] or "ice" in lines[0].lower()
+    assert "Andrea" in lines[1] and "Lakes" in lines[1] and "4 damage" in lines[1]
+    assert "missed" in lines[2] or "ducked" in lines[2] or "off" in lines[2] or "whiff" in lines[2] or "Lakes" in lines[2]
