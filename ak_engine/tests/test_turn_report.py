@@ -13689,6 +13689,17 @@ def test_impulse3_candidates_includes_a_real_unknown_king_within_range():
     assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == [king]
 
 
+def test_impulse3_candidates_never_lists_the_readers_own_king():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    own_king = LeaderState(1, 1, "Fusky", HexCoord(0, 0), is_king=True)
+    state.add_leader(own_king)
+
+    assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == []
+
+
 def test_describe_characters_report_impulse2_known_stranger_appears_with_ability_text():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
@@ -20454,3 +20465,15 @@ def test_describe_practice_tells_an_aptitude_only_rise():
     assert len(lines) == 1
     assert "aptitude in Tactics" in lines[0]
     assert "her" in lines[0]
+
+
+def test_the_priest_rod_is_not_in_the_characters_report_at_turn_zero():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.HUMAN, Alignment.EVIL, HexCoord(2, 1)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    state.add_leader(LeaderState(11, 2, "Rival King", HexCoord(2, 1), is_king=True))
+    state.turn_number = 0
+
+    assert "\n".join(describe_characters_report(state, 1)).count("Rod senses") == 0

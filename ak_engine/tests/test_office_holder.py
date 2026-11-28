@@ -1106,3 +1106,15 @@ def test_the_emperor_best_hope_lists_know_tax_bases_among_his_special_abilities(
 
     assert Office.EMPEROR in offices
     assert any("WORLD EMPEROR: Know Tax Bases" in line for line in lines)
+
+
+def test_ranking_ignores_a_free_hero_like_the_holder_resolution():
+    from ak_engine.turn.office_holder import leader_office_rank
+
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Fusky", HexCoord(0, 0), is_king=True))
+    free = LeaderState(2, None, "Wanderer", HexCoord(1, 0))
+    state.add_leader(free)
+
+    assert leader_office_rank(state, Office.PRIEST, 1) == 1
