@@ -582,6 +582,37 @@ def dispatch_phase(
     explorer_skill: int = 0,
     rng: random.Random | None = None,
 ):
+    """``_dispatch_phase_inner`` plus the bookkeeping of every skill/aptitude the phase raised by experience.
+
+    The raises land in ``state.experience_notes`` (``(leader id, phase label, ability, kind)``) for the report to
+    tell. Practice is left out: it already narrates its own raise.
+    """
+
+    from ak_engine.turn.experience import record_experience
+
+    with record_experience() as log:
+        try:
+            return _dispatch_phase_inner(
+                phase, state, kingdom_id, leader_id, army_ids,
+                board_width=board_width, explorer_skill=explorer_skill, rng=rng,
+            )
+        finally:
+            if phase.action is not ActionCode.PRACTICE:
+                for lid, ability, kind in log:
+                    state.experience_notes.append((lid, phase.label, ability, kind))
+
+
+def _dispatch_phase_inner(
+    phase: PlanPhase,
+    state: GameState,
+    kingdom_id: int,
+    leader_id: int,
+    army_ids: list[int] | None = None,
+    *,
+    board_width: int | None = None,
+    explorer_skill: int = 0,
+    rng: random.Random | None = None,
+):
     """Execute one PlanPhase's action against ``state``, as commanded by ``leader_id``.
 
     ``army_ids`` defaults to whatever ``leader_id`` currently commands

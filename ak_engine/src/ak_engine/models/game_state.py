@@ -2157,6 +2157,9 @@ class GameState:
     # as ``{leader id: feature number}`` -- the trusting companion a monster that wants a sacrifice
     # (``MonsterTalkReply.R_SACH``) is brought. Set by ``turn/turn_processor.py run_turn()`` at the start of each phase.
     idle_searches_this_phase: dict[int, int] = field(default_factory=dict)
+    # Skills/aptitudes raised by experience while the turn's phases were carried out, for the report:
+    # ``(leader id, label of the phase, ability, "skill"|"aptitude")``. Filled by ``turn/plan_dispatch.py dispatch_phase()``.
+    experience_notes: list[tuple[int, str, Ability, str]] = field(default_factory=list)
     # (spy leader id, province) pairs whose military/characters report was already made this
     # turn: "Una volta per turno di gioco, la spia farà anche un rapporto concernente le forze
     # militari e i personaggi" ([3.14]).
@@ -2798,6 +2801,7 @@ class GameState:
         self.rumors.clear()
         self.spy_watches.clear()
         self.quest_visits.clear()
+        self.experience_notes.clear()
         self.spy_force_reports.clear()
         self.sunk_cargo_events.clear()
         self.battle_narratives_by_kingdom.clear()

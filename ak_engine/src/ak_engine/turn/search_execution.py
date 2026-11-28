@@ -661,7 +661,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_NAME, TREASURE_WAND_SPELL, Treasure, TreasureCategory
-from ak_engine.turn.challenge_execution import award_combat_cast_experience
+from ak_engine.turn.challenge_execution import CombatCastEvent, award_combat_cast_experience
 from ak_engine.turn.command_experience import award_talk_experience
 from ak_engine.turn.sickness import make_sick
 from ak_engine.turn.experience import add_experience
@@ -1050,6 +1050,8 @@ class SearchExecutionResult:
     # execution.py sibling field, which has no equivalent "leader"/
     # "monster" concept to borrow).
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    # Every spell tried in this encounter, in order (``CombatCastEvent``; the caster and target are "leader" or "monster").
+    cast_events: tuple[CombatCastEvent, ...] = ()
     # 2026-11-21: every Hand of Death cast that engaged but did NOT end the
     # fight, one ``(caster side "leader"/"monster", squeeze hits dealt
     # before the end, interrupting damage)`` entry each -- the victim's own
@@ -2523,7 +2525,7 @@ def _resolve_search_encounter_body(
 
     cast_attempt_applied = False
 
-    def _resolve_cast_tactic(
+    def _resolve_cast_tactic_inner(
         tactic,
         *,
         caster_is_leader: bool,
@@ -2888,6 +2890,8 @@ def _resolve_search_encounter_body(
         # when he has natural skill in the school (``award_combat_cast_experience`` skips skill 0).
         if succeeded and caster_is_leader:
             award_combat_cast_experience(state, ((leader_id, ability),), rng)
+        if succeeded and not summon_probe:
+            cast_success_spells.append(spell)  # for the report (``cast_events``)
 
         if spell is Spell.CONTROL_UNDEAD:
             if succeeded:
@@ -3529,6 +3533,44 @@ def _resolve_search_encounter_body(
 
         return None
 
+
+    def _resolve_cast_tactic(
+        tactic,
+        *,
+        caster_is_leader: bool,
+        is_first_tactic: bool = False,
+        forced_level: int | None = None,
+        summon_probe: bool = False,
+    ) -> SearchExecutionResult | None:
+        """``_resolve_cast_tactic_inner()`` plus the record of the spell for the report: a cast that came off or
+        fizzled, with the hit points it cost the target and the caster."""
+
+        if summon_probe:
+            return _resolve_cast_tactic_inner(
+                tactic, caster_is_leader=caster_is_leader, is_first_tactic=is_first_tactic,
+                forced_level=forced_level, summon_probe=True,
+            )
+        caster = leader_combatant if caster_is_leader else monster_combatant
+        target = monster_combatant if caster_is_leader else leader_combatant
+        successes_before, fizzles_before = len(cast_success_spells), len(fizzled_spells)
+        target_hit_points, caster_hit_points = target.hit_points, caster.hit_points
+        outcome = _resolve_cast_tactic_inner(
+            tactic, caster_is_leader=caster_is_leader, is_first_tactic=is_first_tactic, forced_level=forced_level,
+        )
+        side, other = ("leader", "monster") if caster_is_leader else ("monster", "leader")
+        if len(cast_success_spells) > successes_before:
+            cast_events.append(
+                CombatCastEvent(
+                    side, other, cast_success_spells[-1], True,
+                    max(0, target_hit_points - target.hit_points), max(0, caster_hit_points - caster.hit_points),
+                )
+            )
+        elif len(fizzled_spells) > fizzles_before:
+            cast_events.append(CombatCastEvent(side, other, fizzled_spells[-1][1], False))
+        if outcome is not None:
+            outcome.cast_events = tuple(cast_events)  # a spell that ended the encounter hands back its own result
+        return outcome
+
     def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, *, defender_is_monster: bool) -> SearchExecutionResult | None:
         """Phase 209: Psychic Blast's/Ice Suspension's own "bonus attack
         rounds" -- free, unanswered Melee swings, resolved immediately
@@ -3771,6 +3813,8 @@ def _resolve_search_encounter_body(
     # into this module's own leader-vs-monster Cast dispatch too (`if not
     # succeeded:` inside `_resolve_cast_tactic()` below).
     fizzled_spells: list[tuple[str, Spell]] = []
+    cast_success_spells: list[Spell] = []
+    cast_events: list[CombatCastEvent] = []
     hand_of_death_aborts: list[tuple[str, tuple[int, ...], int | None]] = []
 
     def _resolve_guardian_pacification() -> tuple[bool, bool]:
@@ -3828,6 +3872,7 @@ def _resolve_search_encounter_body(
         outcome.fire_arrow_shots = fire_arrow_shots
         outcome.melee_swings = tuple(melee_swings)
         outcome.fizzled_spells = tuple(fizzled_spells)
+        outcome.cast_events = tuple(cast_events)
         outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
         outcome.guardian_monster = feature.guardian_monster
         return outcome
@@ -3847,6 +3892,7 @@ def _resolve_search_encounter_body(
         outcome.fire_arrow_shots = fire_arrow_shots
         outcome.melee_swings = tuple(melee_swings)
         outcome.fizzled_spells = tuple(fizzled_spells)
+        outcome.cast_events = tuple(cast_events)
         outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
         outcome.guardian_monster = feature.guardian_monster
         return outcome
@@ -3999,6 +4045,7 @@ def _resolve_search_encounter_body(
         if outcome is not None:
             outcome.fire_arrow_shots = fire_arrow_shots
             outcome.fizzled_spells = tuple(fizzled_spells)
+            outcome.cast_events = tuple(cast_events)
             outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
             outcome.guardian_monster = feature.guardian_monster
         return outcome
@@ -4102,6 +4149,7 @@ def _resolve_search_encounter_body(
             if outcome is not None:
                 outcome.melee_swings = tuple(melee_swings)
                 outcome.fizzled_spells = tuple(fizzled_spells)
+                outcome.cast_events = tuple(cast_events)
                 outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
                 outcome.guardian_monster = feature.guardian_monster
             return outcome
@@ -4126,6 +4174,7 @@ def _resolve_search_encounter_body(
         if outcome is not None:
             outcome.fire_arrow_shots = fire_arrow_shots
             outcome.fizzled_spells = tuple(fizzled_spells)
+            outcome.cast_events = tuple(cast_events)
             outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
             outcome.guardian_monster = feature.guardian_monster
         return outcome
