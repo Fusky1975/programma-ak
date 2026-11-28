@@ -319,6 +319,8 @@ class RandomEncounterResult:
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
     # Every spell tried (``CombatCastEvent``), in order -- the caster/target are the two fighters' names.
     cast_events: tuple[CombatCastEvent, ...] = ()
+    # Where the range changed / a shot was refused (see ``turn/challenge_execution.py``'s ``round_markers``).
+    round_markers: tuple[tuple, ...] = ()
 
 
 def resolve_random_encounter(
@@ -454,6 +456,7 @@ def resolve_random_encounter(
         melee_swings=outcome.melee_swings,
         fire_arrow_shots=outcome.fire_arrow_shots,
         cast_events=outcome.cast_events,
+        round_markers=outcome.round_markers,
     )
 
 

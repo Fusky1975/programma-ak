@@ -2862,6 +2862,24 @@ PERSONAL_COMBAT_SPELL_ABILITY: dict[Spell, Ability] = {
 }
 
 
+def combat_spell_ability(spell: Spell, *, caster_is_undead: bool = False) -> Ability | None:
+    """The talent a personal-combat spell is cast with (the table above plus the secret and special cases the combat
+    dispatchers handle on their own): what decides who casts first in a round ([5.0]). ``None`` for a spell that
+    is not cast in personal combat."""
+
+    if spell is Spell.CHARM:
+        return Ability.NECROMANCY if caster_is_undead else Ability.PSYCHIC
+    special = {
+        Spell.ILLUS_HERO: Ability.ILLUSION,
+        Spell.GATE_DEMON: Ability.NECROMANCY,
+        Spell.GATE_ANGEL: Ability.WHITE,
+        Spell.LAVA_POOL: Ability.ELEMENTAL,
+        Spell.AUGUR_COMBAT: Ability.PSYCHIC,
+        Spell.HEAL: Ability.WHITE,
+    }
+    return special.get(spell) or PERSONAL_COMBAT_SPELL_ABILITY.get(spell)
+
+
 # Phase 530: the 3 Personal-Combat-capable spells whose entire effect
 # reads/mutates only the *caster's* own state -- Augur_Combat's silent
 # flee-simulation (throwaway clone combat, decides whether the caster

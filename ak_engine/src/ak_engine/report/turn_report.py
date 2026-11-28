@@ -9464,39 +9464,72 @@ def describe_random_encounter_combat(
         return []
 
     lines: list[str] = []
-    for event in result.cast_events:
-        # Spells first, in the order they were cast (the plan puts Cast ahead of the arrows and the sword).
-        if event.succeeded:
-            cast_line = render_combat_spell_cast(
-                event.caster_name, event.target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
+    done = {"cast": 0, "shot": 0, "swing": 0}
+
+    def _tell_casts(upto: int) -> None:
+        for event in result.cast_events[done["cast"]:upto]:
+            # In the order they were cast.
+            if event.succeeded:
+                cast_line = render_combat_spell_cast(
+                    event.caster_name, event.target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
+                )
+                if cast_line:
+                    lines.append(cast_line)
+            else:
+                lines.append(render_spell_fizzled_in_combat(event.caster_name, SPELL_NAME[event.spell], rng))
+        done["cast"] = max(done["cast"], upto)
+
+    def _tell_shots(upto: int) -> None:
+        for shot in result.fire_arrow_shots[done["shot"]:upto]:
+            attacker_name, defender_name = (character_name, opponent_name) if shot.shooter == "a" else (opponent_name, character_name)
+            attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
+            attack_line += (
+                render_attack_hit(defender_name, shot.damage, rng)
+                if shot.hit
+                else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
             )
-            if cast_line:
-                lines.append(cast_line)
-        else:
-            lines.append(render_spell_fizzled_in_combat(event.caster_name, SPELL_NAME[event.spell], rng))
+            lines.append(attack_line)
+        done["shot"] = max(done["shot"], upto)
 
-    for shot in result.fire_arrow_shots:
-        attacker_name, defender_name = (character_name, opponent_name) if shot.shooter == "a" else (opponent_name, character_name)
-        attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
-        attack_line += (
-            render_attack_hit(defender_name, shot.damage, rng)
-            if shot.hit
-            else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
-        )
-        lines.append(attack_line)
+    def _tell_swings(upto: int) -> None:
+        for swing in result.melee_swings[done["swing"]:upto]:
+            attacker_name, defender_name = (character_name, opponent_name) if swing.attacker == "a" else (opponent_name, character_name)
+            attack_line = render_melee_attack(attacker_name, defender_name, melee_attack_method(rng, None if swing.attacker == "a" else result.monster), rng)
+            attack_line += (
+                render_attack_hit(defender_name, swing.damage, rng)
+                if swing.hit
+                else render_attack_missed(attacker_name, defender_name, melee_weapon_noun(None if swing.attacker == "a" else result.monster), rng, is_sea=is_sea)
+            )
+            lines.append(attack_line)
+            proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
+            if proc_line is not None:
+                lines.append(proc_line)
+        done["swing"] = max(done["swing"], upto)
 
-    for swing in result.melee_swings:
-        attacker_name, defender_name = (character_name, opponent_name) if swing.attacker == "a" else (opponent_name, character_name)
-        attack_line = render_melee_attack(attacker_name, defender_name, melee_attack_method(rng, None if swing.attacker == "a" else result.monster), rng)
-        attack_line += (
-            render_attack_hit(defender_name, swing.damage, rng)
-            if swing.hit
-            else render_attack_missed(attacker_name, defender_name, melee_weapon_noun(None if swing.attacker == "a" else result.monster), rng, is_sea=is_sea)
-        )
-        lines.append(attack_line)
-        proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
-        if proc_line is not None:
-            lines.append(proc_line)
+    markers = tuple(getattr(result, "round_markers", ()))
+    if markers:
+        # Told in the order it happened: what was done between two markers (a reactive swing first, then the spells
+        # and the arrows), and each closing in or refused shot as a line of its own.
+        for kind, side, to_range, casts, shots, swings, _channels in markers:
+            _tell_swings(swings)
+            _tell_casts(casts)
+            _tell_shots(shots)
+            if kind == "close":
+                mover = character_name if side == "a" else opponent_name
+                if to_range is CombatRange.BOW_RANGE:
+                    lines.append(render_move_to_bow_range(mover, rng, is_sea=is_sea))
+                elif to_range is CombatRange.MELEE_RANGE:
+                    lines.append(render_move_to_melee_range(mover, rng, is_sea=is_sea))
+            elif kind == "skip_shot":
+                lines.append(f"{character_name} could not fire a bow because {opponent_name} was too close.")
+        _tell_swings(len(result.melee_swings))
+        _tell_casts(len(result.cast_events))
+        _tell_shots(len(result.fire_arrow_shots))
+    else:
+        # Spells first, in the order they were cast (the plan puts Cast ahead of the arrows and the sword).
+        _tell_casts(len(result.cast_events))
+        _tell_shots(len(result.fire_arrow_shots))
+        _tell_swings(len(result.melee_swings))
 
     if result.leader_died:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
@@ -14314,98 +14347,141 @@ def _describe_search_lines(
     # line, before any Fire Arrow/Melee narration, matching this project's
     # `describe_encounter_combat()` sibling's own documented placement
     # choice (Cast never needs to close range).
-    if result.cast_events:
-        # Every spell tried, in order: a fizzle (SBUNGLE.X) or what the spell did (CCAST.X + SPNOTE.X2 / the hit).
-        for event in result.cast_events:
-            caster_name, target_name = (
-                (character_name, foe) if event.caster_name == "leader" else (foe, character_name)
-            )
-            if event.succeeded:
-                cast_line = render_combat_spell_cast(
-                    caster_name, target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
+    done = {'cast': 0, 'shot': 0, 'swing': 0}
+
+    def _tell_casts(upto: int) -> None:
+        if result.cast_events:
+            # Every spell tried, in order: a fizzle (SBUNGLE.X) or what the spell did (CCAST.X + SPNOTE.X2 / the hit).
+            for event in result.cast_events[done['cast']:upto]:
+                caster_name, target_name = (
+                    (character_name, foe) if event.caster_name == "leader" else (foe, character_name)
                 )
-                if cast_line:
-                    lines.append(cast_line)
+                if event.succeeded:
+                    cast_line = render_combat_spell_cast(
+                        caster_name, target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
+                    )
+                    if cast_line:
+                        lines.append(cast_line)
+                else:
+                    lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[event.spell], rng))
+        elif done['cast'] == 0:
+            for side, spell in result.fizzled_spells:
+                caster_name = character_name if side == "leader" else foe
+                lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
+
+        done['cast'] = max(done['cast'], upto)
+
+    def _tell_aborts() -> None:
+        for side, hits, interrupt_damage in result.hand_of_death_aborts:
+            caster_name, target_name = (character_name, foe) if side == "leader" else (foe, character_name)
+            lines.extend(render_hand_of_death_abort(caster_name, target_name, hits, interrupt_damage, rng))
+
+
+    def _tell_shots(upto: int) -> None:
+        for shot in result.fire_arrow_shots[done['shot']:upto]:
+            if shot.shooter == "b" and flavor == "breath_weapon":
+                lines.append(
+                    render_breath_weapon_hit(monster_name, character_name, shot.damage, rng)
+                    if shot.hit
+                    else render_breath_weapon_missed(monster_name, character_name, rng)
+                )
+            elif shot.shooter == "b" and flavor == "boulder_throw":
+                lines.append(
+                    render_boulder_throw_hit(monster_name, character_name, shot.damage, rng)
+                    if shot.hit
+                    else render_boulder_throw_missed(monster_name, character_name, rng)
+                )
+            elif shot.shooter == "b" and flavor == "petrifying_gaze":
+                lines.append(
+                    render_petrifying_gaze_hit(monster_name, character_name, shot.damage, rng)
+                    if shot.hit
+                    else render_petrifying_gaze_missed(monster_name, character_name, rng)
+                )
             else:
-                lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[event.spell], rng))
-    else:
-        for side, spell in result.fizzled_spells:
-            caster_name = character_name if side == "leader" else foe
-            lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
+                attacker_name, defender_name = (foe, character_name) if shot.shooter == "b" else (character_name, foe)
+                attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
+                attack_line += (
+                    render_attack_hit(defender_name, shot.damage, rng)
+                    if shot.hit
+                    else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
+                )
+                lines.append(attack_line)
 
-    for side, hits, interrupt_damage in result.hand_of_death_aborts:
-        caster_name, target_name = (character_name, foe) if side == "leader" else (foe, character_name)
-        lines.extend(render_hand_of_death_abort(caster_name, target_name, hits, interrupt_damage, rng))
+        done['shot'] = max(done['shot'], upto)
 
-    for shot in result.fire_arrow_shots:
-        if shot.shooter == "b" and flavor == "breath_weapon":
-            lines.append(
-                render_breath_weapon_hit(monster_name, character_name, shot.damage, rng)
-                if shot.hit
-                else render_breath_weapon_missed(monster_name, character_name, rng)
+    def _tell_squeeze() -> None:
+        # Phase 413: each round of a winning Hand of Death channel, narrated
+        # individually via render_squeeze_attack() -- the caster's own attack
+        # always lands (turn/encounter.py resolve_hand_of_death_channel()'s
+        # own docstring), so every entry here always pairs with
+        # render_attack_hit(), never render_attack_missed(). Whichever side
+        # cast the winning channel is read off result.winner itself (only a
+        # winning channel ever populates squeeze_hits at all -- see
+        # SearchExecutionResult.squeeze_hits's own Phase 413 note).
+        squeeze_attacker, squeeze_defender = (
+            (foe, character_name) if result.winner == "monster" else (character_name, foe)
+        )
+        for damage in result.squeeze_hits:
+            lines.append(render_squeeze_attack(squeeze_attacker, squeeze_defender, rng) + render_attack_hit(squeeze_defender, damage, rng))
+
+
+    def _tell_swings(upto: int) -> None:
+        # Phase 415: each Melee swing (result.melee_swings, chronological
+        # across every round actually fought at melee range) narrated
+        # individually via render_melee_attack() (SWANGAT.X, Phase 113 --
+        # built but never called from anywhere until now) + render_attack_
+        # hit()/render_attack_missed(). Unlike squeeze_hits (one-directional,
+        # tied to result.winner), each MeleeSwing already carries its own
+        # attacker ("a"/"b") -- ordinary Melee is genuinely bidirectional
+        # round to round, so there's no single "the attacker" to read off
+        # result.winner here.
+        for swing in result.melee_swings[done['swing']:upto]:
+            melee_attacker, melee_defender = (
+                (character_name, foe) if swing.attacker == "a" else (foe, character_name)
             )
-        elif shot.shooter == "b" and flavor == "boulder_throw":
-            lines.append(
-                render_boulder_throw_hit(monster_name, character_name, shot.damage, rng)
-                if shot.hit
-                else render_boulder_throw_missed(monster_name, character_name, rng)
+            attack_line = render_melee_attack(
+                melee_attacker, melee_defender,
+                melee_attack_method(rng, None if swing.attacker == "a" else result.guardian_monster), rng,
             )
-        elif shot.shooter == "b" and flavor == "petrifying_gaze":
-            lines.append(
-                render_petrifying_gaze_hit(monster_name, character_name, shot.damage, rng)
-                if shot.hit
-                else render_petrifying_gaze_missed(monster_name, character_name, rng)
-            )
-        else:
-            attacker_name, defender_name = (foe, character_name) if shot.shooter == "b" else (character_name, foe)
-            attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
             attack_line += (
-                render_attack_hit(defender_name, shot.damage, rng)
-                if shot.hit
-                else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
+                render_attack_hit(melee_defender, swing.damage, rng)
+                if swing.hit
+                else render_attack_missed(melee_attacker, melee_defender, melee_weapon_noun(None if swing.attacker == "a" else result.guardian_monster), rng, is_sea=is_sea)
             )
             lines.append(attack_line)
+            proc_line = render_weapon_proc_line(swing.weapon_proc, melee_attacker, melee_defender, swing.weapon_proc_hit_points, rng)
+            if proc_line is not None:
+                lines.append(proc_line)
 
-    # Phase 413: each round of a winning Hand of Death channel, narrated
-    # individually via render_squeeze_attack() -- the caster's own attack
-    # always lands (turn/encounter.py resolve_hand_of_death_channel()'s
-    # own docstring), so every entry here always pairs with
-    # render_attack_hit(), never render_attack_missed(). Whichever side
-    # cast the winning channel is read off result.winner itself (only a
-    # winning channel ever populates squeeze_hits at all -- see
-    # SearchExecutionResult.squeeze_hits's own Phase 413 note).
-    squeeze_attacker, squeeze_defender = (
-        (foe, character_name) if result.winner == "monster" else (character_name, foe)
-    )
-    for damage in result.squeeze_hits:
-        lines.append(render_squeeze_attack(squeeze_attacker, squeeze_defender, rng) + render_attack_hit(squeeze_defender, damage, rng))
+        done['swing'] = max(done['swing'], upto)
 
-    # Phase 415: each Melee swing (result.melee_swings, chronological
-    # across every round actually fought at melee range) narrated
-    # individually via render_melee_attack() (SWANGAT.X, Phase 113 --
-    # built but never called from anywhere until now) + render_attack_
-    # hit()/render_attack_missed(). Unlike squeeze_hits (one-directional,
-    # tied to result.winner), each MeleeSwing already carries its own
-    # attacker ("a"/"b") -- ordinary Melee is genuinely bidirectional
-    # round to round, so there's no single "the attacker" to read off
-    # result.winner here.
-    for swing in result.melee_swings:
-        melee_attacker, melee_defender = (
-            (character_name, foe) if swing.attacker == "a" else (foe, character_name)
-        )
-        attack_line = render_melee_attack(
-            melee_attacker, melee_defender,
-            melee_attack_method(rng, None if swing.attacker == "a" else result.guardian_monster), rng,
-        )
-        attack_line += (
-            render_attack_hit(melee_defender, swing.damage, rng)
-            if swing.hit
-            else render_attack_missed(melee_attacker, melee_defender, melee_weapon_noun(None if swing.attacker == "a" else result.guardian_monster), rng, is_sea=is_sea)
-        )
-        lines.append(attack_line)
-        proc_line = render_weapon_proc_line(swing.weapon_proc, melee_attacker, melee_defender, swing.weapon_proc_hit_points, rng)
-        if proc_line is not None:
-            lines.append(proc_line)
+    markers = tuple(getattr(result, "round_markers", ()))
+    if markers:
+        # Told in the order it happened (see ``_describe_encounter_combat_lines``): what was done between two markers, a
+        # reactive swing first, then the spells and the arrows; a side closing in or a shot refused is a line of its own.
+        for kind, side, to_range, casts, shots, swings, _channels in markers:
+            _tell_swings(swings)
+            _tell_casts(casts)
+            _tell_shots(shots)
+            if kind == "close":
+                mover = character_name if side == "a" else foe
+                if to_range is CombatRange.BOW_RANGE:
+                    lines.append(render_move_to_bow_range(mover, rng, is_sea=is_sea))
+                elif to_range is CombatRange.MELEE_RANGE:
+                    lines.append(render_move_to_melee_range(mover, rng, is_sea=is_sea))
+            elif kind == "skip_shot":
+                lines.append(f"{character_name} could not fire a bow because {foe} was too close.")
+        _tell_swings(len(result.melee_swings))
+        _tell_casts(len(result.cast_events))
+        _tell_aborts()
+        _tell_shots(len(result.fire_arrow_shots))
+        _tell_squeeze()
+    else:
+        _tell_casts(len(result.cast_events))
+        _tell_aborts()
+        _tell_shots(len(result.fire_arrow_shots))
+        _tell_squeeze()
+        _tell_swings(len(result.melee_swings))
 
     # Phase 855 (SAY.PAS _LShIce): Ice Suspend's own "fully frozen"
     # branch always simplifies to an immediate win (turn/encounter.py's

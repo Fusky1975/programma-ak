@@ -5509,3 +5509,49 @@ def test_an_equal_talent_is_settled_by_a_stream_of_its_own_not_the_dice():
         mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
         rng = ScriptedRandom([])  # would raise IndexError if the tie drew from it
         resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, rng)
+
+
+def _stub_cast_logging_side(caster, caster_leader, target, target_leader, tactic, state, rng, *, cast_events=None, **kwargs):
+    from ak_engine.turn.challenge_execution import CombatCastEvent
+
+    cast_events.append(
+        CombatCastEvent(caster.name, target.name, Spell(tactic.sub_object), True, 0, 0, by_target=bool(kwargs.get("is_defensive")))
+    )
+    return None
+
+
+def test_crossed_casts_go_in_order_of_magic_talent():
+    psychic_high = _skills_with(Ability.PSYCHIC, 3, 3)
+    caster_tactics = [SearchTactic(Maneuver.CAST, Spell.TELEK_STORM.value)]
+    target_plan = [SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value)]
+
+    def order(caster_skills, target_skills):
+        state, caster_leader, caster, target_leader, target = _combatants(
+            caster_kwargs={"skills": caster_skills}, target_kwargs={"skills": target_skills}
+        )
+        with patch(
+            "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_stub_cast_logging_side
+        ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+            mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+            outcome = resolve_challenge_combat(
+                caster_tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.5] * 40),
+                target_tactics=list(target_plan),
+            )
+        return [event.by_target for event in outcome.cast_events]
+
+    assert order(SkillTable([0] * 30), psychic_high) == [True, False]  # his Psychic 3 against nothing: he casts first
+    assert order(psychic_high, SkillTable([0] * 30)) == [False, True]  # the other way round
+
+
+def test_a_crossed_cast_tie_does_not_draw_from_the_dice():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    with patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_stub_cast_logging_side
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            [SearchTactic(Maneuver.CAST, Spell.TELEK_STORM.value)], caster_leader, caster, target_leader, target, state,
+            ScriptedRandom([]), target_tactics=[SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value)],
+        )
+
+    assert len(outcome.cast_events) == 2

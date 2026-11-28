@@ -78,6 +78,17 @@ def _state_with_leader(*, skills: SkillTable | None = None, temper: Temper | Non
     return state
 
 
+def _top_talents(state: GameState) -> None:
+    """Gives the searching leader the top level in every talent: in a round where both cast, the higher talent
+    goes first ([5.0]), and these tests are about what the leader's own spell does."""
+
+    leader = state.leaders[LEADER_ID]
+    raw = [9] * 30
+    for fighting in (Ability.MELEE, Ability.ARCHERY):
+        raw[fighting.value * 2] = raw[fighting.value * 2 + 1] = 0
+    leader.skills = SkillTable(raw_values=raw)
+
+
 def _melee_request(feature_id: int) -> SearchRequest:
     return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.MELEE)])
 
@@ -2218,6 +2229,7 @@ def test_execute_search_cast_holy_symbol_bonus_damage_kills_undead_target_instan
     state = GameState()
     state.add_leader(leader)
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.HOLY_SYMBOL, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -2758,6 +2770,7 @@ def test_execute_search_cast_ice_suspend_frozen_branch_wins_instantly():
 def test_execute_search_cast_ice_suspend_flying_branch_crash_damage_can_kill():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.ICE_SUSPEND)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -2810,6 +2823,7 @@ def test_execute_search_cast_control_undead_ineligible_target_consumes_no_roll()
 def test_execute_search_cast_control_undead_success_wins_instantly():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.CONTROL_UNDEAD)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True):
@@ -2921,6 +2935,7 @@ def test_execute_search_blocked_from_cast_skips_the_guardians_own_later_cast():
     # reaching the generic cast-success roll.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.SPIRITWRACK, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
@@ -2940,6 +2955,7 @@ def test_execute_search_blocked_from_cast_skips_the_guardians_own_later_cast():
 def test_execute_search_cast_hand_of_death_threads_the_immune_flag():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -2961,6 +2977,7 @@ def test_execute_search_cast_hand_of_death_enhanced_ability_overrides_the_immune
     state = _state_with_leader()
     state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -3012,6 +3029,7 @@ def test_execute_search_cast_hand_of_death_records_an_interrupted_channel():
 def test_execute_search_cast_hand_of_death_records_an_immune_target_as_no_effect():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -3161,6 +3179,7 @@ def test_execute_search_cast_hand_of_death_does_not_block_an_immune_monster_targ
     # above -- the identical target_is_immune value gates both effects.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -3269,6 +3288,7 @@ def test_execute_search_cast_hand_of_death_rolls_the_necromancy_skill_level():
 def test_execute_search_cast_mirror_image_monster_target_uses_the_sourced_tier():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.MIRROR_IMAGE, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -3436,7 +3456,7 @@ def test_execute_search_cast_illusory_hero_level_gate_blocks_low_illusion_skill(
 
 
 def test_execute_search_cast_illusory_hero_monster_target_uses_the_sourced_tier():
-    leader = _skilled_leader(Ability.ILLUSION, 5)
+    leader = _skilled_leader(Ability.ILLUSION, 9)  # outranks the guardian's magic: his spell comes off first
     state = GameState()
     state.add_leader(leader)
     state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
@@ -7555,6 +7575,7 @@ def test_execute_search_cast_ice_suspend_on_a_flying_monster_crashes_it_even_whe
     # 5-10 points and give 1-3 free rounds; they are never frozen, however few hit points remain.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.ICE_SUSPEND)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -8513,3 +8534,67 @@ def test_the_victim_is_devoured_even_when_the_monster_then_breaks_its_word():
     assert QuestNote.BETRAYED in result.quest_notes and result.quest_fulfilled is None
     assert 30 not in state.leaders  # the sacrifice is made before the test and not undone
     assert feature.treasure is Treasure.WAND_FIREBALL
+
+
+# -- The guardian closes in while the leader casts; crossed casts; refused shots --------------------
+
+
+def _stub_cast_tactic(spells_logged):
+    def stub(tactic, *, caster_is_leader, is_first_tactic=False, forced_level=None, summon_probe=False):
+        spells_logged.append(("leader" if caster_is_leader else "monster", Spell(tactic.sub_object)))
+        return None
+
+    return stub
+
+
+def test_execute_search_guardian_closes_in_while_the_leader_casts_and_a_shot_is_refused():
+    from ak_engine.turn.encounter import CombatRange
+
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),
+            SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),
+            SearchTactic(Maneuver.SHOOT),
+            SearchTactic(Maneuver.MELEE),
+        ],
+    )
+    monster_plan = (SearchTactic(maneuver=Maneuver.MELEE),)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_duel, patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.99] * 60))
+
+    kinds = [(marker[0], marker[1], marker[2]) for marker in result.round_markers if marker[0] != "round"]
+    assert kinds == [
+        ("close", "b", CombatRange.BOW_RANGE),
+        ("close", "b", CombatRange.MELEE_RANGE),
+        ("skip_shot", "a", None),
+    ]
+    assert not mock_shoot.called
+
+
+def test_execute_search_crossed_casts_go_in_order_of_magic_talent():
+    request = _cast_request(1, Spell.PSYCHIC_BLAST, Maneuver.MELEE)
+    monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.PSYCHIC_BLAST.value), SearchTactic(maneuver=Maneuver.MELEE))
+
+    def order(leader_level, monster_level):
+        state = _state_with_leader()
+        state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+        state.leaders[LEADER_ID].skills = _skilled_leader(Ability.PSYCHIC, leader_level).skills
+        with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+            "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.GARGOYLE: {Ability.PSYCHIC: monster_level}}
+        ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel, patch(
+            "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+        ):
+            mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+            result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.99] * 60))
+        return [event.caster_name for event in result.cast_events][:2]
+
+    assert order(1, 3) == ["monster", "leader"]
+    assert order(3, 1) == ["leader", "monster"]
