@@ -5442,3 +5442,70 @@ def test_resolve_challenge_combat_a_monster_that_runs_by_temper_ends_the_melee_w
             [SearchTactic(Maneuver.MELEE)], caster_leader, caster, target_leader, target, state, ScriptedRandom([])
         )
     assert outcome.target_fled is True and outcome.winner == "a" and outcome.fled is False
+
+
+# -- The opponent closes in while the caster casts; refused shots; chronology ----
+
+
+def _stub_cast(caster, caster_leader, target, target_leader, tactic, state, rng, *, cast_events=None, **kwargs):
+    from ak_engine.turn.challenge_execution import CombatCastEvent
+
+    cast_events.append(CombatCastEvent(caster.name, target.name, Spell(tactic.sub_object), True, 0, 0))
+    return None
+
+
+def test_opponent_with_no_plan_closes_in_while_the_caster_casts_then_a_shot_is_refused():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [
+        SearchTactic(Maneuver.CAST, Spell.TELEK_STORM.value),
+        SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value),
+        SearchTactic(Maneuver.SHOOT),
+    ]
+
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_stub_cast), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel, patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_shoot:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.5] * 40))
+
+    kinds = [(marker[0], marker[1], marker[2]) for marker in outcome.round_markers if marker[0] != "round"]
+    assert kinds == [
+        ("close", "b", CombatRange.BOW_RANGE),
+        ("close", "b", CombatRange.MELEE_RANGE),
+        ("skip_shot", "a", None),
+    ]
+    assert not mock_shoot.called  # nobody can shoot in the melee zone: the plan goes on, to the default melee
+    assert mock_duel.called
+
+
+def test_the_one_with_the_higher_talent_acts_first_in_the_round():
+    # The caster's Psychic spell (skill 3) against an opponent who only closes in (Melee 0): the spell comes first,
+    # so the opponent's move is recorded after one cast. Reverse the talents and he moves before the cast.
+    psychic_high = _skills_with(Ability.PSYCHIC, 3, 3)
+    melee_high = _skills_with(Ability.MELEE, 3, 3)
+    tactics = [SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value)]
+
+    def run(caster_skills, target_skills):
+        state, caster_leader, caster, target_leader, target = _combatants(
+            caster_kwargs={"skills": caster_skills}, target_kwargs={"skills": target_skills}
+        )
+        with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_stub_cast), patch(
+            "ak_engine.turn.challenge_execution.resolve_melee_duel"
+        ) as mock_duel:
+            mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+            outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.5] * 40))
+        return [marker for marker in outcome.round_markers if marker[0] == "close" and marker[1] == "b"][0]
+
+    assert run(psychic_high, SkillTable([0] * 30))[3] == 1  # cast first: one cast had happened when he moved
+    assert run(SkillTable([0] * 30), melee_high)[3] == 0  # he moves first: no cast yet
+
+
+def test_an_equal_talent_is_settled_by_a_stream_of_its_own_not_the_dice():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value)]
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_stub_cast), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        rng = ScriptedRandom([])  # would raise IndexError if the tie drew from it
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, rng)

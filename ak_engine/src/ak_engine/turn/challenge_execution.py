@@ -875,10 +875,11 @@ def _resolve_personal_combat_cast(
             CombatCastEvent(
                 caster.name, target.name, spell, True,
                 max(0, target_hit_points - target.hit_points), max(0, caster_hit_points - caster.hit_points),
+                by_target=bool(kwargs.get("is_defensive")),
             )
         )
     elif fizzles is not None and len(fizzles) > fizzles_before:
-        cast_events.append(CombatCastEvent(caster.name, target.name, spell, False))
+        cast_events.append(CombatCastEvent(caster.name, target.name, spell, False, by_target=bool(kwargs.get("is_defensive"))))
     return result
 
 
@@ -1811,6 +1812,8 @@ class CombatCastEvent:
     succeeded: bool
     damage_dealt: int = 0
     damage_taken: int = 0
+    # The spell came from the target of the encounter (it answered), not from the one who started it.
+    by_target: bool = False
 
 
 @dataclass(slots=True)
@@ -1878,6 +1881,9 @@ class ChallengeCombatOutcome:
     cast_successes: tuple[tuple[int, Ability], ...] = ()
     # Every spell tried, in order (fizzles included): see ``CombatCastEvent``.
     cast_events: tuple[CombatCastEvent, ...] = ()
+    # Where the range changed / a shot was refused, with how many casts, shots, swings and channels came before (the report
+    # tells them in order): ``(kind, side, range, casts, shots, swings, channels)``.
+    round_markers: tuple[tuple, ...] = ()
 
 
 def award_combat_cast_experience(
@@ -2280,6 +2286,59 @@ def resolve_challenge_combat(
     cast_successes: list[tuple[int, Ability]] = []
     cast_events: list[CombatCastEvent] = []
     hand_of_death_channels: list[tuple[str, str, tuple[int, ...], int | None, str]] = []
+    # Chronology for the report: where a side closed the distance, where a shot was refused, where a new round began
+    # (``(kind, side, range, casts, shots, swings, channels)``, the counts being what had happened by then).
+    round_markers: list[tuple] = []
+    round_number = 0
+
+    def _mark(kind: str, side: str | None = None, to_range: CombatRange | None = None) -> None:
+        round_markers.append(
+            (kind, side, to_range, len(cast_events), len(fire_arrow_shots), len(melee_swings), len(hand_of_death_channels))
+        )
+
+    def _close(side: str, goal: CombatRange) -> None:
+        """``side`` spends its round moving one tier toward ``goal`` (no roll of its own, see ``_close_to``)."""
+
+        nonlocal current_range
+        closer = _close_to(goal, current_range)
+        if closer is not current_range:
+            current_range = closer
+            _mark("close", side, closer)
+
+    def _target_closing_goal() -> CombatRange | None:
+        """The range the *opponent* is heading for while the caster stays where he is (rulebook [5.0]-[5.3]: a
+        character ordered to shoot or fight in melee from farther away spends his round closing in). Only for a
+        character opponent: his own plan decides (MELEE: all the way; SHOOT: to bow range); once his plan has run
+        out the computer picks the apparently best tactic, here Melee, so he closes in too."""
+
+        if target_monster is not None or target.hit_points <= 0:
+            return None
+        plan = target_tactics or ()
+        if target_tactic_index >= len(plan):
+            goal = CombatRange.MELEE_RANGE
+        else:
+            maneuver = plan[target_tactic_index].maneuver
+            if maneuver is Maneuver.MELEE:
+                goal = CombatRange.MELEE_RANGE
+            elif maneuver is Maneuver.SHOOT and not target.blocked_from_archery:
+                goal = CombatRange.BOW_RANGE
+            else:
+                return None
+        return goal if current_range.value < goal.value else None
+
+    def _target_acts_first(caster_ability: Ability | None, target_goal: CombatRange) -> bool:
+        """Initiative of the round ([5.0]): the character with the greater skill in the ability of the tactic he uses
+        goes first, equal skills in random order. Here the caster casts (his spell's talent) while the opponent closes
+        in (his Melee or Archery). The tie is drawn from a stream of its own, so it never disturbs the dice."""
+
+        caster_skill = 0
+        if caster_leader is not None and caster_ability is not None:
+            caster_skill = effective_skill_level(state, caster_leader, caster_ability)
+        target_skill = target.melee_skill if target_goal is CombatRange.MELEE_RANGE else target.archery_skill
+        if caster_skill != target_skill:
+            return target_skill > caster_skill
+        tie = random.Random(f"initiative:{state.game_number}:{state.turn_number}:{caster.name}:{target.name}:{round_number}")
+        return tie.random() < 0.5
 
     def _outcome(
         *, winner: str | None = None, fled: bool = False, target_fled: bool = False
@@ -2298,6 +2357,7 @@ def resolve_challenge_combat(
             hand_of_death_channels=tuple(hand_of_death_channels),
             cast_successes=tuple(cast_successes),
             cast_events=tuple(cast_events),
+            round_markers=tuple(round_markers),
         )
 
     def _round_outcome(round_result: str | None) -> ChallengeCombatOutcome:
@@ -2586,7 +2646,7 @@ def resolve_challenge_combat(
         # character closes in, even though the character's own plan never orders a shot -- the same "each
         # side follows its own plan" reading `turn/search_execution.py` uses for a guardian's `FI`.
         needs_closing = current_range is not CombatRange.BOW_RANGE
-        current_range = _close_to(CombatRange.BOW_RANGE, current_range)
+        _close("a", CombatRange.BOW_RANGE)
         opening_volley = resolve_fire_arrow_duel(caster, target, rng, closing_side="a" if needs_closing else None)
         fire_arrow_shots.extend(opening_volley.shots)
         if opening_volley.winner is not None:
@@ -2596,6 +2656,8 @@ def resolve_challenge_combat(
         if index in consumed_caster_tactics:
             continue  # dissolved together with the target's own summon
         caster_tactic_cursor = index + 1
+        round_number += 1
+        _mark("round")
         if tactic.maneuver is Maneuver.FLEE:
             # Phase 743: rulebook [5.6], "from ... other characters
             # [50%]" -- MonsterSpeed.MEDIUM needs no per-unit lookup
@@ -2652,6 +2714,8 @@ def resolve_challenge_combat(
                     if result.winner is not None:
                         return _outcome(winner=result.winner)
                     continue
+                # [5.2]: "in zona di mischia ignorerà il comando e userà invece la successiva tattica".
+                _mark("skip_shot", "a")
                 continue  # [5.0]: only spells or Melee are usable in the melee zone
             # Phase 887: the ordinary (non-Melee-Range) shot is refused
             # outright for a blocked caster too -- same real gap/fix as
@@ -2685,7 +2749,7 @@ def resolve_challenge_combat(
                 # they have Archery of their own -- resolve_fire_arrow_
                 # duel()'s own `closing_side` models exactly that.
                 needs_closing = current_range is not CombatRange.BOW_RANGE
-                current_range = _close_to(CombatRange.BOW_RANGE, current_range)
+                _close("a", CombatRange.BOW_RANGE)
                 result = resolve_fire_arrow_duel(caster, target, rng, closing_side="a" if needs_closing else None)
             fire_arrow_shots.extend(result.shots)
             if result.winner is not None:
@@ -2720,12 +2784,27 @@ def resolve_challenge_combat(
             # this is what "normal" already means for them here, not a
             # gap to special-case.
             while current_range is not CombatRange.MELEE_RANGE:
-                current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
+                _close("a", CombatRange.MELEE_RANGE)
             encounter_over, round_result = _resolve_melee_round(is_last_tactic=(index == len(tactics) - 1))
             if encounter_over:
                 return _round_outcome(round_result)
             continue
         if tactic.maneuver is Maneuver.CAST:
+            # While the caster stays put and casts, the opponent spends his round closing in on him (spell range ->
+            # bow range -> melee zone); who moves first this round is a matter of initiative (talent of the spell
+            # against Melee/Archery of the opponent), which also decides whether the cast already happens in melee.
+            closing_goal = _target_closing_goal()
+            moves_first = False
+            if closing_goal is not None:
+                cast_ability = None
+                if tactic.sub_object is not None:
+                    try:
+                        cast_ability = PERSONAL_COMBAT_SPELL_ABILITY.get(Spell(tactic.sub_object))
+                    except ValueError:
+                        cast_ability = None
+                moves_first = _target_acts_first(cast_ability, closing_goal)
+                if moves_first:
+                    _close("b", closing_goal)
             target_cast_at_melee = _peek_target_cast() if current_range is CombatRange.MELEE_RANGE else None
             if target_cast_at_melee is not None and target_cast_at_melee.maneuver is Maneuver.FLEE:
                 return _outcome(winner="a", target_fled=True)
@@ -2766,6 +2845,8 @@ def resolve_challenge_combat(
                     return _outcome(winner="b")
                 disrupted = _resolve_cast_disruption(tactic, damage, rng)
                 if disrupted:
+                    if closing_goal is not None and not moves_first:
+                        _close("b", closing_goal)
                     continue
             setup_box = [melee_setup_done]
             outcome = _resolve_personal_combat_cast(
@@ -2815,6 +2896,8 @@ def resolve_challenge_combat(
                     return _outcome(fled=True)
                 if target_outcome in ("a", "b"):
                     return _outcome(winner=target_outcome)
+            if closing_goal is not None and not moves_first:
+                _close("b", closing_goal)
             continue
         if tactic.maneuver is Maneuver.STEAL:
             # Phase 1042 bug fix -- a plan can carry more than one STEAL
@@ -2904,6 +2987,10 @@ def resolve_challenge_combat(
                 state.transfer_item(item.item_id, target_leader.leader_id)
             continue
         # every other tactic is unwired -- skip it and keep walking
+    # The plan ran out: the computer fights on in melee, so whoever is still far away closes in first.
+    _mark("round")
+    while current_range is not CombatRange.MELEE_RANGE:
+        _close("a", CombatRange.MELEE_RANGE)
     if not _target_has_more_casts_pending():
         result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
         melee_swings.extend(result.melee_swings)
@@ -2977,6 +3064,9 @@ class ChallengeExecutionResult:
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
     # Every spell tried, in order (``CombatCastEvent``), for the report.
     cast_events: tuple[CombatCastEvent, ...] = ()
+    # Where the range changed / a shot was refused, with how many casts, shots, swings and channels came before (the report
+    # tells them in order): ``(kind, side, range, casts, shots, swings, channels)``.
+    round_markers: tuple[tuple, ...] = ()
     # 2026-11-21: every Hand of Death channel this encounter ran, one
     # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
     # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
@@ -3325,6 +3415,7 @@ def execute_challenge(
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
             cast_events=combat_result.cast_events,
+            round_markers=combat_result.round_markers,
             hand_of_death_channels=combat_result.hand_of_death_channels,
             used_spy_assassinate=used_spy_assassinate,
         )
@@ -3340,6 +3431,7 @@ def execute_challenge(
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
             cast_events=combat_result.cast_events,
+            round_markers=combat_result.round_markers,
             hand_of_death_channels=combat_result.hand_of_death_channels,
             used_spy_assassinate=used_spy_assassinate,
         )
@@ -3377,6 +3469,7 @@ def execute_challenge(
         melee_swings=combat_result.melee_swings,
         fizzled_spells=combat_result.fizzled_spells,
             cast_events=combat_result.cast_events,
+            round_markers=combat_result.round_markers,
         hand_of_death_channels=combat_result.hand_of_death_channels,
         used_spy_assassinate=used_spy_assassinate,
     )
