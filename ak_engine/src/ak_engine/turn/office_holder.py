@@ -514,6 +514,9 @@ def resolve_office_holder(
     if office not in RANKED_OFFICES:
         raise ValueError(f"{office} is not one of the 47 real Imperial Offices this project models")
 
+    if office.value > Office.MAGE.value and state.enabled_optional_offices is not None and office not in state.enabled_optional_offices:
+        return None  # a title the GM left out of this game: nobody holds it, and its perk does nothing
+
     if office in _OFFICE_RACE:
         turn_gate = RACE_TITLE_TURN_GATE[_OFFICE_RACE[office]]
         if state.turn_number < turn_gate:
@@ -536,6 +539,10 @@ def resolve_office_holder(
             # visitor is never a genuine office candidate, however high
             # their own Merit Points happen to be during their one active
             # turn -- confirmed indispensable to reproduce that save.
+            continue
+        if leader.kingdom_id is None:
+            # User ruling 2026-11-28: the points of an Imperial Office do not count for an independent Hero (one in no
+            # Kingdom's service) -- a free Hero never holds an office.
             continue
         points = _leader_merit_points(office, state, leader, tax_base_cache=tax_base_cache, rich_sea_cache=rich_sea_cache)
         if points < min_points:
@@ -896,6 +903,9 @@ def resolve_army_office_holder(state: GameState, office: Office) -> ArmyOfficeHo
 
     if office not in ARMY_RANKED_OFFICES:
         raise ValueError(f"{office} is not one of the 3 army-scoped Royal Titles this project models")
+
+    if state.enabled_optional_offices is not None and office not in state.enabled_optional_offices:
+        return None  # a title the GM left out of this game
 
     min_points = OFFICE_MIN_POINTS[office]
     previous_holder_id = state.army_office_holders.get(office)

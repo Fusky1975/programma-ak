@@ -7391,7 +7391,7 @@ def test_render_vampiric_bite_left_branch():
     result = render_vampiric_bite("Countess", "Bob", "Evil", rng)
     assert result == (
         "Countess sank Countess's fangs into Bob and drained "
-        "Bob's blood.Bob changed to Evil alignment!"
+        "Bob's blood. Bob changed to Evil alignment!"
     )
 
 
@@ -7400,7 +7400,7 @@ def test_render_vampiric_bite_right_branch():
     result = render_vampiric_bite("Countess", "Bob", "Evil", rng)
     assert result == (
         "Countess bit Countess's fangs into Bob and sucked up all "
-        "Bob's blood.Bob changed to Evil alignment!"
+        "Bob's blood. Bob changed to Evil alignment!"
     )
 
 
@@ -20313,3 +20313,75 @@ def test_describe_search_win_over_a_fleeing_guardian_tells_no_death():
     text = " ".join(describe_search(result, character_name="Berserk", feature_name="Crypt", rng=ScriptedRandom([0.1] * 60, choice_indices=[0] * 60)))
 
     assert "mortally" not in text and "fatally" not in text
+
+
+# -- Playtester bundle, 2026-11-28: the spells of a personal combat that took effect are told ------------------
+
+
+def test_a_spell_that_took_effect_in_a_duel_is_told_with_the_original_texts():
+    # Real SE3 reports: "Lifting his hands high in the air, Teleko cast a Spiritwrack spell, to make Kwoth quake and
+    # shiver with spiritual convulsions." / "... cast a Holy Symbol spell.  A golden mist in the shape of a cross ..."
+    from ak_engine.report.turn_report import render_combat_spell_cast
+
+    rng = lambda: ScriptedRandom([0.1] * 40, choice_indices=[1] * 20)  # noqa: E731
+    spiritwrack = render_combat_spell_cast("Teleko", "Kwoth", Spell.SPIRITWRACK, 0, rng())
+    holy = render_combat_spell_cast("Teleko", "Kwoth", Spell.HOLY_SYMBOL, 0, rng())
+    fireball = render_combat_spell_cast("Garin", "the Giant Eagle", Spell.FIREBALL, 11, rng())
+    harmless = render_combat_spell_cast("Garin", "Kurator", Spell.TELEK_STORM, 0, rng())
+
+    assert "cast a Spiritwrack spell, to make Kwoth quake and shiver with spiritual convulsions." in spiritwrack
+    assert "cast a Holy Symbol spell. A golden mist in the shape of a cross formed around Teleko." in holy
+    assert re.search(r"cast a Fireball spell and .*11 (damage points|points of damage)", fireball)
+    assert "the spell seemed ineffective against Kurator." in harmless
+    assert render_combat_spell_cast("Teleko", "Kwoth", Spell.HAND_OF_DEATH, 0, rng()) == ""
+
+
+def test_describe_encounter_combat_tells_every_spell_in_order_with_its_fizzles():
+    from ak_engine.turn.challenge_execution import ChallengeExecutionResult, CombatCastEvent
+
+    result = ChallengeExecutionResult(
+        accepted=True, combat_occurred=True, winner_leader_id=1, loser_leader_id=2, loser_killed=True,
+        cast_events=(
+            CombatCastEvent("Fusky", "Ilikuth", Spell.TELEK_STORM, False),
+            CombatCastEvent("Fusky", "Ilikuth", Spell.PSYCHIC_BLAST, True),
+            CombatCastEvent("Fusky", "Ilikuth", Spell.FIREBALL, True, damage_dealt=9),
+        ),
+    )
+
+    lines = describe_encounter_combat(
+        result, a_leader_id=1, a_name="Fusky", b_name="Ilikuth", rng=ScriptedRandom([0.1] * 80, choice_indices=[0] * 40)
+    )
+
+    assert "Telekinetic Storm" in lines[0] and "Psychic Blast" in lines[1] and "projecting psychic waves" in lines[1]
+    assert "Fireball" in lines[2] and "9" in lines[2]
+
+
+def test_a_duel_before_a_battle_does_not_have_the_winner_search_the_dead_generals_treasure():
+    # Found in a playtester's bundle: "Fusky searched soundlessly for Ilikuth's treasure ... could not uncover treasure".
+    state = _duel_state()
+    state.remove_leader(2)
+
+    text = " ".join(_duel_lines(_duel_report(), state))
+
+    assert "treasure" not in text
+
+
+def test_an_undead_kings_charm_that_bent_the_alignment_tells_the_vampiric_bite():
+    # Real SE3 report: "Melantheus was magically charmed by Uga-Buga Makumb.  Uga-Buga Makumb bit his fangs into
+    # Melantheus and drained all his blood.  Melantheus changed to Undead alignment!"
+    result = CastExecutionResult(
+        CastRequest(spell=Spell.CHARM, target=61), applied=True, alignment_changed=(Alignment.GOOD, Alignment.UNDEAD)
+    )
+
+    line = describe_cast(result, caster_name="Vitello", rng=ScriptedRandom([0.1] * 40), target_name="Magnus")
+
+    assert "Magnus was magically charmed by Vitello." in line
+    assert "fangs into Magnus" in line and "Magnus changed to Undead alignment!" in line
+
+
+def test_a_charm_that_changed_no_alignment_tells_only_the_charm():
+    result = CastExecutionResult(CastRequest(spell=Spell.CHARM, target=61), applied=True)
+
+    line = describe_cast(result, caster_name="Vitello", rng=ScriptedRandom([0.1] * 40), target_name="Magnus")
+
+    assert "fangs" not in line

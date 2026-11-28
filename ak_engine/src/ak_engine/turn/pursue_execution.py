@@ -186,6 +186,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, snaps
 from ak_engine.turn.diplomacy import is_attackable_at
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.challenge_execution import (
+    CombatCastEvent,
     award_combat_cast_experience,
     is_encounter_accepted,
     plan_needs_combat_dispatch,
@@ -368,6 +369,7 @@ class PursueExecutionResult:
     # straight through, set for the armyless-combat branch only, which
     # shares that module's combat core directly.
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    cast_events: tuple[CombatCastEvent, ...] = ()
     # 2026-11-21: every Hand of Death channel this encounter ran, one
     # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
     # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
@@ -601,6 +603,7 @@ def execute_pursue(
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
             hand_of_death_channels=combat_result.hand_of_death_channels,
             guessed_distance=guessed_distance,
         )
@@ -615,6 +618,7 @@ def execute_pursue(
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
             hand_of_death_channels=combat_result.hand_of_death_channels,
             guessed_distance=guessed_distance,
         )
@@ -641,6 +645,7 @@ def execute_pursue(
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
         fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
         hand_of_death_channels=combat_result.hand_of_death_channels,
         guessed_distance=guessed_distance,
     )

@@ -135,6 +135,7 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.challenge_execution import (
+    CombatCastEvent,
     award_combat_cast_experience,
     is_encounter_accepted,
     plan_needs_combat_dispatch,
@@ -389,6 +390,7 @@ class PatrolExecutionResult:
     gold_raided: int = 0
     stolen_item_ids: list[int] = field(default_factory=list)
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    cast_events: tuple[CombatCastEvent, ...] = ()
     # 2026-11-21: every Hand of Death channel this encounter ran, one
     # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
     # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
@@ -504,6 +506,7 @@ def execute_patrol(
             gold_raided=combat_result.gold_raided,
             stolen_item_ids=combat_result.stolen_item_ids,
             fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
             hand_of_death_channels=combat_result.hand_of_death_channels,
         )
 
@@ -519,6 +522,7 @@ def execute_patrol(
             gold_raided=combat_result.gold_raided,
             stolen_item_ids=combat_result.stolen_item_ids,
             fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
             hand_of_death_channels=combat_result.hand_of_death_channels,
         )
 
@@ -545,5 +549,6 @@ def execute_patrol(
         gold_raided=combat_result.gold_raided,
         stolen_item_ids=combat_result.stolen_item_ids,
         fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
         hand_of_death_channels=combat_result.hand_of_death_channels,
     )

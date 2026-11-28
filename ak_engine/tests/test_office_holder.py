@@ -104,6 +104,30 @@ def test_resolve_office_holder_hero_can_win_an_office():
     assert holder.merit_points == 5
 
 
+def test_an_independent_hero_never_holds_an_office_whatever_his_points():
+    # User ruling 2026-11-28: the points of an Imperial Office do not count for a Hero in no Kingdom's service (a free
+    # Kitralus with 18 Arch-Mage points used to take the title away from every player).
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    free = LeaderState(50, None, "Free Sage", HOME)
+    free.merit_tally.resurrection_bless_casts = 9
+    state.add_leader(free)
+
+    assert resolve_office_holder(state, Office.PRIEST) is None
+
+
+def test_a_title_the_gm_left_out_of_the_game_has_no_holder():
+    # "Fool of Battles" was shown (and its perk applied) in a game created with that title switched off.
+    state = make_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
+    state.leaders[1].merit_tally.land_battles_lost_points = 5
+    assert resolve_office_holder(state, Office.BATTLE_FOOL) is not None
+
+    state.enabled_optional_offices = {Office.CURATOR}
+
+    assert resolve_office_holder(state, Office.BATTLE_FOOL) is None
+
+
 def test_resolve_office_holder_none_when_nobody_meets_the_minimum():
     state = make_state()
     state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))  # 0 Merit Points everywhere

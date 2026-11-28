@@ -248,6 +248,10 @@ def _order_outcome_note(result: object) -> str:
         detail += f" on #{target}"
     roll = getattr(result, "cast_roll", None)
     dice = f" {roll.describe()}" if roll is not None else ""
+    changed = getattr(result, "alignment_changed", None)
+    if changed is not None:
+        # An Undead King's Charm bent the Hero's alignment: the GM sees from where and to where.
+        dice += f"; alignment {changed[0].value} -> {changed[1].value}"
     if applied is True:
         return f" ({detail}:{dice})" if detail and dice else ""
     reason = getattr(result, "reason", None)

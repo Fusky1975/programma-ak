@@ -393,3 +393,18 @@ def test_the_processing_log_shows_the_chance_and_the_dice_of_a_cast():
     worked = next(line for line in lines if "/ P3 /" in line)
     assert failed.endswith(": OK (had no effect -- CHARM on #59: spell failed prob. 60% rolled 78)")
     assert worked.endswith(": OK (CHARM on #59: prob. 60% rolled 41)")
+
+
+def test_the_gm_log_shows_the_alignment_an_undead_kings_charm_bent():
+    from ak_engine.models.alignment import Alignment
+    from ak_engine.models.enums import Spell
+    from ak_engine.turn.cast_decode import CastRequest
+    from ak_engine.turn.cast_execution import CastExecutionResult, CastRoll
+    from ak_engine.webapp.turn_processing import _order_outcome_note
+
+    result = CastExecutionResult(
+        CastRequest(spell=Spell.CHARM, target=61), applied=True, cast_roll=CastRoll(0.6, 0.08),
+        alignment_changed=(Alignment.EVIL, Alignment.UNDEAD),
+    )
+
+    assert _order_outcome_note(result) == " (CHARM on #61: prob. 60% rolled 8; alignment Evil -> Undead)"
