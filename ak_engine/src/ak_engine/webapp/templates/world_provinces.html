@@ -51,6 +51,7 @@
       <thead>
         <tr>
           <th>Coord</th>
+          <th>Name</th>
           <th>Terrain</th>
           <th>Race</th>
           <th>Owner</th>
@@ -71,6 +72,7 @@
           {% set features_here = features_by_coord.get(province.coord, []) %}
           <tr id="province-{{ province.coord.x }}-{{ province.coord.y }}">
             <td>({{ province.coord.x }}, {{ province.coord.y }})</td>
+            <td>{{ province.name or '--' }}</td>
             <td>{{ province.terrain|display_name }}</td>
             <td>{{ province.race|display_name }}</td>
             <td>{{ state.kingdoms[province.owner_kingdom_id].name if province.owner_kingdom_id in state.kingdoms else '--' }}</td>
