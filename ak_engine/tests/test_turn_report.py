@@ -6735,13 +6735,13 @@ def test_describe_practice_side_effects_renders_every_independent_effect_togethe
 
 
 def test_describe_turn_results_practice_renders_only_the_discovery_line_when_describe_practice_has_none():
-    # An aptitude-only rise has no sourced narrative of its own
+    # A not-implemented ability has no narrative of its own
     # (describe_practice()'s own docstring), so this proves the Sage
     # discovery line still appears alone, not silently swallowed by the
     # main line being None.
     state = _sage_practice_state()
     result = PracticeExecutionResult(
-        ability=Ability.SAGE, skill_rose=False, aptitude_rose=True, new_skill=3, new_aptitude=6,
+        ability=Ability.SAGE, skill_rose=False, not_implemented_for_ability=True, new_skill=3, new_aptitude=6,
         discovery_granted=Discovery.COMPASS,
     )
     entries = [
@@ -6851,15 +6851,6 @@ def test_describe_practice_renders_pracvain_for_a_normal_failed_roll():
     lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
 
     assert lines == ["Aldric tried hard to improve Aldric's Tactics, but Aldric practiced in vain."]
-
-
-def test_describe_practice_renders_nothing_for_an_aptitude_only_rise():
-    result = PracticeExecutionResult(ability=0, skill_rose=False, aptitude_rose=True, new_skill=3, new_aptitude=6)
-    rng = ScriptedRandom([])
-
-    lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", rng=rng)
-
-    assert lines == []
 
 
 def test_describe_practice_renders_nothing_when_not_implemented_for_ability():
@@ -20453,3 +20444,13 @@ def test_describe_turn_results_skips_experience_of_failed_phases():
     lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20))
 
     assert not any("Melee" in line for line in lines)
+
+
+def test_describe_practice_tells_an_aptitude_only_rise():
+    result = PracticeExecutionResult(ability=Ability.TACTICAL, aptitude_rose=True, new_skill=3, new_aptitude=4)
+
+    lines = describe_practice(result, character_name="Aldric", ability_name="Tactics", possessive="her", rng=ScriptedRandom([0.1] * 10, choice_indices=[0] * 10))
+
+    assert len(lines) == 1
+    assert "aptitude in Tactics" in lines[0]
+    assert "her" in lines[0]

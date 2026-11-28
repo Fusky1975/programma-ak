@@ -10343,7 +10343,8 @@ def describe_turn_results(
             )
             lines.extend(
                 describe_practice(
-                    entry.result, character_name=caster_name, ability_name=ability_name, teacher_name=teacher_name, rng=rng
+                    entry.result, character_name=caster_name, ability_name=ability_name, teacher_name=teacher_name,
+                    possessive=_possessive_for(state, entry.leader_id), rng=rng,
                 )
             )
             # Phase 772: the Sage device-discovery roll is independent of
@@ -11315,6 +11316,7 @@ def describe_practice(
     character_name: str,
     ability_name: str,
     teacher_name: str | None = None,
+    possessive: str = "his",
     rng: random.Random,
 ) -> list[str]:
     """Assembles the Practice narrative (one or two sentences) from an
@@ -11372,6 +11374,9 @@ def describe_practice(
             lines.append(render_practice_tutored(character_name, ability_name, teacher_name, rng))
         lines.append(render_practice_skill_rose(character_name, ability_name, rng))
         return lines
+    if result.aptitude_rose:
+        # Only the aptitude went up (the skill was held back by it): SAY.PAS ``_LRApt``, the one sourced aptitude line.
+        return [render_experience_raised(character_name, possessive, ability_name, aptitude=True, rng=rng)]
     if not result.skill_rose and not result.aptitude_rose and not result.not_implemented_for_ability:
         return [render_practice_vain(character_name, ability_name, rng)]
     return []
