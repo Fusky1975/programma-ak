@@ -2314,11 +2314,18 @@ def resolve_challenge_combat(
         """Both cast this round and the first spell hurt the other caster ([5.1]: a character attempting a spell who is
         damaged by another spell may lose it): rolls the dissolution against the damage the spell just did."""
 
-        new_events = cast_events[events_before:]
-        damage = sum(
-            event.damage_dealt for event in new_events if event.succeeded and event.by_target is not pending_by_target
+        new_events = [
+            event for event in cast_events[events_before:] if event.succeeded and event.by_target is not pending_by_target
+        ]
+        victim = target if pending_by_target else caster
+        # A spell that stuns (Psychic Blast, Ice Suspension) dissolves the other's spell outright; any other damage
+        # only may.
+        stunned = any(
+            (event.spell is Spell.PSYCHIC_BLAST and victim.stunned_by_psychic_blast) or event.spell is Spell.ICE_SUSPEND
+            for event in new_events
         )
-        if damage <= 0 or not _resolve_cast_disruption(pending, damage, rng):
+        damage = sum(event.damage_dealt for event in new_events)
+        if not stunned and (damage <= 0 or not _resolve_cast_disruption(pending, damage, rng)):
             return False
         _note_disrupted(pending, by_target=pending_by_target)
         return True

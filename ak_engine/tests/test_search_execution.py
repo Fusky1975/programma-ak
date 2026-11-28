@@ -2602,6 +2602,7 @@ def test_execute_search_records_a_fizzled_spell_in_the_same_sequence():
 def test_execute_search_cast_fireball_marks_submarine_targets_immune():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.MERMAID))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.FIREBALL, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -2619,6 +2620,7 @@ def test_execute_search_cast_fireball_enhanced_ability_overrides_submarine_immun
     state = _state_with_leader()
     state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_EL_SPELLS)
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.MERMAID))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.FIREBALL)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(

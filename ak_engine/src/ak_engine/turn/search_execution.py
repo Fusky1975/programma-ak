@@ -3902,10 +3902,16 @@ def _resolve_search_encounter_body(
         spell against the damage the first one just did."""
 
         pending_side = "leader" if pending_is_leader else "monster"
-        damage = sum(
-            event.damage_dealt for event in cast_events[events_before:] if event.succeeded and event.caster_name != pending_side
+        new_events = [event for event in cast_events[events_before:] if event.succeeded and event.caster_name != pending_side]
+        victim = leader_combatant if pending_is_leader else monster_combatant
+        # A spell that stuns (Psychic Blast, Ice Suspension) dissolves the other's spell outright; any other damage
+        # only may.
+        stunned = any(
+            (event.spell is Spell.PSYCHIC_BLAST and victim.stunned_by_psychic_blast) or event.spell is Spell.ICE_SUSPEND
+            for event in new_events
         )
-        if damage <= 0 or not _resolve_cast_disruption(pending, damage, rng):
+        damage = sum(event.damage_dealt for event in new_events)
+        if not stunned and (damage <= 0 or not _resolve_cast_disruption(pending, damage, rng)):
             return False
         _note_disrupted(pending, caster_is_leader=pending_is_leader)
         return True
