@@ -5619,3 +5619,59 @@ def test_a_reactive_swing_that_dissolves_a_cast_in_the_melee_zone_is_recorded():
         outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.5] * 60))
 
     assert any(event.disrupted and not event.by_target for event in outcome.cast_events)
+
+
+def _stunning_stub_cast(spell):
+    def stub(caster, caster_leader, target, target_leader, tactic, state, rng, *, cast_events=None, **kwargs):
+        from ak_engine.turn.challenge_execution import CombatCastEvent
+
+        cast_events.append(
+            CombatCastEvent(caster.name, target.name, Spell(tactic.sub_object), True, 0, 0, by_target=bool(kwargs.get("is_defensive")))
+        )
+        if Spell(tactic.sub_object) is Spell.PSYCHIC_BLAST:
+            target.stunned_by_psychic_blast = True
+        return None
+
+    return stub
+
+
+def test_a_stunning_spell_dissolves_the_other_spell_without_a_roll():
+    # Psychic Blast stuns: the opponent's spell, about to be cast, is dissolved for certain (no damage, no dice).
+    psychic_high = _skills_with(Ability.PSYCHIC, 3, 3)
+    state, caster_leader, caster, target_leader, target = _combatants(caster_kwargs={"skills": psychic_high})
+    with patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_stunning_stub_cast(Spell.PSYCHIC_BLAST)
+    ), patch("ak_engine.turn.challenge_execution._resolve_cast_disruption") as mock_roll, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            [SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value)], caster_leader, caster, target_leader, target, state,
+            ScriptedRandom([0.5] * 40), target_tactics=[SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)],
+        )
+
+    assert [(event.by_target, event.disrupted) for event in outcome.cast_events] == [(False, False), (True, True)]
+    assert not mock_roll.called
+
+
+def test_a_stunning_spell_that_does_not_stun_leaves_the_other_spell_alone():
+    # Psychic Blast that did not stun (flag not set) and did no damage: nothing to dissolve with.
+    psychic_high = _skills_with(Ability.PSYCHIC, 3, 3)
+    state, caster_leader, caster, target_leader, target = _combatants(caster_kwargs={"skills": psychic_high})
+
+    def stub(caster_, caster_leader_, target_, target_leader_, tactic, state_, rng, *, cast_events=None, **kwargs):
+        from ak_engine.turn.challenge_execution import CombatCastEvent
+
+        cast_events.append(CombatCastEvent(caster_.name, target_.name, Spell(tactic.sub_object), True, 0, 0, by_target=bool(kwargs.get("is_defensive"))))
+        return None
+
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=stub), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            [SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value)], caster_leader, caster, target_leader, target, state,
+            ScriptedRandom([0.5] * 40), target_tactics=[SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)],
+        )
+
+    assert [event.disrupted for event in outcome.cast_events] == [False, False]
