@@ -2215,7 +2215,7 @@ def test_execute_challenge_cast_psychic_blast_bonus_attacks_can_finish_the_targe
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.roll_psychic_blast_stun_rounds", return_value=2
     ), patch("ak_engine.turn.challenge_execution.roll_melee_attack", return_value=99):
-        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5]))
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5, 0.5, 0.5]))  # + the experience of the landed free swing
 
     assert result.winner_leader_id == 1
     assert result.loser_leader_id == 2
@@ -5675,3 +5675,29 @@ def test_a_stunning_spell_that_does_not_stun_leaves_the_other_spell_alone():
         )
 
     assert [event.disrupted for event in outcome.cast_events] == [False, False]
+
+
+def test_the_free_attack_rounds_of_a_spell_are_swings_the_report_can_tell():
+    # Ice Suspension / Psychic Blast give the caster 1-3 free, unanswered attack rounds: each is a logged swing, and a
+    # "bonus" marker puts them after the spell that granted them.
+    state, caster_leader, caster, target_leader, target = _combatants()
+
+    def stub(caster_, caster_leader_, target_, target_leader_, tactic, state_, rng, *, cast_events=None, **kwargs):
+        from ak_engine.turn.challenge_execution import CombatCastEvent
+
+        cast_events.append(CombatCastEvent(caster_.name, target_.name, Spell(tactic.sub_object), True, 0, 0))
+        caster_.bonus_unanswered_attacks += 2
+        return None
+
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=stub), patch(
+        "ak_engine.turn.challenge_execution.roll_melee_attack", return_value=3
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            [SearchTactic(Maneuver.CAST, Spell.ICE_SUSPEND.value)], caster_leader, caster, target_leader, target, state,
+            ScriptedRandom([0.5] * 40),
+        )
+
+    assert [(swing.attacker, swing.hit, swing.damage) for swing in outcome.melee_swings[:2]] == [("a", True, 3), ("a", True, 3)]
+    bonus = [marker for marker in outcome.round_markers if marker[0] == "bonus"]
+    assert len(bonus) == 1 and bonus[0][3] == 1 and bonus[0][5] == 0  # after one cast, before any swing
