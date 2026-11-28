@@ -2562,6 +2562,31 @@ def test_execute_search_cast_fireball_kills_the_target():
     assert result.winner == "leader"
 
 
+def test_execute_search_records_the_spell_that_killed_the_guardian_for_the_report():
+    # The Fireball that killed the guardian used to leave no trace in the report (only fizzles were told).
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_fireball_damage", return_value=999
+    ):
+        result = execute_search(state, LEADER_ID, _cast_request(1, Spell.FIREBALL), random.Random(0))
+
+    (event,) = result.cast_events
+    assert (event.caster_name, event.target_name, event.spell, event.succeeded) == ("leader", "monster", Spell.FIREBALL, True)
+    assert event.damage_dealt > 0
+
+
+def test_execute_search_records_a_fizzled_spell_in_the_same_sequence():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False):
+        result = execute_search(state, LEADER_ID, _cast_request(1, Spell.FIREBALL, Maneuver.MELEE), random.Random(0))
+
+    assert [(e.spell, e.succeeded) for e in result.cast_events][:1] == [(Spell.FIREBALL, False)]
+
+
 def test_execute_search_cast_fireball_marks_submarine_targets_immune():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.MERMAID))

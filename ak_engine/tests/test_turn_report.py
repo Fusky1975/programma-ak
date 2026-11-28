@@ -4844,7 +4844,27 @@ def test_describe_random_encounter_combat_narrates_the_purse_of_a_defeated_monst
 
     lines = describe_random_encounter_combat(result, character_name="Arthur", opponent_name="Grendel", rng=rng)
 
-    assert len(lines) == 1 and "7 gold" in lines[0]
+    # The monster's fall comes first (as in the real reports), then its purse.
+    assert len(lines) == 2 and "Grendel" in lines[0] and "7 gold" in lines[1]
+
+
+def test_describe_random_encounter_combat_tells_the_spells_cast_before_the_blows():
+    from ak_engine.turn.challenge_execution import CombatCastEvent
+
+    result = RandomEncounterResult(
+        1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=True, combat_occurred=True, winner="a",
+        cast_events=(
+            CombatCastEvent("Arthur", "Grendel", Spell.PSYCHIC_BLAST, False),
+            CombatCastEvent("Arthur", "Grendel", Spell.SPIRITWRACK, True),
+        ),
+    )
+
+    lines = describe_random_encounter_combat(
+        result, character_name="Arthur", opponent_name="Grendel", rng=ScriptedRandom([0.1] * 40, choice_indices=[0] * 20)
+    )
+
+    assert "Psychic Blast" in lines[0]
+    assert "Spiritwrack spell" in lines[1] and "to make Grendel quake and shiver with spiritual convulsions." in lines[1]
 
 
 def test_describe_random_encounter_failed_terrain_roll():
@@ -20385,3 +20405,51 @@ def test_a_charm_that_changed_no_alignment_tells_only_the_charm():
     line = describe_cast(result, caster_name="Vitello", rng=ScriptedRandom([0.1] * 40), target_name="Magnus")
 
     assert "fangs" not in line
+
+
+def test_describe_search_tells_the_spell_that_felled_the_guardian_with_both_names_in_place():
+    from ak_engine.turn.challenge_execution import CombatCastEvent
+
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="leader", feature_looted=True, guardian_monster=Monster.GI_WORM,
+        cast_events=(
+            CombatCastEvent("monster", "leader", Spell.PSYCHIC_BLAST, False),
+            CombatCastEvent("leader", "monster", Spell.FIREBALL, True, damage_dealt=12),
+        ),
+    )
+
+    text = " ".join(
+        describe_search(result, character_name="Berserk", feature_name="Crypt", rng=ScriptedRandom([0.1] * 80, choice_indices=[0] * 40))
+    )
+
+    assert "Giant Worm" in text and "Psychic Blast" in text
+    assert re.search(r"Fireball spell.*12 (damage points|points of damage)", text)
+
+
+def test_describe_turn_results_tells_experience_right_after_its_phase():
+    state = _random_encounter_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=_RANDOM_ENCOUNTER_HOME))
+    state.experience_notes.append((1, "P0", Ability.MELEE, "skill"))
+    state.experience_notes.append((1, "P1", Ability.ARCHERY, "aptitude"))
+    result = RandomEncounterResult(1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=False)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=-1, phase_label="P0", action=None, result=result, error=None),
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P1", action=ActionCode.PURSUE, result=None, error=None),
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20, choice_indices=[0] * 20))
+
+    # action=None sentinel entries carry no experience of their own; the P1 note is told at the end.
+    assert not any("Melee" in line for line in lines)
+    assert any("Archery" in line for line in lines)
+
+
+def test_describe_turn_results_skips_experience_of_failed_phases():
+    state = _random_encounter_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=_RANDOM_ENCOUNTER_HOME))
+    state.experience_notes.append((1, "P0", Ability.MELEE, "skill"))
+    entries = [PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PURSUE, result=None, error=ValueError("x"))]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20))
+
+    assert not any("Melee" in line for line in lines)

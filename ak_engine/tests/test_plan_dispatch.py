@@ -3487,3 +3487,41 @@ def test_run_leader_plan_notes_a_travel_quest_journey_after_each_phase():
     assert state.quest_visits == [(LEADER_ID, Treasure.QUEST_LUCKY_PENNY, here, "P0")]  # for the report of that phase
     state.reset_turn_report_scratch()
     assert state.quest_visits == []
+
+
+def test_dispatch_phase_records_experience_raises_for_the_report(monkeypatch):
+    from ak_engine.models.enums import Ability
+    from ak_engine.turn import experience as experience_module
+    from ak_engine.turn import plan_dispatch as plan_dispatch_module
+
+    origin = HexCoord(3, 9)
+    state, army_id = _state_with_army(origin, {})
+
+    def fake_inner(phase, state_, kingdom_id, leader_id, army_ids=None, **kwargs):
+        experience_module._EXPERIENCE_LOG.get().append((leader_id, Ability.MELEE, "skill"))
+        experience_module._EXPERIENCE_LOG.get().append((leader_id, Ability.ARCHERY, "aptitude"))
+        return "done"
+
+    monkeypatch.setattr(plan_dispatch_module, "_dispatch_phase_inner", fake_inner)
+    phase = PlanPhase(label="P2", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    assert dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID) == "done"
+
+    assert state.experience_notes == [(LEADER_ID, "P2", Ability.MELEE, "skill"), (LEADER_ID, "P2", Ability.ARCHERY, "aptitude")]
+
+
+def test_dispatch_phase_leaves_practice_raises_out_of_the_notes(monkeypatch):
+    from ak_engine.models.enums import Ability
+    from ak_engine.turn import experience as experience_module
+    from ak_engine.turn import plan_dispatch as plan_dispatch_module
+
+    state, _army_id = _state_with_army(HexCoord(3, 9), {})
+
+    def fake_inner(phase, state_, kingdom_id, leader_id, army_ids=None, **kwargs):
+        experience_module._EXPERIENCE_LOG.get().append((leader_id, Ability.MELEE, "skill"))
+
+    monkeypatch.setattr(plan_dispatch_module, "_dispatch_phase_inner", fake_inner)
+
+    dispatch_phase(PlanPhase(label="P0", action=ActionCode.PRACTICE, obj=0), state, kingdom_id=1, leader_id=LEADER_ID)
+
+    assert state.experience_notes == []

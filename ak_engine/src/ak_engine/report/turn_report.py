@@ -9429,6 +9429,17 @@ def describe_random_encounter_combat(
         return []
 
     lines: list[str] = []
+    for event in result.cast_events:
+        # Spells first, in the order they were cast (the plan puts Cast ahead of the arrows and the sword).
+        if event.succeeded:
+            cast_line = render_combat_spell_cast(
+                event.caster_name, event.target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
+            )
+            if cast_line:
+                lines.append(cast_line)
+        else:
+            lines.append(render_spell_fizzled_in_combat(event.caster_name, SPELL_NAME[event.spell], rng))
+
     for shot in result.fire_arrow_shots:
         attacker_name, defender_name = (character_name, opponent_name) if shot.shooter == "a" else (opponent_name, character_name)
         attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
@@ -9458,6 +9469,10 @@ def describe_random_encounter_combat(
     else:
         if result.monster_fled:
             lines.append(render_monster_fled(opponent_name, character_name, rng))
+        elif result.winner == "a":
+            # The wandering monster fell ("The Chimera dropped to the ground, fatally pierced.").
+            death = render_mortally_wounded(opponent_name, rng, is_sea=is_sea)
+            lines.append(death[:1].upper() + death[1:])
         if result.gold_found > 0:
             lines.append(render_gold_spoils(character_name, opponent_name, result.gold_found, rng))
 
@@ -10237,7 +10252,24 @@ def describe_turn_results(
     """
 
     lines: list[str] = []
+    pending_notes = list(state.experience_notes) if state is not None else []
+    previous_entry = None
+
+    def _flush_experience(done) -> None:
+        # Skills/aptitudes that rose from what a phase did, told right after that phase's own narration.
+        if done is None or done.error is not None or done.action is None or not pending_notes:
+            return
+        mine = [note for note in pending_notes if note[0] == done.leader_id and note[1] == done.phase_label]
+        for note in mine:
+            pending_notes.remove(note)
+            who = _leader_name(state, note[0])
+            lines.append(
+                render_experience_raised(who, _possessive_for(state, note[0]), ABILITY_NAME[note[2]], aptitude=note[3] == "aptitude", rng=rng)
+            )
+
     for entry in results:
+        _flush_experience(previous_entry)
+        previous_entry = entry
         if entry.error is not None:
             # Phase 718: `IllegalMoveFromContestedError` is the one
             # exception type this composer narrates -- SAY.PAS code
@@ -11137,6 +11169,8 @@ def describe_turn_results(
 
         if line is not None:
             lines.append(line)
+
+    _flush_experience(previous_entry)
 
     if board_width is not None:
         heard_leader_ids = {entry.leader_id for entry in results}
@@ -14239,9 +14273,24 @@ def _describe_search_lines(
     # line, before any Fire Arrow/Melee narration, matching this project's
     # `describe_encounter_combat()` sibling's own documented placement
     # choice (Cast never needs to close range).
-    for side, spell in result.fizzled_spells:
-        caster_name = character_name if side == "leader" else foe
-        lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
+    if result.cast_events:
+        # Every spell tried, in order: a fizzle (SBUNGLE.X) or what the spell did (CCAST.X + SPNOTE.X2 / the hit).
+        for event in result.cast_events:
+            caster_name, target_name = (
+                (character_name, foe) if event.caster_name == "leader" else (foe, character_name)
+            )
+            if event.succeeded:
+                cast_line = render_combat_spell_cast(
+                    caster_name, target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
+                )
+                if cast_line:
+                    lines.append(cast_line)
+            else:
+                lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[event.spell], rng))
+    else:
+        for side, spell in result.fizzled_spells:
+            caster_name = character_name if side == "leader" else foe
+            lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
 
     for side, hits, interrupt_damage in result.hand_of_death_aborts:
         caster_name, target_name = (character_name, foe) if side == "leader" else (foe, character_name)

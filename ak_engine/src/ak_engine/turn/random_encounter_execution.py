@@ -99,7 +99,7 @@ from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase
 from ak_engine.models.race import HUMANOID_RACES
-from ak_engine.turn.challenge_execution import award_combat_cast_experience, resolve_challenge_combat
+from ak_engine.turn.challenge_execution import CombatCastEvent, award_combat_cast_experience, resolve_challenge_combat
 from ak_engine.turn.discovery_effects import (
     arcane_valor_hit_points_bonus,
     effective_skill_level,
@@ -317,6 +317,8 @@ class RandomEncounterResult:
     rescued_items: tuple[RescuedItem, ...] = ()  # legendary items of a fallen hero (turn/legendary_item_rescue.py)
     melee_swings: tuple[MeleeSwing, ...] = ()
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+    # Every spell tried (``CombatCastEvent``), in order -- the caster/target are the two fighters' names.
+    cast_events: tuple[CombatCastEvent, ...] = ()
 
 
 def resolve_random_encounter(
@@ -451,6 +453,7 @@ def resolve_random_encounter(
         rescued_items=tuple(rescued),
         melee_swings=outcome.melee_swings,
         fire_arrow_shots=outcome.fire_arrow_shots,
+        cast_events=outcome.cast_events,
     )
 
 
