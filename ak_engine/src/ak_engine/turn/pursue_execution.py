@@ -370,6 +370,9 @@ class PursueExecutionResult:
     # shares that module's combat core directly.
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
     cast_events: tuple[CombatCastEvent, ...] = ()
+    # Where the range changed / a shot was refused, with how many casts, shots, swings and channels came before (the report
+    # tells them in order): ``(kind, side, range, casts, shots, swings, channels)``.
+    round_markers: tuple[tuple, ...] = ()
     # 2026-11-21: every Hand of Death channel this encounter ran, one
     # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
     # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
@@ -604,6 +607,7 @@ def execute_pursue(
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
             cast_events=combat_result.cast_events,
+            round_markers=combat_result.round_markers,
             hand_of_death_channels=combat_result.hand_of_death_channels,
             guessed_distance=guessed_distance,
         )
@@ -619,6 +623,7 @@ def execute_pursue(
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
             cast_events=combat_result.cast_events,
+            round_markers=combat_result.round_markers,
             hand_of_death_channels=combat_result.hand_of_death_channels,
             guessed_distance=guessed_distance,
         )
@@ -646,6 +651,7 @@ def execute_pursue(
         melee_swings=combat_result.melee_swings,
         fizzled_spells=combat_result.fizzled_spells,
             cast_events=combat_result.cast_events,
+            round_markers=combat_result.round_markers,
         hand_of_death_channels=combat_result.hand_of_death_channels,
         guessed_distance=guessed_distance,
     )

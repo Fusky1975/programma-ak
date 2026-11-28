@@ -1823,7 +1823,7 @@ def _commander_combatant(
         is_undead_or_anti_holy = False
 
     return Combatant(
-        name=f"leader {commander.leader_id}",
+        name=leader.name if leader is not None else f"leader {commander.leader_id}",
         hit_points=CHARACTER_HIT_POINTS + hit_points_bonus,
         melee_skill=melee_skill,
         archery_skill=archery_skill,

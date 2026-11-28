@@ -9326,54 +9326,89 @@ def _describe_encounter_combat_lines(
 
     # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
     # fizzles" text -- see `ChallengeCombatOutcome.fizzled_spells`'s own
-    # docstring. Rendered before Fire Arrow/Melee, matching the engine's
-    # own "Cast never needs to close range" precedence (module docstring's
-    # Phase 292 addendum) -- a fizzled cast attempt logically precedes
-    # whatever range-closing combat follows it.
-    if getattr(result, "cast_events", ()):
-        # Every spell tried, in the order it was cast: a fizzle (SBUNGLE.X) or what the spell did.
-        for event in result.cast_events:
-            if event.succeeded:
-                cast_line = render_combat_spell_cast(
-                    event.caster_name, event.target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
-                )
-                if cast_line:
-                    lines.append(cast_line)
-            else:
-                lines.append(render_spell_fizzled_in_combat(event.caster_name, SPELL_NAME[event.spell], rng))
+    # docstring. Told in the order it happened: a segment is what was done between two markers (a side closing the
+    # distance, a shot refused, a new round); inside one, a melee swing comes first (the reactive swing at a caster
+    # in the melee zone: "melee attacks always have precedence"), then the spells, the channels and the arrows.
+    cast_events = tuple(getattr(result, "cast_events", ()))
+    markers = tuple(getattr(result, "round_markers", ()))
+    done = {"cast": 0, "channel": 0, "shot": 0, "swing": 0}
+
+    def _tell_casts(upto: int) -> None:
+        if cast_events:
+            # Every spell tried, in the order it was cast: a fizzle (SBUNGLE.X) or what the spell did.
+            for event in cast_events[done["cast"]:upto]:
+                caster_label, target_label = (b_name, a_name) if getattr(event, "by_target", False) else (a_name, b_name)
+                if event.succeeded:
+                    cast_line = render_combat_spell_cast(
+                        caster_label, target_label, event.spell, event.damage_dealt, rng, is_sea=is_sea
+                    )
+                    if cast_line:
+                        lines.append(cast_line)
+                else:
+                    lines.append(render_spell_fizzled_in_combat(caster_label, SPELL_NAME[event.spell], rng))
+        elif done["cast"] == 0:
+            for caster_name, spell in result.fizzled_spells:
+                lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
+        done["cast"] = max(done["cast"], upto)
+
+    def _tell_channels(upto: int) -> None:
+        # 2026-11-21: every Hand of Death channel (won, interrupted, killed the
+        # caster, or immune target) -- see `ChallengeCombatOutcome.hand_of_death_channels`.
+        for channel_caster, channel_target, hits, interrupt_damage, ending in result.hand_of_death_channels[done["channel"]:upto]:
+            lines.extend(render_hand_of_death_channel(channel_caster, channel_target, hits, interrupt_damage, ending, rng))
+        done["channel"] = max(done["channel"], upto)
+
+    def _tell_shots(upto: int) -> None:
+        for shot in result.fire_arrow_shots[done["shot"]:upto]:
+            attacker_name, defender_name = (a_name, b_name) if shot.shooter == "a" else (b_name, a_name)
+            attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
+            attack_line += (
+                render_attack_hit(defender_name, shot.damage, rng)
+                if shot.hit
+                else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
+            )
+            lines.append(attack_line)
+        done["shot"] = max(done["shot"], upto)
+
+    def _tell_swings(upto: int) -> None:
+        for swing in result.melee_swings[done["swing"]:upto]:
+            attacker_name, defender_name = (a_name, b_name) if swing.attacker == "a" else (b_name, a_name)
+            attack_line = render_melee_attack(attacker_name, defender_name, melee_attack_method(rng), rng)
+            attack_line += (
+                render_attack_hit(defender_name, swing.damage, rng)
+                if swing.hit
+                else render_attack_missed(attacker_name, defender_name, "sword", rng, is_sea=is_sea)
+            )
+            lines.append(attack_line)
+            proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
+            if proc_line is not None:
+                lines.append(proc_line)
+        done["swing"] = max(done["swing"], upto)
+
+    if markers:
+        for kind, side, to_range, casts, shots, swings, channels in markers:
+            _tell_swings(swings)
+            _tell_casts(casts)
+            _tell_channels(channels)
+            _tell_shots(shots)
+            if kind == "close":
+                mover = a_name if side == "a" else b_name
+                if to_range is CombatRange.BOW_RANGE:
+                    lines.append(render_move_to_bow_range(mover, rng, is_sea=is_sea))
+                elif to_range is CombatRange.MELEE_RANGE:
+                    lines.append(render_move_to_melee_range(mover, rng, is_sea=is_sea))
+            elif kind == "skip_shot":
+                mover, other = (a_name, b_name) if side == "a" else (b_name, a_name)
+                lines.append(f"{mover} could not fire a bow because {other} was too close.")
+        _tell_swings(len(result.melee_swings))
+        _tell_casts(len(cast_events))
+        _tell_channels(len(result.hand_of_death_channels))
+        _tell_shots(len(result.fire_arrow_shots))
     else:
-        for caster_name, spell in result.fizzled_spells:
-            lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
-
-    # 2026-11-21: every Hand of Death channel (won, interrupted, killed the
-    # caster, or immune target) -- see `ChallengeCombatOutcome.hand_of_death_
-    # channels`. Names come from the Combatants themselves, like the fizzled
-    # spell loop above.
-    for channel_caster, channel_target, hits, interrupt_damage, ending in result.hand_of_death_channels:
-        lines.extend(render_hand_of_death_channel(channel_caster, channel_target, hits, interrupt_damage, ending, rng))
-
-    for shot in result.fire_arrow_shots:
-        attacker_name, defender_name = (a_name, b_name) if shot.shooter == "a" else (b_name, a_name)
-        attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
-        attack_line += (
-            render_attack_hit(defender_name, shot.damage, rng)
-            if shot.hit
-            else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
-        )
-        lines.append(attack_line)
-
-    for swing in result.melee_swings:
-        attacker_name, defender_name = (a_name, b_name) if swing.attacker == "a" else (b_name, a_name)
-        attack_line = render_melee_attack(attacker_name, defender_name, melee_attack_method(rng), rng)
-        attack_line += (
-            render_attack_hit(defender_name, swing.damage, rng)
-            if swing.hit
-            else render_attack_missed(attacker_name, defender_name, "sword", rng, is_sea=is_sea)
-        )
-        lines.append(attack_line)
-        proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
-        if proc_line is not None:
-            lines.append(proc_line)
+        _tell_casts(len(cast_events))
+        _tell_channels(len(result.hand_of_death_channels))
+        _tell_shots(len(result.fire_arrow_shots))
+        _tell_swings(len(result.melee_swings))
 
     if result.loser_killed:
         loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
@@ -11661,6 +11696,7 @@ def _battle_duel_sentences(
         melee_swings=combat.melee_swings,
         fizzled_spells=combat.fizzled_spells,
         cast_events=combat.cast_events,
+        round_markers=combat.round_markers,
         hand_of_death_channels=combat.hand_of_death_channels,
     )
     lines.extend(

@@ -6495,3 +6495,12 @@ def test_an_army_without_oratory_rolls_on_its_own_rank():
     _roll_army_quality(army, report, ScriptedRandom([0.25]), is_winner=True)
 
     assert army.quality is Quality.VETERAN
+
+
+def test_commander_combatant_carries_the_leaders_real_name_for_the_duel_narration():
+    # The duel report used to say "Leader 1 incanted ..." because the stand-in was named after the id.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Neutralia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Fusky", location=FIELD))
+
+    assert _commander_combatant(Commander(leader_id=1, contingent_size=1, tactical_ability=0), state).name == "Fusky"

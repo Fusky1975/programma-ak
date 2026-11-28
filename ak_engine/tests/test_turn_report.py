@@ -20477,3 +20477,35 @@ def test_the_priest_rod_is_not_in_the_characters_report_at_turn_zero():
     state.turn_number = 0
 
     assert "\n".join(describe_characters_report(state, 1)).count("Rod senses") == 0
+
+
+def test_describe_encounter_combat_tells_the_moves_and_refused_shots_in_order_with_the_right_names():
+    from ak_engine.turn.challenge_execution import CombatCastEvent
+    from ak_engine.turn.encounter import CombatRange
+
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        cast_events=(
+            CombatCastEvent("leader 1", "leader 2", Spell.PSYCHIC_BLAST, False),
+            CombatCastEvent("leader 1", "leader 2", Spell.TELEK_STORM, False),
+        ),
+        round_markers=(
+            ("round", None, None, 0, 0, 0, 0),
+            ("close", "b", CombatRange.BOW_RANGE, 1, 0, 0, 0),
+            ("round", None, None, 1, 0, 0, 0),
+            ("close", "b", CombatRange.MELEE_RANGE, 2, 0, 0, 0),
+            ("round", None, None, 2, 0, 0, 0),
+            ("skip_shot", "a", None, 2, 0, 0, 0),
+        ),
+    )
+    rng = ScriptedRandom([0.1] * 60, choice_indices=[0] * 60)
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Fusky", b_name="Constantine", rng=rng)
+
+    assert not any("leader" in line.lower() for line in lines)
+    assert "Fusky" in lines[0] and "fizzled" in lines[0]
+    assert "Constantine" in lines[1]  # he closed in after the first spell
+    assert "fizzled" in lines[2]
+    assert "Constantine" in lines[3]  # and into the melee zone after the second
+    assert lines[-1] == "Fusky could not fire a bow because Constantine was too close."
