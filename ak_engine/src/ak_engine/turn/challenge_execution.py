@@ -847,6 +847,50 @@ def _resolve_personal_combat_cast(
     state: GameState,
     rng: random.Random,
     *,
+    cast_events: list[CombatCastEvent] | None = None,
+    **kwargs,
+) -> str | None:
+    """``_resolve_personal_combat_cast_inner()`` plus the record of the spell for the report (``cast_events``): a
+    cast that came off (the inner function logged it in ``cast_successes``) or fizzled (``fizzled_spells``), with
+    the hit points it cost each side."""
+
+    if cast_events is None:
+        return _resolve_personal_combat_cast_inner(
+            caster, caster_leader, target, target_leader, tactic, state, rng, **kwargs
+        )
+    successes = kwargs.get("cast_successes")
+    fizzles = kwargs.get("fizzled_spells")
+    successes_before = len(successes) if successes is not None else 0
+    fizzles_before = len(fizzles) if fizzles is not None else 0
+    target_hit_points, caster_hit_points = target.hit_points, caster.hit_points
+    result = _resolve_personal_combat_cast_inner(
+        caster, caster_leader, target, target_leader, tactic, state, rng, **kwargs
+    )
+    try:
+        spell = Spell(tactic.sub_object)
+    except (ValueError, TypeError):
+        return result
+    if successes is not None and len(successes) > successes_before:
+        cast_events.append(
+            CombatCastEvent(
+                caster.name, target.name, spell, True,
+                max(0, target_hit_points - target.hit_points), max(0, caster_hit_points - caster.hit_points),
+            )
+        )
+    elif fizzles is not None and len(fizzles) > fizzles_before:
+        cast_events.append(CombatCastEvent(caster.name, target.name, spell, False))
+    return result
+
+
+def _resolve_personal_combat_cast_inner(
+    caster: Combatant,
+    caster_leader: LeaderState | None,
+    target: Combatant,
+    target_leader: LeaderState | None,
+    tactic: SearchTactic,
+    state: GameState,
+    rng: random.Random,
+    *,
     is_first_tactic: bool,
     cast_slots_used: dict[Ability, int],
     cast_spells_attempted: set[Spell],
@@ -1755,6 +1799,20 @@ def _resolve_steal_tactic(
     return "ransom", 0, []
 
 
+@dataclass(frozen=True, slots=True)
+class CombatCastEvent:
+    """One spell a fighter tried in a personal combat, in the order it was cast: who cast it at whom, whether it took
+    effect and how many hit points it cost the target and the caster -- what the report needs to tell it ("Garin let
+    fly a Fireball spell and scored 11 damage points on the Giant Eagle.")."""
+
+    caster_name: str
+    target_name: str
+    spell: Spell
+    succeeded: bool
+    damage_dealt: int = 0
+    damage_taken: int = 0
+
+
 @dataclass(slots=True)
 class ChallengeCombatOutcome:
     winner: str | None  # "a" (challenger/pursuer) / "b" (target) / None (inconclusive)
@@ -1818,6 +1876,8 @@ class ChallengeCombatOutcome:
     # Every personal-combat spell that came off, as ``(caster leader id, its school)`` -- what the caller
     # credits with school experience (``award_combat_cast_experience``).
     cast_successes: tuple[tuple[int, Ability], ...] = ()
+    # Every spell tried, in order (fizzles included): see ``CombatCastEvent``.
+    cast_events: tuple[CombatCastEvent, ...] = ()
 
 
 def award_combat_cast_experience(
@@ -2218,6 +2278,7 @@ def resolve_challenge_combat(
     # Phase 858: see `ChallengeCombatOutcome.fizzled_spells`'s own docstring.
     fizzled_spells: list[tuple[str, Spell]] = []
     cast_successes: list[tuple[int, Ability]] = []
+    cast_events: list[CombatCastEvent] = []
     hand_of_death_channels: list[tuple[str, str, tuple[int, ...], int | None, str]] = []
 
     def _outcome(
@@ -2236,6 +2297,7 @@ def resolve_challenge_combat(
             fizzled_spells=tuple(fizzled_spells),
             hand_of_death_channels=tuple(hand_of_death_channels),
             cast_successes=tuple(cast_successes),
+            cast_events=tuple(cast_events),
         )
 
     def _round_outcome(round_result: str | None) -> ChallengeCombatOutcome:
@@ -2379,6 +2441,7 @@ def resolve_challenge_combat(
             cast_spells_attempted=target_cast_spells_attempted,
             fizzled_spells=fizzled_spells,
             cast_successes=cast_successes,
+            cast_events=cast_events,
             hand_of_death_channels=hand_of_death_channels,
             is_defensive=True,
             melee_setup_done=setup_box,
@@ -2718,6 +2781,7 @@ def resolve_challenge_combat(
                 cast_spells_attempted=caster_cast_spells_attempted,
                 fizzled_spells=fizzled_spells,
                 cast_successes=cast_successes,
+                cast_events=cast_events,
                 hand_of_death_channels=hand_of_death_channels,
                 melee_setup_done=setup_box,
                 melee_swings=melee_swings,
@@ -2911,6 +2975,8 @@ class ChallengeExecutionResult:
     # Phase 858: copied straight from `ChallengeCombatOutcome` -- see that
     # dataclass's own `fizzled_spells` docstring.
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
+    # Every spell tried, in order (``CombatCastEvent``), for the report.
+    cast_events: tuple[CombatCastEvent, ...] = ()
     # 2026-11-21: every Hand of Death channel this encounter ran, one
     # ``(caster_name, target_name, squeeze_hits, interrupt_damage, ending)``
     # entry each; ``ending`` is "won" / "interrupted" / "caster_killed" /
@@ -3258,6 +3324,7 @@ def execute_challenge(
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
             hand_of_death_channels=combat_result.hand_of_death_channels,
             used_spy_assassinate=used_spy_assassinate,
         )
@@ -3272,6 +3339,7 @@ def execute_challenge(
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
             hand_of_death_channels=combat_result.hand_of_death_channels,
             used_spy_assassinate=used_spy_assassinate,
         )
@@ -3308,6 +3376,7 @@ def execute_challenge(
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
         fizzled_spells=combat_result.fizzled_spells,
+            cast_events=combat_result.cast_events,
         hand_of_death_channels=combat_result.hand_of_death_channels,
         used_spy_assassinate=used_spy_assassinate,
     )

@@ -400,7 +400,7 @@ from ak_engine.turn.command_experience import (
     award_sage_practice_experience,
 )
 from ak_engine.models.enums import Ability, ActionCode, Spell
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, MeritTally
 from ak_engine.models.leader import Leader
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase
@@ -1644,6 +1644,8 @@ def _dispatch_hire(
         # 729 end-of-turn hook for the resulting intel grant.
         hero.double_agent_hired_by_kingdom_id = kingdom_id
     else:
+        if hero.kingdom_id is None:
+            hero.merit_tally = MeritTally()  # what a free Hero did before counts for no Imperial Office
         hero.kingdom_id = kingdom_id
         hero.hire_turn = state.turn_number
 

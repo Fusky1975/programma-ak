@@ -5461,7 +5461,12 @@ def describe_cast(
     if spell is Spell.CHARM:
         if target_name is None:
             raise ValueError(f"{spell!r} needs target_name")
-        return render_charm_outcome(target_name, caster_name, rng)
+        charmed = render_charm_outcome(target_name, caster_name, rng)
+        if result.alignment_changed is not None:
+            # An Undead King's Charm bends the Hero's alignment toward Undead (SAY.PAS _LChUnd): "Uga-Buga bit his fangs
+            # into Melantheus and drained all his blood.  Melantheus changed to Undead alignment!"
+            charmed += " " + render_vampiric_bite(caster_name, target_name, result.alignment_changed[1].value, rng)
+        return charmed
     if spell is Spell.ILLUS_TERRAIN:
         if province_name is None or terrain_name is None or real_terrain_name is None:
             raise ValueError(f"{spell!r} needs province_name, real_terrain_name, and terrain_name")
@@ -6474,6 +6479,53 @@ def render_cast_no_treasure(character_name: str, spell_name: str, rng: random.Ra
     variant = pick_variant(_CCAST_TEMPLATES, rng)
     values = {"<": character_name, ">": _own(character_name), "~": spell_name}
     return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# The two Personal-Combat spells that simply hurt: real reports tell their cast as the opening (CCAST.X) and the hit
+# ("Garin let fly a Fireball spell and scored 11 damage points on the Giant Eagle.").
+_DAMAGE_COMBAT_SPELLS = frozenset({Spell.FIREBALL, Spell.TELEK_STORM})
+# The spells whose SPNOTE.X2 text speaks about the caster himself ("[" is the caster: "an image of [ sprang into being").
+_SELF_TARGET_NOTE_SPELLS = frozenset({Spell.MIRROR_IMAGE})
+
+
+def render_combat_spell_cast(
+    caster_name: str,
+    target_name: str,
+    spell: Spell,
+    damage_dealt: int,
+    rng: random.Random,
+    *,
+    is_sea: bool = False,
+) -> str:
+    """A spell that took effect in a personal combat, as the real reports tell it: the CCAST.X opening ("Lifting his
+    hands high in the air, Teleko cast a Spiritwrack spell") followed by what it did -- the hit for Fireball and
+    Telekinetic Storm ("and walloped the Chimera with 7 damage points", or ``_LSpInEff`` when it did nothing), else the
+    spell's SPNOTE.X2 text (", to make Kwoth quake and shiver with spiritual convulsions.", ".A golden mist in the shape
+    of a cross formed around Teleko."). ``""`` for Hand of Death, whose channel has its own narration."""
+
+    if spell is Spell.HAND_OF_DEATH:
+        return ""
+    opening = render_cast_no_treasure(caster_name, SPELL_NAME[spell], rng, is_sea=is_sea)
+    if spell in _DAMAGE_COMBAT_SPELLS:
+        if damage_dealt > 0:
+            return opening + render_attack_hit(target_name, damage_dealt, rng)
+        return opening + f", but the spell seemed ineffective against {target_name}."
+    if spell is Spell.KILL_ENEMY:
+        note = ", and destroyed [ with > powerful dark magic."
+    elif spell is Spell.CONTROL_UNDEAD:
+        note = ", and brought [ under > control."
+    else:
+        note = SPELL_CAST_ANNOUNCEMENT.get(spell, "")
+    if not note or note[0] not in ",. ":
+        return opening + "."
+    victim = caster_name if spell in _SELF_TARGET_NOTE_SPELLS else target_name
+    values = {
+        "<": caster_name, "<2": caster_name, "[": victim, "[1": victim, "]": f"{victim}'s", ">": _own(caster_name),
+    }
+    text = render(note, values, rng=rng, is_sea=is_sea)
+    if text.startswith("."):
+        return opening + ". " + text[1:].lstrip()
+    return opening + text
 
 
 # HostAK/TP/PROSE/FLAMEREL.X -- the Flaming Scimitar's own 5%
@@ -9163,6 +9215,7 @@ def describe_encounter_combat(
     is_sea: bool = False,
     state: GameState | None = None,
     b_leader_id: int | None = None,
+    narrate_loot: bool = True,
 ) -> list[str]:
     """The duel narration of ``_describe_encounter_combat_lines`` with each fighter's own pronoun ("his sword",
     "her aim"): ``b_leader_id`` is the opponent, read from the result when it names one."""
@@ -9175,7 +9228,8 @@ def describe_encounter_combat(
             table[b_name] = _possessive_for(state, b_leader_id)
     with combat_pronouns(table):
         return _describe_encounter_combat_lines(
-            result, a_leader_id=a_leader_id, a_name=a_name, b_name=b_name, rng=rng, is_sea=is_sea, state=state
+            result, a_leader_id=a_leader_id, a_name=a_name, b_name=b_name, rng=rng, is_sea=is_sea, state=state,
+            narrate_loot=narrate_loot,
         )
 
 
@@ -9188,6 +9242,7 @@ def _describe_encounter_combat_lines(
     rng: random.Random,
     is_sea: bool = False,
     state: GameState | None = None,
+    narrate_loot: bool = True,
 ) -> list[str]:
     """Phase 417: the personal-combat narration Challenge's and Pursue's
     own armyless-duel case have had zero narration for since either was
@@ -9275,8 +9330,20 @@ def _describe_encounter_combat_lines(
     # own "Cast never needs to close range" precedence (module docstring's
     # Phase 292 addendum) -- a fizzled cast attempt logically precedes
     # whatever range-closing combat follows it.
-    for caster_name, spell in result.fizzled_spells:
-        lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
+    if getattr(result, "cast_events", ()):
+        # Every spell tried, in the order it was cast: a fizzle (SBUNGLE.X) or what the spell did.
+        for event in result.cast_events:
+            if event.succeeded:
+                cast_line = render_combat_spell_cast(
+                    event.caster_name, event.target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
+                )
+                if cast_line:
+                    lines.append(cast_line)
+            else:
+                lines.append(render_spell_fizzled_in_combat(event.caster_name, SPELL_NAME[event.spell], rng))
+    else:
+        for caster_name, spell in result.fizzled_spells:
+            lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
 
     # 2026-11-21: every Hand of Death channel (won, interrupted, killed the
     # caster, or immune target) -- see `ChallengeCombatOutcome.hand_of_death_
@@ -9324,17 +9391,18 @@ def _describe_encounter_combat_lines(
         # (`looted_item_ids` non-empty but `state=None`, so `item_names`
         # comes back `[]`) renders neither, the same "no data, no guess"
         # fallback the SPOILS lines already use.
-        lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
-        if result.looted_item_ids:
-            item_names = _item_display_names(state, result.looted_item_ids)
-            if len(item_names) == 1:
-                lines.append(render_treasure_spoils_from_corpse(winner_name, loser_name, rng))
-            elif len(item_names) >= 2:
-                lines.append(
-                    render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea)
-                )
-        else:
-            lines.append(render_thief_search_failed(winner_name, rng))
+        if narrate_loot:
+            lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
+            if result.looted_item_ids:
+                item_names = _item_display_names(state, result.looted_item_ids)
+                if len(item_names) == 1:
+                    lines.append(render_treasure_spoils_from_corpse(winner_name, loser_name, rng))
+                elif len(item_names) >= 2:
+                    lines.append(
+                        render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea)
+                    )
+            else:
+                lines.append(render_thief_search_failed(winner_name, rng))
 
     return lines
 
@@ -11553,12 +11621,16 @@ def _battle_duel_sentences(
         fire_arrow_shots=combat.fire_arrow_shots,
         melee_swings=combat.melee_swings,
         fizzled_spells=combat.fizzled_spells,
+        cast_events=combat.cast_events,
         hand_of_death_channels=combat.hand_of_death_channels,
     )
     lines.extend(
         describe_encounter_combat(
             fight, a_leader_id=attacker_id, a_name=attacker_name, b_name=defender_name, rng=rng, is_sea=is_sea,
             state=state, b_leader_id=defender_id,
+            # A duel before a battle ends with the death and the demoralized men: the real reports never have the
+            # winner search the dead general's treasure as if he were a guardian in a Special Place.
+            narrate_loot=False,
         )
     )
     # What the fight taught the reader's own fighter(s) is private to his Kingdom (``S_Priv``).
@@ -12514,7 +12586,7 @@ def render_no_excuse_found(coward_name: str, rng: random.Random) -> str:
 # HostAK/TP/SAY.PAS _LChUnd -- a single, real, hardcoded template (no
 # file). See module docstring's Phase 126 addendum.
 VAMPIRIC_BITE_TEMPLATE = (
-    "< sank/Rbit > fangs into [ and drained/Rsucked_up {all }] blood."
+    "< sank/Rbit > fangs into [ and drained/Rsucked_up {all }] blood. "
     "[1 changed to $o alignment!"
 )
 

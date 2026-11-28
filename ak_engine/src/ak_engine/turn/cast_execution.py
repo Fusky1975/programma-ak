@@ -750,7 +750,7 @@ from ak_engine.models.army_type import (
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import FeatureType
-from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, MeritTally, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
@@ -1108,6 +1108,9 @@ class CastExecutionResult:
     # cast -- this payload is the Crystal Ball's own extra benefit, not
     # something base Clairvoyance grants on its own.
     clairvoyance_target_offices: list[Office] | None = None
+    # A Charm cast by an Undead King that bent the Hero's alignment ([4.21] "Seduzione"): (before, after). ``None`` when it
+    # changed nothing (or the caster is no Undead King).
+    alignment_changed: tuple[Alignment, Alignment] | None = None
     # Phase 722: True exactly when this successful Scar Terrain cast
     # triggered ``apply_scar_terrain_collapse()`` (the province's tax
     # base hit 0). Needed by ``report/turn_report.py record_spell_
@@ -1837,9 +1840,17 @@ def _execute_charm(
     if target.kingdom_id != kingdom_id:
         # Entering the kingdom's service, exactly as a Hire does.
         target.hire_turn = state.turn_number
+        if target.kingdom_id is None:
+            target.merit_tally = MeritTally()  # what a free Hero did before counts for no Imperial Office
     target.kingdom_id = kingdom_id
+    alignment_before = target.alignment
     if caster.alignment is Alignment.UNDEAD:
         _apply_undead_king_alignment_conversion(caster, target)
+    alignment_changed = (
+        (alignment_before, target.alignment)
+        if alignment_before is not None and target.alignment is not None and target.alignment is not alignment_before
+        else None
+    )
     if AdvancedAbility.ENHANCED_CHARM in caster.advanced_abilities:
         eligible_items = [
             item
@@ -1849,7 +1860,7 @@ def _execute_charm(
         if eligible_items:
             stolen = max(eligible_items, key=lambda item: item.item_id)
             state.transfer_item(stolen.item_id, leader_id)
-    return CastExecutionResult(request, applied=True)
+    return CastExecutionResult(request, applied=True, alignment_changed=alignment_changed)
 
 
 # Phase 522: AKGEN_reverse_engineering_report (3).md SS90/SS94's own gate-1

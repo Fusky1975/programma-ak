@@ -485,6 +485,44 @@ def test_charm_undead_caster_uses_necromancy_instead_of_psychic():
     assert state.leaders[78].kingdom_id == 1
 
 
+def test_a_free_heros_battle_record_does_not_follow_him_into_the_kingdom_that_charms_him():
+    # Playtester bundle 2026-11-28: a free Hero charmed after losing a battle had "Fool of Battles" for the loss he took
+    # before he entered the King's service.
+    state = build_state()
+    caster = state.leaders[CASTER_ID]
+    caster.skills = _skills_with(Ability.PSYCHIC, 2)
+    hero = LeaderState(78, None, "Wandering Hero", LOCATION)
+    hero.merit_tally.land_battles_lost_points = 12
+    state.add_leader(hero)
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.CHARM, target=78),
+        rng=ScriptedRandom([0.1, 0.5, 0.5]),
+    )
+
+    assert result.applied is True
+    assert state.leaders[78].kingdom_id == 1
+    assert state.leaders[78].merit_tally.land_battles_lost_points == 0
+
+
+def test_an_undead_kings_charm_reports_the_alignment_it_bent_before_and_after():
+    # 2026-11-28: the GM could not tell whether a Hero turned Undead by a Charm had been allowed to (a Good Hero with
+    # almost no skill takes the whole 12-step budget of AKGEN SS90/SS94 in one cast).
+    state = build_state()
+    caster = state.leaders[CASTER_ID]
+    caster.alignment = Alignment.UNDEAD
+    caster.is_king = True
+    caster.skills = _skills_with(Ability.NECROMANCY, 2)
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION, alignment=Alignment.GOOD))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.44, 0.5, 0.5]))
+
+    assert result.applied is True
+    assert result.alignment_changed == (Alignment.GOOD, Alignment.UNDEAD)
+    assert state.leaders[78].alignment is Alignment.UNDEAD
+
+
 def test_charm_undead_caster_with_only_psychic_skill_has_insufficient_skill():
     # Confirms the override is real -- an Undead caster's own Psychic
     # skill no longer governs Charm at all.
