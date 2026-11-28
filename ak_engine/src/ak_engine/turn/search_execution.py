@@ -3886,6 +3886,30 @@ def _resolve_search_encounter_body(
         )
         return tie.random() < 0.5
 
+    def _note_disrupted(pending, *, caster_is_leader: bool) -> None:
+        """The damage taken dissolved the spell that was about to be cast: the cast is lost ([5.1], "chi ha perso
+        l'incantesimo perde anche il turno") and the report says so."""
+
+        try:
+            spell = Spell(pending.sub_object)
+        except (ValueError, TypeError):
+            return
+        side, other = ("leader", "monster") if caster_is_leader else ("monster", "leader")
+        cast_events.append(CombatCastEvent(side, other, spell, False, disrupted=True))
+
+    def _spell_damage_disrupts(events_before: int, pending, *, pending_is_leader: bool) -> bool:
+        """Both cast this round and the first spell hurt the other caster ([5.1]): rolls the dissolution of the second
+        spell against the damage the first one just did."""
+
+        pending_side = "leader" if pending_is_leader else "monster"
+        damage = sum(
+            event.damage_dealt for event in cast_events[events_before:] if event.succeeded and event.caster_name != pending_side
+        )
+        if damage <= 0 or not _resolve_cast_disruption(pending, damage, rng):
+            return False
+        _note_disrupted(pending, caster_is_leader=pending_is_leader)
+        return True
+
     def _resolve_guardian_pacification() -> tuple[bool, bool]:
         """Phase 673 (``Desktop/BOLD OK.txt``): called once, whenever this
         encounter closes with the guardian still alive -- rolls the real
@@ -4050,6 +4074,8 @@ def _resolve_search_encounter_body(
                 if monster_combatant.hit_points <= 0:
                     return _finish_melee_outcome(EncounterCombatResult(winner="a", rounds=0))
                 disrupted = _resolve_cast_disruption(monster_tactic, damage, rng)
+                if disrupted:
+                    _note_disrupted(monster_tactic, caster_is_leader=False)
             else:
                 disrupted = False
             is_first_tactic = monster_tactic_index == 0
@@ -4072,6 +4098,8 @@ def _resolve_search_encounter_body(
                 if leader_combatant.hit_points <= 0:
                     return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
                 disrupted = _resolve_cast_disruption(leader_tactic, damage, rng)
+                if disrupted:
+                    _note_disrupted(leader_tactic, caster_is_leader=True)
             else:
                 disrupted = False
             _advance_monster_tactic()  # this Melee entry has now been "used" too -- see the Melee-vs-Melee branch above
@@ -4079,11 +4107,26 @@ def _resolve_search_encounter_body(
                 return None
             return _resolve_cast(leader_tactic, caster_is_leader=True, is_first_tactic=(leader_tactic_index == 0))
 
+        # Cast against cast: the one with the higher talent in his magic goes first, and the damage of his spell may
+        # dissolve the other's ([5.1]).
+        if _monster_casts_first(leader_tactic, monster_tactic):
+            is_first_tactic = monster_tactic_index == 0
+            _advance_monster_tactic()
+            events_before = len(cast_events)
+            outcome = _resolve_cast(monster_tactic, caster_is_leader=False, is_first_tactic=is_first_tactic)
+            if outcome is not None:
+                return outcome
+            if _spell_damage_disrupts(events_before, leader_tactic, pending_is_leader=True):
+                return None
+            return _resolve_cast(leader_tactic, caster_is_leader=True, is_first_tactic=(leader_tactic_index == 0))
+        events_before = len(cast_events)
         outcome = _resolve_cast(leader_tactic, caster_is_leader=True, is_first_tactic=(leader_tactic_index == 0))
         if outcome is not None:
             return outcome
         is_first_tactic = monster_tactic_index == 0
         _advance_monster_tactic()
+        if _spell_damage_disrupts(events_before, monster_tactic, pending_is_leader=False):
+            return None
         return _resolve_cast(monster_tactic, caster_is_leader=False, is_first_tactic=is_first_tactic)
 
     def _resolve_fire_arrow_phase(
@@ -4835,21 +4878,27 @@ def _resolve_search_encounter_body(
             if guardian_cast is not None and guardian_cast.maneuver is not Maneuver.CAST:
                 guardian_cast = None  # a wounded retreat only comes up in the fight itself
             guardian_cast_first = guardian_cast is not None and _monster_casts_first(tactic, guardian_cast)
+            leader_cast_lost = False
             if guardian_cast_first:
                 is_first_guardian_tactic = monster_tactic_index == 0
                 _advance_monster_tactic()
+                events_before = len(cast_events)
                 outcome = _resolve_cast(guardian_cast, caster_is_leader=False, is_first_tactic=is_first_guardian_tactic)
                 if outcome is not None:
                     return outcome
-            outcome = _resolve_cast(tactic, caster_is_leader=True, is_first_tactic=(tactic_index == 0))
-            if outcome is not None:
-                return outcome
+                leader_cast_lost = _spell_damage_disrupts(events_before, tactic, pending_is_leader=True)
+            if not leader_cast_lost:
+                events_before = len(cast_events)
+                outcome = _resolve_cast(tactic, caster_is_leader=True, is_first_tactic=(tactic_index == 0))
+                if outcome is not None:
+                    return outcome
             if guardian_cast is not None and not guardian_cast_first:
                 is_first_guardian_tactic = monster_tactic_index == 0
                 _advance_monster_tactic()
-                outcome = _resolve_cast(guardian_cast, caster_is_leader=False, is_first_tactic=is_first_guardian_tactic)
-                if outcome is not None:
-                    return outcome
+                if not _spell_damage_disrupts(events_before, guardian_cast, pending_is_leader=False):
+                    outcome = _resolve_cast(guardian_cast, caster_is_leader=False, is_first_tactic=is_first_guardian_tactic)
+                    if outcome is not None:
+                        return outcome
             if closing_goal is not None and not moves_first:
                 _close("b", closing_goal)
             continue

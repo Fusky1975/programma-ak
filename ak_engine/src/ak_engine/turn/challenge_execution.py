@@ -1815,6 +1815,8 @@ class CombatCastEvent:
     damage_taken: int = 0
     # The spell came from the target of the encounter (it answered), not from the one who started it.
     by_target: bool = False
+    # The damage taken just before dissolved the spell the character was about to cast ([5.1]); ``succeeded`` is False.
+    disrupted: bool = False
 
 
 @dataclass(slots=True)
@@ -2297,6 +2299,30 @@ def resolve_challenge_combat(
             (kind, side, to_range, len(cast_events), len(fire_arrow_shots), len(melee_swings), len(hand_of_death_channels))
         )
 
+    def _note_disrupted(pending: SearchTactic, *, by_target: bool) -> None:
+        """The damage taken dissolved the spell that was about to be cast: the cast is lost ([5.1], "chi ha perso
+        l'incantesimo perde anche il turno") and the report says so."""
+
+        try:
+            spell = Spell(pending.sub_object)
+        except (ValueError, TypeError):
+            return
+        loser, other = (target, caster) if by_target else (caster, target)
+        cast_events.append(CombatCastEvent(loser.name, other.name, spell, False, by_target=by_target, disrupted=True))
+
+    def _spell_damage_disrupts(events_before: int, pending: SearchTactic, *, pending_by_target: bool) -> bool:
+        """Both cast this round and the first spell hurt the other caster ([5.1]: a character attempting a spell who is
+        damaged by another spell may lose it): rolls the dissolution against the damage the spell just did."""
+
+        new_events = cast_events[events_before:]
+        damage = sum(
+            event.damage_dealt for event in new_events if event.succeeded and event.by_target is not pending_by_target
+        )
+        if damage <= 0 or not _resolve_cast_disruption(pending, damage, rng):
+            return False
+        _note_disrupted(pending, by_target=pending_by_target)
+        return True
+
     def _close(side: str, goal: CombatRange) -> None:
         """``side`` spends its round moving one tier toward ``goal`` (no roll of its own, see ``_close_to``)."""
 
@@ -2626,6 +2652,8 @@ def resolve_challenge_combat(
             if target.hit_points <= 0:
                 return True, "a"
             disrupted = _resolve_cast_disruption(target_cast, swing_result.damage, rng)
+            if disrupted:
+                _note_disrupted(target_cast, by_target=True)
         else:
             disrupted = False
         is_first_target_tactic = target_tactic_index == 0
@@ -2861,6 +2889,7 @@ def resolve_challenge_combat(
                 # Both cast and his spell is the quicker: it comes off before the caster's own.
                 is_first_target_tactic = target_tactic_index == 0
                 _advance_target_tactic()
+                events_before = len(cast_events)
                 target_outcome = _resolve_target_cast(target_cast_at_melee, is_first=is_first_target_tactic)
                 if target_outcome == "fled":
                     return _outcome(fled=True)
@@ -2868,6 +2897,11 @@ def resolve_challenge_combat(
                     return _outcome(winner=target_outcome)
                 target_cast_first = True
                 target_cast_at_melee = None
+                if _spell_damage_disrupts(events_before, tactic, pending_by_target=False):
+                    # His spell hurt the caster and dissolved the one he was about to cast.
+                    if closing_goal is not None and not moves_first:
+                        _close("b", closing_goal)
+                    continue
             # Phase 1042 bug fix -- mirrors the SHOOT-at-Melee-Range
             # branch's own explicit `not caster.blocked_from_archery`
             # guard just above: a caster already blocked_from_cast is
@@ -2906,10 +2940,12 @@ def resolve_challenge_combat(
                     return _outcome(winner="b")
                 disrupted = _resolve_cast_disruption(tactic, damage, rng)
                 if disrupted:
+                    _note_disrupted(tactic, by_target=False)
                     if closing_goal is not None and not moves_first:
                         _close("b", closing_goal)
                     continue
             setup_box = [melee_setup_done]
+            caster_events_before = len(cast_events)
             outcome = _resolve_personal_combat_cast(
                 caster,
                 caster_leader,
@@ -2947,12 +2983,14 @@ def resolve_challenge_combat(
             if bonus_winner is not None:
                 return _outcome(winner=bonus_winner)
             if target_cast_at_melee is not None:
-                # Phase 674: Cast-vs-Cast -- both sides attempt their own
-                # spell this round, no swings, no disruption (mirrors
-                # search_execution.py's own Cast-vs-Cast branch).
+                # Phase 674: Cast-vs-Cast -- both sides attempt their own spell this round, no swings. If the
+                # caster's spell, the quicker, hurt the target before its own, the damage may dissolve it ([5.1]).
                 is_first_target_tactic = target_tactic_index == 0
                 _advance_target_tactic()
-                target_outcome = _resolve_target_cast(target_cast_at_melee, is_first=is_first_target_tactic)
+                if _spell_damage_disrupts(caster_events_before, target_cast_at_melee, pending_by_target=True):
+                    target_outcome = None
+                else:
+                    target_outcome = _resolve_target_cast(target_cast_at_melee, is_first=is_first_target_tactic)
                 if target_outcome == "fled":
                     return _outcome(fled=True)
                 if target_outcome in ("a", "b"):

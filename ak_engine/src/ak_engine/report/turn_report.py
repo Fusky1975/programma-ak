@@ -5799,6 +5799,12 @@ _SBUNGLE_TEMPLATES: list[str] = [
 ]
 
 
+# HostAK/TP/SAY.PAS _SDisr (S_PCom): "['s spell was disrupted by the event." -- the damage a character took just before dissolved
+# the spell he was about to cast ([5.1]: "chi ha perso l'incantesimo perde anche il turno").
+def render_spell_disrupted(character_name: str) -> str:
+    return f"{character_name}'s spell was disrupted by the event."
+
+
 def render_spell_fizzled_in_combat(character_name: str, spell_name: str, rng: random.Random) -> str:
     """Renders SBUNGLE.X's sentence for a personal-combat Cast that just
     fizzles, no validity reason involved (Phase 603).
@@ -9338,7 +9344,9 @@ def _describe_encounter_combat_lines(
             # Every spell tried, in the order it was cast: a fizzle (SBUNGLE.X) or what the spell did.
             for event in cast_events[done["cast"]:upto]:
                 caster_label, target_label = (b_name, a_name) if getattr(event, "by_target", False) else (a_name, b_name)
-                if event.succeeded:
+                if getattr(event, "disrupted", False):
+                    lines.append(render_spell_disrupted(caster_label))
+                elif event.succeeded:
                     cast_line = render_combat_spell_cast(
                         caster_label, target_label, event.spell, event.damage_dealt, rng, is_sea=is_sea
                     )
@@ -9469,7 +9477,9 @@ def describe_random_encounter_combat(
     def _tell_casts(upto: int) -> None:
         for event in result.cast_events[done["cast"]:upto]:
             # In the order they were cast.
-            if event.succeeded:
+            if getattr(event, "disrupted", False):
+                lines.append(render_spell_disrupted(event.caster_name))
+            elif event.succeeded:
                 cast_line = render_combat_spell_cast(
                     event.caster_name, event.target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
                 )
@@ -14356,7 +14366,9 @@ def _describe_search_lines(
                 caster_name, target_name = (
                     (character_name, foe) if event.caster_name == "leader" else (foe, character_name)
                 )
-                if event.succeeded:
+                if getattr(event, "disrupted", False):
+                    lines.append(render_spell_disrupted(caster_name))
+                elif event.succeeded:
                     cast_line = render_combat_spell_cast(
                         caster_name, target_name, event.spell, event.damage_dealt, rng, is_sea=is_sea
                     )
