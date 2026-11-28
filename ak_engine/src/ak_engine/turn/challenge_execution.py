@@ -327,6 +327,7 @@ from ak_engine.turn.encounter import (
     MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
     STEAL_THIEF_MASTERY_ABILITIES,
     PERSONAL_COMBAT_SPELL_ABILITY,
+    combat_spell_ability,
     PERSONAL_COMBAT_SPELL_SELF_ONLY,
     Combatant,
     CombatRange,
@@ -2307,11 +2308,11 @@ def resolve_challenge_combat(
 
     def _target_closing_goal() -> CombatRange | None:
         """The range the *opponent* is heading for while the caster stays where he is (rulebook [5.0]-[5.3]: a
-        character ordered to shoot or fight in melee from farther away spends his round closing in). Only for a
-        character opponent: his own plan decides (MELEE: all the way; SHOOT: to bow range); once his plan has run
-        out the computer picks the apparently best tactic, here Melee, so he closes in too."""
+        character or a monster ordered to shoot or fight in melee from farther away spends its round closing in): its
+        own plan decides (MELEE: all the way; SHOOT: to bow range); once its plan has run out the computer picks the
+        apparently best tactic, here Melee, so it closes in too."""
 
-        if target_monster is not None or target.hit_points <= 0:
+        if target.hit_points <= 0:
             return None
         plan = target_tactics or ()
         if target_tactic_index >= len(plan):
@@ -2338,6 +2339,30 @@ def resolve_challenge_combat(
         if caster_skill != target_skill:
             return target_skill > caster_skill
         tie = random.Random(f"initiative:{state.game_number}:{state.turn_number}:{caster.name}:{target.name}:{round_number}")
+        return tie.random() < 0.5
+
+    def _cast_talent(leader: LeaderState | None, tactic: SearchTactic) -> int:
+        """The talent a spell is cast with: the level in the college it belongs to."""
+
+        if leader is None or tactic.sub_object is None:
+            return 0
+        try:
+            ability = combat_spell_ability(Spell(tactic.sub_object), caster_is_undead=leader.alignment is Alignment.UNDEAD)
+        except ValueError:
+            return 0
+        return effective_skill_level(state, leader, ability) if ability is not None else 0
+
+    def _target_casts_first(caster_tactic: SearchTactic, target_tactic: SearchTactic) -> bool:
+        """Both sides cast this round: the one with the higher talent in his magic goes first, a tie is a coin toss
+        (drawn from a stream of its own, like the one above)."""
+
+        caster_talent = _cast_talent(caster_leader, caster_tactic)
+        target_talent = _cast_talent(target_leader, target_tactic)
+        if caster_talent != target_talent:
+            return target_talent > caster_talent
+        tie = random.Random(
+            f"cast-initiative:{state.game_number}:{state.turn_number}:{caster.name}:{target.name}:{round_number}:{target_tactic_index}"
+        )
         return tie.random() < 0.5
 
     def _outcome(
@@ -2631,11 +2656,24 @@ def resolve_challenge_combat(
             if outcome is not None:
                 return outcome
 
-    target_cast_outcome = _resolve_target_casts()
-    if target_cast_outcome == "fled":
-        return _outcome(fled=True)
-    if target_cast_outcome in ("a", "b"):
-        return _outcome(winner=target_cast_outcome)
+    # The opponent's leading spells come off before anything else, unless the caster casts too: then they are cast
+    # round by round, side by side with his, the one with the higher talent going first (see the CAST branch below).
+    casts_side_by_side = (
+        any(t.maneuver is Maneuver.CAST for t in tactics) and not target_opens_with_missiles
+    )
+
+    def _drain_target_casts() -> ChallengeCombatOutcome | None:
+        drained = _resolve_target_casts()
+        if drained == "fled":
+            return _outcome(fled=True)
+        if drained in ("a", "b"):
+            return _outcome(winner=drained)
+        return None
+
+    if not casts_side_by_side:
+        drained_outcome = _drain_target_casts()
+        if drained_outcome is not None:
+            return drained_outcome
 
     if (
         target_opens_with_missiles
@@ -2658,6 +2696,10 @@ def resolve_challenge_combat(
         caster_tactic_cursor = index + 1
         round_number += 1
         _mark("round")
+        if casts_side_by_side and tactic.maneuver is not Maneuver.CAST:
+            drained_outcome = _drain_target_casts()  # not a casting round of his: the opponent's spells come first
+            if drained_outcome is not None:
+                return drained_outcome
         if tactic.maneuver is Maneuver.FLEE:
             # Phase 743: rulebook [5.6], "from ... other characters
             # [50%]" -- MonsterSpeed.MEDIUM needs no per-unit lookup
@@ -2799,15 +2841,33 @@ def resolve_challenge_combat(
                 cast_ability = None
                 if tactic.sub_object is not None:
                     try:
-                        cast_ability = PERSONAL_COMBAT_SPELL_ABILITY.get(Spell(tactic.sub_object))
+                        cast_ability = combat_spell_ability(
+                            Spell(tactic.sub_object),
+                            caster_is_undead=caster_leader is not None and caster_leader.alignment is Alignment.UNDEAD,
+                        )
                     except ValueError:
                         cast_ability = None
                 moves_first = _target_acts_first(cast_ability, closing_goal)
                 if moves_first:
                     _close("b", closing_goal)
-            target_cast_at_melee = _peek_target_cast() if current_range is CombatRange.MELEE_RANGE else None
+            target_cast_at_melee = _peek_target_cast() if closing_goal is None else None
             if target_cast_at_melee is not None and target_cast_at_melee.maneuver is Maneuver.FLEE:
-                return _outcome(winner="a", target_fled=True)
+                if current_range is not CombatRange.MELEE_RANGE:
+                    target_cast_at_melee = None  # it only runs once the fight is on
+                else:
+                    return _outcome(winner="a", target_fled=True)
+            target_cast_first = False
+            if target_cast_at_melee is not None and _target_casts_first(tactic, target_cast_at_melee):
+                # Both cast and his spell is the quicker: it comes off before the caster's own.
+                is_first_target_tactic = target_tactic_index == 0
+                _advance_target_tactic()
+                target_outcome = _resolve_target_cast(target_cast_at_melee, is_first=is_first_target_tactic)
+                if target_outcome == "fled":
+                    return _outcome(fled=True)
+                if target_outcome in ("a", "b"):
+                    return _outcome(winner=target_outcome)
+                target_cast_first = True
+                target_cast_at_melee = None
             # Phase 1042 bug fix -- mirrors the SHOOT-at-Melee-Range
             # branch's own explicit `not caster.blocked_from_archery`
             # guard just above: a caster already blocked_from_cast is
@@ -2819,6 +2879,7 @@ def resolve_challenge_combat(
             if (
                 current_range is CombatRange.MELEE_RANGE
                 and target_cast_at_melee is None
+                and not target_cast_first
                 and not caster.blocked_from_cast
             ):
                 # Phase 417: the target's own reactive swing (attacker="b",
@@ -2989,6 +3050,10 @@ def resolve_challenge_combat(
         # every other tactic is unwired -- skip it and keep walking
     # The plan ran out: the computer fights on in melee, so whoever is still far away closes in first.
     _mark("round")
+    if casts_side_by_side:
+        drained_outcome = _drain_target_casts()
+        if drained_outcome is not None:
+            return drained_outcome
     while current_range is not CombatRange.MELEE_RANGE:
         _close("a", CombatRange.MELEE_RANGE)
     if not _target_has_more_casts_pending():

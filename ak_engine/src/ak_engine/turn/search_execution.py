@@ -591,6 +591,7 @@ from ak_engine.turn.encounter import (
     MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
     STEAL_THIEF_MASTERY_ABILITIES,
     PERSONAL_COMBAT_SPELL_ABILITY,
+    combat_spell_ability,
     PERSONAL_COMBAT_SPELL_SELF_ONLY,
     WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER,
     WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER,
@@ -1052,6 +1053,9 @@ class SearchExecutionResult:
     fizzled_spells: tuple[tuple[str, Spell], ...] = ()
     # Every spell tried in this encounter, in order (``CombatCastEvent``; the caster and target are "leader" or "monster").
     cast_events: tuple[CombatCastEvent, ...] = ()
+    # Where the range changed / a shot was refused, with how many casts, shots, swings and channels had happened by then
+    # (see ``turn/challenge_execution.py``'s ``round_markers``): ``(kind, side, range, casts, shots, swings, channels)``.
+    round_markers: tuple[tuple, ...] = ()
     # 2026-11-21: every Hand of Death cast that engaged but did NOT end the
     # fight, one ``(caster side "leader"/"monster", squeeze hits dealt
     # before the end, interrupting damage)`` entry each -- the victim's own
@@ -3569,6 +3573,7 @@ def _resolve_search_encounter_body(
             cast_events.append(CombatCastEvent(side, other, fizzled_spells[-1][1], False))
         if outcome is not None:
             outcome.cast_events = tuple(cast_events)  # a spell that ended the encounter hands back its own result
+            outcome.round_markers = tuple(round_markers)
         return outcome
 
     def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, *, defender_is_monster: bool) -> SearchExecutionResult | None:
@@ -3816,6 +3821,70 @@ def _resolve_search_encounter_body(
     cast_success_spells: list[Spell] = []
     cast_events: list[CombatCastEvent] = []
     hand_of_death_aborts: list[tuple[str, tuple[int, ...], int | None]] = []
+    round_markers: list[tuple] = []
+    round_number = 0
+
+    def _mark(kind: str, side: str | None = None, to_range: CombatRange | None = None) -> None:
+        round_markers.append(
+            (kind, side, to_range, len(cast_events), len(fire_arrow_shots), len(melee_swings), 0)
+        )
+
+    def _close(side: str, goal: CombatRange) -> None:
+        """``side`` spends its round moving one tier toward ``goal`` ([5.2]/[5.3]: closing costs the round)."""
+
+        nonlocal current_range
+        if current_range.value < goal.value:
+            current_range = CombatRange(current_range.value + 1)
+            _mark("close", side, current_range)
+
+    def _monster_closing_goal() -> CombatRange | None:
+        """Where the guardian is heading while the leader stays put and casts: to bow range if its plan has it fire an
+        arrow, otherwise (Melee "fino alla fine") all the way to the melee zone -- unless it still has a spell to cast."""
+
+        if monster_combatant.hit_points <= 0 or _peek_monster_action() is not None:
+            return None
+        goal = (
+            CombatRange.BOW_RANGE
+            if monster_wants_shoot and not fire_arrow_resolved and not monster_combatant.blocked_from_archery
+            else CombatRange.MELEE_RANGE
+        )
+        return goal if current_range.value < goal.value else None
+
+    def _leader_cast_talent(tactic) -> int:
+        try:
+            ability = combat_spell_ability(Spell(tactic.sub_object), caster_is_undead=leader.alignment is Alignment.UNDEAD)
+        except (ValueError, TypeError):
+            return 0
+        return effective_skill_level(state, leader, ability) if ability is not None else 0
+
+    def _monster_cast_talent(tactic) -> int:
+        try:
+            spell = Spell(tactic.sub_object)
+        except (ValueError, TypeError):
+            return 0
+        ability = combat_spell_ability(spell, caster_is_undead=feature.guardian_monster in SPIRITWRACK_UNDEAD_MONSTERS)
+        return MONSTER_MAGIC_ABILITIES.get(feature.guardian_monster, {}).get(ability, 0) if ability is not None else 0
+
+    def _monster_acts_first(leader_tactic, goal: CombatRange) -> bool:
+        """Initiative of a round in which the leader casts and the guardian closes in ([5.0]: the greater talent in
+        the ability of the tactic goes first, equal talents in random order -- drawn from a stream of its own)."""
+
+        leader_talent = _leader_cast_talent(leader_tactic)
+        monster_talent = monster_combatant.melee_skill if goal is CombatRange.MELEE_RANGE else monster_combatant.archery_skill
+        if leader_talent != monster_talent:
+            return monster_talent > leader_talent
+        tie = random.Random(f"search-initiative:{state.game_number}:{state.turn_number}:{leader_id}:{feature.feature_id}:{round_number}")
+        return tie.random() < 0.5
+
+    def _monster_casts_first(leader_tactic, monster_tactic) -> bool:
+        leader_talent = _leader_cast_talent(leader_tactic)
+        monster_talent = _monster_cast_talent(monster_tactic)
+        if leader_talent != monster_talent:
+            return monster_talent > leader_talent
+        tie = random.Random(
+            f"search-cast-initiative:{state.game_number}:{state.turn_number}:{leader_id}:{feature.feature_id}:{round_number}:{monster_tactic_index}"
+        )
+        return tie.random() < 0.5
 
     def _resolve_guardian_pacification() -> tuple[bool, bool]:
         """Phase 673 (``Desktop/BOLD OK.txt``): called once, whenever this
@@ -3873,6 +3942,7 @@ def _resolve_search_encounter_body(
         outcome.melee_swings = tuple(melee_swings)
         outcome.fizzled_spells = tuple(fizzled_spells)
         outcome.cast_events = tuple(cast_events)
+        outcome.round_markers = tuple(round_markers)
         outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
         outcome.guardian_monster = feature.guardian_monster
         return outcome
@@ -3893,6 +3963,7 @@ def _resolve_search_encounter_body(
         outcome.melee_swings = tuple(melee_swings)
         outcome.fizzled_spells = tuple(fizzled_spells)
         outcome.cast_events = tuple(cast_events)
+        outcome.round_markers = tuple(round_markers)
         outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
         outcome.guardian_monster = feature.guardian_monster
         return outcome
@@ -4046,6 +4117,7 @@ def _resolve_search_encounter_body(
             outcome.fire_arrow_shots = fire_arrow_shots
             outcome.fizzled_spells = tuple(fizzled_spells)
             outcome.cast_events = tuple(cast_events)
+            outcome.round_markers = tuple(round_markers)
             outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
             outcome.guardian_monster = feature.guardian_monster
         return outcome
@@ -4150,6 +4222,7 @@ def _resolve_search_encounter_body(
                 outcome.melee_swings = tuple(melee_swings)
                 outcome.fizzled_spells = tuple(fizzled_spells)
                 outcome.cast_events = tuple(cast_events)
+                outcome.round_markers = tuple(round_markers)
                 outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
                 outcome.guardian_monster = feature.guardian_monster
             return outcome
@@ -4175,6 +4248,7 @@ def _resolve_search_encounter_body(
             outcome.fire_arrow_shots = fire_arrow_shots
             outcome.fizzled_spells = tuple(fizzled_spells)
             outcome.cast_events = tuple(cast_events)
+            outcome.round_markers = tuple(round_markers)
             outcome.hand_of_death_aborts = tuple(hand_of_death_aborts)
             outcome.guardian_monster = feature.guardian_monster
         return outcome
@@ -4727,6 +4801,8 @@ def _resolve_search_encounter_body(
         if tactic_index in consumed_leader_tactics:
             continue  # dissolved together with the guardian's own summon
         leader_tactic_cursor = tactic_index + 1
+        round_number += 1
+        _mark("round")
         if tactic.maneuver is Maneuver.FLEE:
             flee_chance = effective_flee_chance(
                 FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=leader_combatant.is_invisible,
@@ -4737,6 +4813,15 @@ def _resolve_search_encounter_body(
                 return _flee_outcome()
             continue
         if tactic.maneuver is Maneuver.CAST:
+            # While the leader stays put and casts, the guardian spends its round closing in (spell range -> bow range ->
+            # melee zone); who moves first is a matter of initiative (talent of the spell against the guardian's Melee or
+            # Archery), which also decides whether the cast already happens in the melee zone.
+            closing_goal = _monster_closing_goal()
+            moves_first = False
+            if closing_goal is not None:
+                moves_first = _monster_acts_first(tactic, closing_goal)
+                if moves_first:
+                    _close("b", closing_goal)
             if current_range is CombatRange.MELEE_RANGE:
                 # Phase 293: once real Melee is underway, a CAST tactic is
                 # one round of the round engine below (the guardian's own
@@ -4745,9 +4830,28 @@ def _resolve_search_encounter_body(
                 if outcome is not None:
                     return outcome
                 continue
+            # Both cast this round: the one with the higher talent in his magic goes first.
+            guardian_cast = _peek_monster_action() if closing_goal is None else None
+            if guardian_cast is not None and guardian_cast.maneuver is not Maneuver.CAST:
+                guardian_cast = None  # a wounded retreat only comes up in the fight itself
+            guardian_cast_first = guardian_cast is not None and _monster_casts_first(tactic, guardian_cast)
+            if guardian_cast_first:
+                is_first_guardian_tactic = monster_tactic_index == 0
+                _advance_monster_tactic()
+                outcome = _resolve_cast(guardian_cast, caster_is_leader=False, is_first_tactic=is_first_guardian_tactic)
+                if outcome is not None:
+                    return outcome
             outcome = _resolve_cast(tactic, caster_is_leader=True, is_first_tactic=(tactic_index == 0))
             if outcome is not None:
                 return outcome
+            if guardian_cast is not None and not guardian_cast_first:
+                is_first_guardian_tactic = monster_tactic_index == 0
+                _advance_monster_tactic()
+                outcome = _resolve_cast(guardian_cast, caster_is_leader=False, is_first_tactic=is_first_guardian_tactic)
+                if outcome is not None:
+                    return outcome
+            if closing_goal is not None and not moves_first:
+                _close("b", closing_goal)
             continue
         if tactic.maneuver is Maneuver.SHOOT:
             if current_range is CombatRange.MELEE_RANGE:
@@ -4779,6 +4883,8 @@ def _resolve_search_encounter_body(
                         outcome.melee_swings = tuple(melee_swings)
                         return outcome
                     continue
+                # [5.2]: "in zona di mischia ignorerà il comando e userà invece la successiva tattica".
+                _mark("skip_shot", "a")
                 continue  # [5.0]: only spells or Melee are usable in the melee zone
             if leader_combatant.blocked_from_archery:
                 continue
@@ -4801,9 +4907,9 @@ def _resolve_search_encounter_body(
                 # nel round successivo" -- the same rule turn/challenge_execution.py applies: the
                 # leader spends the first round closing in (no shot of his own), the guardian fires
                 # normally from round 1.
-                outcome = _resolve_fire_arrow_phase(
-                    closing_side="a" if current_range is CombatRange.SPELL_RANGE else None
-                )
+                closing_now = "a" if current_range is CombatRange.SPELL_RANGE else None
+                _close("a", CombatRange.BOW_RANGE)
+                outcome = _resolve_fire_arrow_phase(closing_side=closing_now)
             if outcome is not None:
                 return outcome
             continue  # free attacks exhausted, nobody dead -- fall through
@@ -4818,6 +4924,7 @@ def _resolve_search_encounter_body(
             # execution.py's newly-fixed equivalent), applied here to
             # the guardian's own monster_wants_shoot trigger.
             if monster_wants_shoot and not fire_arrow_resolved and not monster_combatant.blocked_from_archery:
+                _close("a", CombatRange.BOW_RANGE)  # he closes in, the guardian fires as he comes
                 outcome = _resolve_fire_arrow_phase()
                 if outcome is not None:
                     return outcome
@@ -4825,7 +4932,8 @@ def _resolve_search_encounter_body(
             outcome = _resolve_monster_casts()
             if outcome is not None:
                 return outcome
-            current_range = CombatRange.MELEE_RANGE
+            while current_range is not CombatRange.MELEE_RANGE:
+                _close("a", CombatRange.MELEE_RANGE)
             # Phase 293: mirrors turn/challenge_execution.py's own Phase
             # 292 last-vs-non-last MELEE split -- a plan's own *last*
             # tactic (or its only one, every real caller/pre-Phase-293
@@ -4947,10 +5055,12 @@ def _resolve_search_encounter_body(
         # forever (a synthetic bare Melee tactic drives the leader's own
         # side), still letting the guardian's own remaining plan (if any
         # CAST tactics are left past its own first Melee) interleave.
+        _mark("round")
         outcome = _resolve_monster_casts()
         if outcome is not None:
             return outcome
-        current_range = CombatRange.MELEE_RANGE
+        while current_range is not CombatRange.MELEE_RANGE:
+            _close("a", CombatRange.MELEE_RANGE)
         if not _monster_has_more_casts_pending():
             # Fast path -- see the Melee tactic branch's own identical
             # comment above (including the Phase 297 skip_temper_setup

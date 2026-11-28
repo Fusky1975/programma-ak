@@ -20509,3 +20509,28 @@ def test_describe_encounter_combat_tells_the_moves_and_refused_shots_in_order_wi
     assert "fizzled" in lines[2]
     assert "Constantine" in lines[3]  # and into the melee zone after the second
     assert lines[-1] == "Fusky could not fire a bow because Constantine was too close."
+
+
+def test_describe_random_encounter_combat_tells_the_monster_closing_in_and_the_refused_shot():
+    from ak_engine.turn.encounter import CombatRange
+
+    result = RandomEncounterResult(
+        1,
+        _RANDOM_ENCOUNTER_HOME,
+        terrain_roll_succeeded=True,
+        combat_occurred=True,
+        melee_swings=(MeleeSwing(attacker="b", hit=False, damage=0),),
+        round_markers=(
+            ("round", None, None, 0, 0, 0, 0),
+            ("close", "b", CombatRange.MELEE_RANGE, 0, 0, 0, 0),
+            ("round", None, None, 0, 0, 0, 0),
+            ("skip_shot", "a", None, 0, 0, 0, 0),
+        ),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0] * 30)
+
+    lines = describe_random_encounter_combat(result, character_name="Arthur", opponent_name="Grendel", rng=rng)
+
+    assert "Grendel" in lines[0]
+    assert lines[1] == "Arthur could not fire a bow because Grendel was too close."
+    assert lines[2].startswith("Grendel") and "Arthur" in lines[2] and "missed" in lines[2]

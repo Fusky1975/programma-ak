@@ -4516,3 +4516,23 @@ def test_roll_hand_of_death_damage_is_capped_at_skill_level_4():
     # User ruling 2026-11-25: every Personal-Combat spell stops scaling at level 4 (1 + 4/2 = 3).
     assert roll_hand_of_death_damage(4, ScriptedRandom([])) == 3
     assert roll_hand_of_death_damage(9, ScriptedRandom([])) == 3
+
+
+def test_fire_arrow_duel_lets_the_better_archer_shoot_first_each_round():
+    # [5.0]: the one with the higher level in the talent of the tactic goes first in the round.
+    a = Combatant("A", archery_skill=1, hit_points=100)
+    b = Combatant("B", archery_skill=3, hit_points=100)
+
+    result = resolve_fire_arrow_duel(a, b, ScriptedRandom([0.99] * 40))
+
+    assert result.shots[0].shooter == "b"
+    assert [shot.shooter for shot in result.shots[:2]] == ["b", "a"]
+
+
+def test_melee_round_lets_the_better_fighter_swing_first():
+    a = Combatant("A", melee_skill=1, hit_points=100)
+    b = Combatant("B", melee_skill=3, hit_points=100)
+
+    outcome = resolve_one_melee_round(a, b, ScriptedRandom([0.99] * 40))
+
+    assert outcome.swings[0].attacker == "b"

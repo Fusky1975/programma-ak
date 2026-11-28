@@ -113,6 +113,9 @@ def test_a_lone_summon_still_takes_effect():
 
 def test_a_summon_that_fizzles_does_not_dissolve_the_other():
     state = _two_mages([_cast(Spell.MIRROR_IMAGE)])
+    # The defender has the higher talent in his magic, so his spell goes first in the round ([5.0]).
+    for ability in (Ability.ILLUSION, Ability.NECROMANCY, Ability.WHITE):
+        state.leaders[2].skills.set_pair_for_ability(ability, 7, 9)
 
     # The defender's Mirror Image fizzles (first roll), the attacker's Gate Demon takes effect.
     result, calls = _challenge(state, [_cast(Spell.GATE_DEMON)], rolls=(False, True))
