@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
@@ -126,3 +128,21 @@ def test_build_hex_map_tooltip_names_the_province_with_its_report_code():
 
     assert cell.title.startswith("Kalabo (#1203)")
     assert "Jungle" in cell.title and "Merman" in cell.title
+
+
+def test_every_engine_neighbor_is_drawn_touching_its_province():
+    # Found by a playtester: the map drew Couatlia (10,3) beside a Home at (11,4), while the engine and the reports
+    # (turn/movement.py neighbors()) say its north-east neighbor is Kalabo (12,3) -- the row offset was flipped.
+    import math
+
+    from ak_engine.turn.movement import MapBounds, neighbors
+    from ak_engine.webapp.hex_map import HEX_SIZE, _hex_center
+
+    bounds = MapBounds(18, 9)
+    adjacent_distance = math.sqrt(3) * HEX_SIZE
+    for y in range(bounds.height):
+        for x in range(bounds.width):
+            cx, cy = _hex_center(x, y, HEX_SIZE)
+            for neighbor in neighbors(HexCoord(x, y), bounds):
+                nx, ny = _hex_center(neighbor.x, neighbor.y, HEX_SIZE)
+                assert math.hypot(cx - nx, cy - ny) == pytest.approx(adjacent_distance, abs=0.01), ((x, y), neighbor)

@@ -4,13 +4,14 @@ logic: it only turns an already-built ``GameState`` into draw-ready
 ``HexCell`` records, the same "webapp is a presentation layer over the
 engine" separation every other ``webapp/`` module already follows.
 
-**Grid geometry**: pointy-top hexagons, offset rows ("odd-r" layout --
-odd ``y`` rows shifted right by half a hex-width) -- matches ``turn/
-movement.py neighbors()``'s own real adjacency table exactly (``_ODD_
-ROW_OFFSETS``/``_EVEN_ROW_OFFSETS`` both include direct East/West
-neighbors at ``dy=0``, which only lines up visually under a pointy-top,
-row-offset layout; cross-checked by hand against a few of that table's
-own real direction/offset pairs). The map's own real horizontal
+**Grid geometry**: pointy-top hexagons, offset rows -- **even** ``y`` rows
+shifted right by half a hex-width -- matches ``turn/movement.py
+neighbors()``'s own real adjacency table exactly: since Phase 314 an even
+row's upper neighbors are ``(x, y-1)`` and ``(x+1, y-1)``, so an even row
+sits half a hex to the right of the odd rows around it. (Until 2026-11-28
+this drew the odd rows shifted instead, so the map showed Couatlia, not
+Kalabo, next to a Home the engine -- and every report -- puts Kalabo beside;
+``tests/test_hex_map.py`` now checks every engine neighbor is drawn touching.) The map's own real horizontal
 wraparound (``turn/movement.py hex_distance_wrapped()``) is not drawn
 specially here -- same "flat rectangle" convention the existing ASCII
 map (``report/ascii_map.py``) already uses, not a cylinder projection.
@@ -104,7 +105,7 @@ class HexMap:
 def _hex_center(x: int, y: int, size: float) -> tuple[float, float]:
     hex_width = math.sqrt(3) * size
     hex_height = 2 * size
-    x_offset = hex_width / 2 if y % 2 else 0.0
+    x_offset = 0.0 if y % 2 else hex_width / 2  # even rows are the shifted ones (see the module docstring)
     cx = size + x * hex_width + x_offset
     cy = size + y * (hex_height * 0.75)
     return cx, cy
