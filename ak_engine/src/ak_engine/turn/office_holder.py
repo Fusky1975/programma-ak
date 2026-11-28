@@ -713,6 +713,8 @@ def _ranking_candidates(state: GameState, office: Office) -> list[tuple[int, int
     for leader_id, leader in state.leaders.items():
         if leader_id == VALHALLA_VISITOR_LEADER_ID:
             continue
+        if leader.kingdom_id is None:
+            continue  # same ruling as resolve_office_holder(): a free Hero is no candidate, so ranking and holder agree
         if office is Office.EMPEROR:
             if not leader.is_king or leader.kingdom_id is None:
                 continue

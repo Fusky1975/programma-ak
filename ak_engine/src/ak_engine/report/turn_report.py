@@ -16128,6 +16128,8 @@ def _resolve_viewer_priest(state: GameState, kingdom_id: int) -> LeaderState | N
     impulse-2 secondary `Tell_Align` reveal either).
     """
 
+    if state.turn_number == 0:
+        return None  # no title has been awarded yet at the start of the game: the Rod comes with the office, later
     holder = resolve_office_holder(state, Office.PRIEST)
     if holder is None:
         return None
@@ -16173,6 +16175,7 @@ def _impulse3_candidates(state: GameState, kingdom_id: int, priest: LeaderState 
         leader
         for leader in itertools.chain(state.leaders.values(), state.dead_leaders.values())
         if leader.is_king
+        and leader.kingdom_id != kingdom_id  # a stranger: the reader's own King is never listed (real reports show foreign Kings only)
         and leader.leader_id != VALHALLA_VISITOR_LEADER_ID
         and hex_distance_wrapped(priest.location, leader.location, state.board_width) <= 4
         and not leader_location_known_to_kingdom(
