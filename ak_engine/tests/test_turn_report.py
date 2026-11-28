@@ -20534,3 +20534,21 @@ def test_describe_random_encounter_combat_tells_the_monster_closing_in_and_the_r
     assert "Grendel" in lines[0]
     assert lines[1] == "Arthur could not fire a bow because Grendel was too close."
     assert lines[2].startswith("Grendel") and "Arthur" in lines[2] and "missed" in lines[2]
+
+
+def test_describe_encounter_combat_says_when_the_damage_dissolved_a_spell():
+    from ak_engine.turn.challenge_execution import CombatCastEvent
+
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        cast_events=(
+            CombatCastEvent("A", "B", Spell.PSYCHIC_BLAST, True, 4, 0),
+            CombatCastEvent("B", "A", Spell.FIREBALL, False, by_target=True, disrupted=True),
+        ),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0] * 30)
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Fusky", b_name="Constantine", rng=rng)
+
+    assert lines[-1] == "Constantine's spell was disrupted by the event."

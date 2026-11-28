@@ -5555,3 +5555,67 @@ def test_a_crossed_cast_tie_does_not_draw_from_the_dice():
         )
 
     assert len(outcome.cast_events) == 2
+
+
+# -- A spell that hurts the other caster can dissolve the spell he was about to cast ([5.1]) ----------
+
+
+def _damaging_stub_cast(caster, caster_leader, target, target_leader, tactic, state, rng, *, cast_events=None, **kwargs):
+    from ak_engine.turn.challenge_execution import CombatCastEvent
+
+    cast_events.append(
+        CombatCastEvent(caster.name, target.name, Spell(tactic.sub_object), True, 4, 0, by_target=bool(kwargs.get("is_defensive")))
+    )
+    return None
+
+
+def _crossed_casts_with_disruption(caster_skills, target_skills, disrupted):
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": caster_skills}, target_kwargs={"skills": target_skills}
+    )
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_damaging_stub_cast), patch(
+        "ak_engine.turn.challenge_execution._resolve_cast_disruption", return_value=disrupted
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        return resolve_challenge_combat(
+            [SearchTactic(Maneuver.CAST, Spell.TELEK_STORM.value)], caster_leader, caster, target_leader, target, state,
+            ScriptedRandom([0.5] * 40), target_tactics=[SearchTactic(Maneuver.CAST, Spell.PSYCHIC_BLAST.value)],
+        )
+
+
+def test_the_damage_of_the_quicker_spell_can_dissolve_the_other_one_caster_first():
+    psychic_high = _skills_with(Ability.PSYCHIC, 3, 3)
+
+    outcome = _crossed_casts_with_disruption(psychic_high, SkillTable([0] * 30), disrupted=True)
+
+    assert [(event.by_target, event.disrupted) for event in outcome.cast_events] == [(False, False), (True, True)]
+
+
+def test_the_damage_of_the_quicker_spell_can_dissolve_the_other_one_target_first():
+    psychic_high = _skills_with(Ability.PSYCHIC, 3, 3)
+
+    outcome = _crossed_casts_with_disruption(SkillTable([0] * 30), psychic_high, disrupted=True)
+
+    assert [(event.by_target, event.disrupted) for event in outcome.cast_events] == [(True, False), (False, True)]
+
+
+def test_without_a_dissolution_both_spells_come_off():
+    psychic_high = _skills_with(Ability.PSYCHIC, 3, 3)
+
+    outcome = _crossed_casts_with_disruption(psychic_high, SkillTable([0] * 30), disrupted=False)
+
+    assert [event.disrupted for event in outcome.cast_events] == [False, False]
+    assert all(event.succeeded for event in outcome.cast_events)
+
+
+def test_a_reactive_swing_that_dissolves_a_cast_in_the_melee_zone_is_recorded():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.CAST, Spell.TELEK_STORM.value)] * 3  # the opponent is in melee by the third
+
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_stub_cast), patch(
+        "ak_engine.turn.challenge_execution._resolve_cast_disruption", return_value=True
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.5] * 60))
+
+    assert any(event.disrupted and not event.by_target for event in outcome.cast_events)

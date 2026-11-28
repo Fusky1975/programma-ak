@@ -2876,6 +2876,7 @@ def test_execute_search_cast_control_undead_enhanced_ability_makes_anti_holy_tar
     state = _state_with_leader()
     state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.IMP))
+    _top_talents(state)  # the leader outranks the guardian's magic: his spell comes off first
     request = _cast_request(1, Spell.CONTROL_UNDEAD)
 
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
@@ -8598,3 +8599,28 @@ def test_execute_search_crossed_casts_go_in_order_of_magic_talent():
 
     assert order(1, 3) == ["monster", "leader"]
     assert order(3, 1) == ["leader", "monster"]
+
+
+def test_execute_search_crossed_cast_damage_can_dissolve_the_other_spell():
+    # Both cast Fireballs; the guardian's (higher talent) comes off first and hurts the leader, and the damage dissolves
+    # the Fireball the leader was about to cast ([5.1]).
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].skills = _skilled_leader(Ability.ELEMENTAL, 1).skills
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _cast_request(1, Spell.FIREBALL, Maneuver.MELEE)
+    monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value), SearchTactic(maneuver=Maneuver.MELEE))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.GARGOYLE: {Ability.ELEMENTAL: 4}}
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.roll_fireball_damage", return_value=3), patch(
+        "ak_engine.turn.search_execution._resolve_cast_disruption", return_value=True
+    ):
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.99] * 60))
+
+    assert [(event.caster_name, event.succeeded, event.disrupted) for event in result.cast_events][:2] == [
+        ("monster", True, False),
+        ("leader", False, True),
+    ]
