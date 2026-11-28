@@ -1100,6 +1100,9 @@ def run_turn(
     # GameState.remove_leader() itself. See that method's own docstring
     # for the full reasoning.
     state.idle_searches_this_phase = {}
+    # A skill/aptitude rise earned in the last phase takes effect "from the next phase" ([3.13]) -- nothing else reads
+    # it before next turn's P0, but the report of this turn (CHARACTERS) must already show it.
+    commit_pending_skill_advancements(state)
     note_quest_visits(state)  # a hero who ended the turn in his quest's province (chases, retreats, ...)
     # A King who made the pact of the Undead is gone by the end of the turn; the heir comes next, as for any King.
     for pact_king in [leader for leader in state.leaders.values() if leader.undead_pact]:

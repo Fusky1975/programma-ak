@@ -180,3 +180,14 @@ def test_award_combat_cast_experience_credits_the_school_only_to_a_caster_with_s
 
     assert skilled.experience_credit == 12  # round(10 * (1 + 0.3 - 0.1))
     assert unskilled.experience_credit == 0  # "skill 0 stays excluded"
+
+
+def test_add_experience_builds_on_a_rise_already_waiting_for_the_next_phase():
+    # A skill rise is pending; a second Add_Experience in the same phase raises the aptitude: both must survive.
+    leader = _leader(skill=2, aptitude=2, credit=99)
+    leader.pending_skill_advancement[Ability.MELEE] = (3, 2)
+
+    result = add_experience(leader, Ability.MELEE, 10, ScriptedRandom([0.5, 0.5, 0.99, 0.0]))
+
+    assert result.aptitude_rose is True
+    assert leader.pending_skill_advancement[Ability.MELEE] == (3, 3)

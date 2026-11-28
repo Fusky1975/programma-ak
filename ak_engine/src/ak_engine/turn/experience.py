@@ -185,7 +185,8 @@ def _add_experience(leader: LeaderState, ability: Ability, base_points: int, rng
     """
 
     skills = _get_or_create_skills(leader)
-    current_skill, aptitude = skills.pair_for_ability(ability)
+    # A rise already waiting for the next phase (a second Add_Experience in the same phase) is built upon, not overwritten.
+    current_skill, aptitude = leader.pending_skill_advancement.get(ability) or skills.pair_for_ability(ability)
 
     if base_points == 100:
         if current_skill >= MAX_SKILL_LEVEL:

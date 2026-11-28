@@ -984,24 +984,16 @@ def test_run_turn_groups_three_co_located_same_ability_practicers():
     assert by_leader[30].result.skill_rose is True
 
 
-def test_run_turn_practice_rise_takes_effect_only_from_the_next_turn_when_earned_in_p4():
+def test_run_turn_practice_rise_earned_in_p4_is_committed_for_the_report_at_turn_end():
     # [3.13]: "L'avanzamento avrà effetto fin dalla fase successiva" -- a
-    # rise earned in this turn's own last phase (P4) has no "next phase"
-    # left within this same run_turn() call, so it must still be pending,
-    # not yet written into the real skill table, once run_turn() returns.
+    # rise earned in P4 has no later phase within this turn, so it is
+    # written into the skill table as the turn ends: nothing reads it in
+    # between, and the report's CHARACTERS table must already show it.
     state = _practice_state(10, skills_by_id={10: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9)})
     state.leaders[10].experience_credit = 96  # +5 solo gain crosses the 100 threshold, guaranteeing the rise
     leader = _leader_with_phase(10, "A", "P4", _practice_phase("P4", Ability.NECROMANCY))
 
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
-
-    assert state.leaders[10].pending_skill_advancement == {Ability.NECROMANCY: (2, 9)}
-    assert state.leaders[10].skills.pair_for_ability(Ability.NECROMANCY) == (1, 9)
-
-    # The next turn's own P0 (its phase loop's first statement, before
-    # anything else that phase dispatches) commits it -- carried across
-    # the turn boundary exactly like a real rise would be.
-    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(0))
 
     assert state.leaders[10].pending_skill_advancement == {}
     assert state.leaders[10].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
